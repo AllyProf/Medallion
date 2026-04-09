@@ -18,8 +18,8 @@ use App\Http\Controllers\NotificationController;
 // Global Notifications & Search (all authenticated users)
 Route::get('/api/notifications', [NotificationController::class, 'index'])->name('notifications.index');
 Route::get('/api/search', [NotificationController::class, 'search'])->name('global.search');
-// Landing Page
-Route::get('/', [HomeController::class, 'index'])->name('home');
+// Default entry: open login page directly (no redirect)
+Route::get('/', [\App\Http\Controllers\Auth\LoginController::class, 'showLoginForm'])->name('home');
 
 Route::get('/debug-menu', function() {
     return [

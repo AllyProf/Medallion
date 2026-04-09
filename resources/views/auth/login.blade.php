@@ -28,10 +28,132 @@
         border-color: #7a0000;
       }
       .logo h1 {
+        font-family: "Century Gothic", sans-serif;
+        color: #ffffff;
+        font-size: 2.4rem;
+        font-weight: 500;
+        letter-spacing: 8px;
+        text-transform: uppercase;
+        text-align: center;
+        text-shadow: 0 2px 14px rgba(0, 0, 0, 0.75);
+        margin-bottom: 1rem;
+        background: rgba(25, 16, 10, 0.58);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
+        border-radius: 10px;
+        padding: 14px 28px;
+        display: inline-block;
+      }
+      .logo {
+        text-align: center;
+      }
+      .side-brand-wrap {
+        position: fixed;
+        right: 20px;
+        bottom: 18px;
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 8px;
+      }
+      .support-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .support-pill {
+        border-radius: 999px;
+        padding: 6px 16px;
+        color: #ffffff;
+        background: rgba(0, 0, 0, 0.75);
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        font-family: "Century Gothic", sans-serif;
+        letter-spacing: 1.6px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-decoration: none !important;
+        transition: transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+        animation: supportPulse 1.8s ease-in-out infinite;
+      }
+      .support-pill:hover {
+        color: #ffffff;
+        background: rgba(148, 0, 0, 0.9);
+        transform: translateY(-1px) scale(1.03);
+        box-shadow: 0 0 0 7px rgba(148, 0, 0, 0.12);
+      }
+      .support-call {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        border: 3px solid #ffffff;
+        background: #940000;
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+      }
+      .powered-card {
+        background: #ffffff;
+        border-left: 4px solid #940000;
+        border-radius: 7px;
+        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.24);
+        padding: 7px 14px;
+        min-width: 300px;
+        font-family: "Century Gothic", sans-serif;
+        letter-spacing: 1.2px;
+        color: #6d7278;
+        text-transform: uppercase;
+        font-weight: 700;
+        font-size: 0.78rem;
+        text-align: center;
+      }
+      .powered-card strong {
         color: #940000;
+        letter-spacing: 2px;
+      }
+      @keyframes supportPulse {
+        0% { box-shadow: 0 0 0 0 rgba(148, 0, 0, 0.32); }
+        70% { box-shadow: 0 0 0 9px rgba(148, 0, 0, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(148, 0, 0, 0); }
+      }
+      @media (max-width: 768px) {
+        .side-brand-wrap {
+          right: 14px;
+          left: 14px;
+          bottom: 14px;
+          align-items: stretch;
+        }
+        .support-row {
+          justify-content: flex-end;
+        }
+        .powered-card {
+          min-width: 0;
+          width: 100%;
+          font-size: 0.78rem;
+          letter-spacing: 1.3px;
+        }
       }
       .material-half-bg .cover {
-        background: linear-gradient(135deg, #940000 0%, #7a0000 100%);
+        background:
+          linear-gradient(rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.45)),
+          url('{{ asset('img/landing/Meddalion_background_image.jpg') }}');
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+      }
+      .material-half-bg,
+      .material-half-bg .cover {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+      }
+      .login-content {
+        min-height: 100vh;
       }
       /* Password toggle */
       .password-wrapper {
@@ -81,7 +203,7 @@
     </section>
     <section class="login-content">
       <div class="logo">
-        <h1>MauzoLink</h1>
+        <h1>MEDALLION RESTAURANT</h1>
       </div>
       <div class="login-box">
         <form class="login-form" method="POST" action="{{ route('login') }}">
@@ -145,6 +267,15 @@
         </form>
       </div>
     </section>
+    <div class="side-brand-wrap" aria-hidden="true">
+      <div class="support-row">
+        <a class="support-pill" href="https://www.emca.tech/contact" target="_blank" rel="noopener noreferrer">SUPPORT</a>
+        <span class="support-call"><i class="fa fa-phone"></i></span>
+      </div>
+      <div class="powered-card">
+        Powered By <strong>EmCa Techonologies LTD</strong>
+      </div>
+    </div>
     <!-- Essential javascripts for application to work-->
     <script src="{{ asset('js/admin/jquery-3.2.1.min.js') }}"></script>
     <script src="{{ asset('js/admin/popper.min.js') }}"></script>
