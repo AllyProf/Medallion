@@ -1,0 +1,82 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class FoodItem extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'user_id',
+        'name',
+        'variant_name',
+        'category',
+        'description',
+        'image',
+        'price',
+        'variants',
+        'prep_time_minutes',
+        'is_available',
+        'sort_order',
+    ];
+
+    protected $appends = ['display_name'];
+
+    protected $casts = [
+        'price' => 'decimal:2',
+        'prep_time_minutes' => 'integer',
+        'is_available' => 'boolean',
+        'sort_order' => 'integer',
+        'variants' => 'array',
+    ];
+
+    /**
+     * Get clean display name for Mobile POS.
+     * Uses ProductHelper for consistent naming logic.
+     */
+    public function getDisplayNameAttribute()
+    {
+        return \App\Helpers\ProductHelper::generateDisplayName(
+            $this->name,
+            $this->variant_name
+        );
+    }
+
+    /**
+     * Get the owner (user) that owns this food item.
+     */
+    public function owner()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /**
+     * Get the recipe for this food item.
+     */
+    public function recipe()
+    {
+        return $this->hasOne(Recipe::class, 'food_item_id');
+    }
+
+    /**
+     * Get the extras for this food item.
+     */
+    public function extras()
+    {
+        return $this->hasMany(FoodItemExtra::class, 'food_item_id');
+    }
+
+    /**
+     * Get full name with variant
+     */
+    public function getFullNameAttribute()
+    {
+        if ($this->variant_name) {
+            return $this->name . ' (' . $this->variant_name . ')';
+        }
+        return $this->name;
+    }
+}

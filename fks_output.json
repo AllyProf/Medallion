@@ -1,0 +1,44 @@
+[
+    {
+        "TABLE_NAME": "orders",
+        "COLUMN_NAME": "reconciliation_id",
+        "CONSTRAINT_NAME": "orders_reconciliation_id_foreign",
+        "REFERENCED_TABLE_NAME": "waiter_daily_reconciliations",
+        "REFERENCED_COLUMN_NAME": "id"
+    },
+    {
+        "TABLE_NAME": "orders",
+        "COLUMN_NAME": "reconciliation_id",
+        "CONSTRAINT_NAME": "orders_reconciliation_id_foreign",
+        "REFERENCED_TABLE_NAME": "waiter_daily_reconciliations",
+        "REFERENCED_COLUMN_NAME": "id"
+    },
+    {
+        "TABLE_NAME": "orders",
+        "COLUMN_NAME": "reconciliation_id",
+        "CONSTRAINT_NAME": "orders_reconciliation_id_foreign",
+        "REFERENCED_TABLE_NAME": "waiter_daily_reconciliations",
+        "REFERENCED_COLUMN_NAME": "id"
+    },
+    {
+        "TABLE_NAME": "orders",
+        "COLUMN_NAME": "reconciliation_id",
+        "CONSTRAINT_NAME": "orders_reconciliation_id_foreign",
+        "REFERENCED_TABLE_NAME": "waiter_daily_reconciliations",
+        "REFERENCED_COLUMN_NAME": "id"
+    },
+    {
+        "TABLE_NAME": "orders",
+        "COLUMN_NAME": "reconciliation_id",
+        "CONSTRAINT_NAME": "orders_reconciliation_id_foreign",
+        "REFERENCED_TABLE_NAME": "waiter_daily_reconciliations",
+        "REFERENCED_COLUMN_NAME": "id"
+    },
+    {
+        "TABLE_NAME": "orders",
+        "COLUMN_NAME": "reconciliation_id",
+        "CONSTRAINT_NAME": "orders_reconciliation_id_foreign",
+        "REFERENCED_TABLE_NAME": "waiter_daily_reconciliations",
+        "REFERENCED_COLUMN_NAME": "id"
+    }
+]
