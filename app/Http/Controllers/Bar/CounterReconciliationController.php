@@ -5,12 +5,12 @@ namespace App\Http\Controllers\Bar;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\HandlesStaffPermissions;
 use App\Models\BarOrder;
-use App\Models\Staff;
+use App\Models\DailyCashLedger;
 use App\Models\FinancialHandover;
 use App\Models\OrderPayment;
+use App\Models\Staff;
 use App\Models\WaiterDailyReconciliation;
 use App\Models\WaiterNotification;
-use App\Models\DailyCashLedger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -29,7 +29,7 @@ class CounterReconciliationController extends Controller
         $roleSlug = strtolower(trim($currentStaff->role->slug ?? ''));
         $isCounterOrAccountant = in_array($roleSlug, ['counter', 'accountant']);
 
-        if (!$isCounterOrAccountant && !$this->hasPermission('bar_orders', 'view')) {
+        if (! $isCounterOrAccountant && ! $this->hasPermission('bar_orders', 'view')) {
             abort(403, 'You do not have permission to view reconciliations.');
         }
 
@@ -55,31 +55,31 @@ class CounterReconciliationController extends Controller
                 })
                     // OR orders today check
                     ->orWhereHas('orders', function ($q) use ($date, $location) {
-                    $q->whereDate('created_at', $date);
-                    if ($location && $location !== 'all') {
-                        $q->whereHas('table', function ($sq) use ($location) {
-                            $sq->where('location', $location);
-                        });
-                    }
-                })
+                        $q->whereDate('created_at', $date);
+                        if ($location && $location !== 'all') {
+                            $q->whereHas('table', function ($sq) use ($location) {
+                                $sq->where('location', $location);
+                            });
+                        }
+                    })
                     // OR daily reconciliations check
                     ->orWhereHas('dailyReconciliations', function ($q) use ($date) {
-                    $q->where('reconciliation_date', $date)
-                        ->where('reconciliation_type', 'bar');
-                });
+                        $q->where('reconciliation_date', $date)
+                            ->where('reconciliation_type', 'bar');
+                    });
             })
             ->when($location && $location !== 'all', function ($q) use ($location) {
                 $q->where('location_branch', $location);
             });
 
         // If not accountant, filter by owner
-        if (!$isAccountant) {
+        if (! $isAccountant) {
             $waitersQuery->where('user_id', $ownerId);
         }
 
         $bar_shift = \App\Models\BarShift::where('user_id', $ownerId)
             ->where('status', 'open')
-            ->when($currentStaff && !$isAccountant, function ($q) use ($currentStaff) {
+            ->when($currentStaff && ! $isAccountant, function ($q) use ($currentStaff) {
                 $q->where('staff_id', $currentStaff->id);
             })
             ->first();
@@ -92,7 +92,7 @@ class CounterReconciliationController extends Controller
                         ->when($bar_shift, function ($sq) use ($bar_shift) {
                             $sq->where('bar_shift_id', $bar_shift->id);
                         });
-                }
+                },
             ])
             ->get()
             ->map(function ($waiter) use ($ownerId, $date, $isAccountant, $location, $bar_shift) {
@@ -105,7 +105,7 @@ class CounterReconciliationController extends Controller
                     });
 
                 // If not accountant, filter by owner
-                if (!$isAccountant) {
+                if (! $isAccountant) {
                     $ordersQuery->where('user_id', $ownerId);
                 }
 
@@ -161,7 +161,7 @@ class CounterReconciliationController extends Controller
                 $foodOrdersCount = $foodOnlyOrders->count();
 
                 // Already calculated unpaidBarOrders above
-    
+
                 // Calculate total paid amount (only orders that have been reconciled/submitted)
                 $totalPaidAmount = $barOrders->where('payment_status', 'paid')
                     ->sum('paid_amount');
@@ -171,21 +171,26 @@ class CounterReconciliationController extends Controller
                 $mobileMoneyCollected = 0;
 
                 foreach ($barOrders as $order) {
+                    $orderBar = (float) $order->items->sum('total_price');
+                    $orderFood = (float) ($order->kitchenOrderItems ? $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price') : 0);
+                    $orderTotal = $orderBar + $orderFood;
+                    $barShare = $orderTotal > 0 ? ($orderBar / $orderTotal) : 1;
+
                     if ($order->orderPayments->count() > 0) {
-                        $pSum = $order->orderPayments->sum('amount');
-                        $cappedSum = min($pSum, $order->total_amount);
+                        $pSum = (float) $order->orderPayments->sum('amount');
+                        $cappedSum = min($pSum, (float) $order->total_amount);
 
                         // Ratio-based distribution if overpaid
-                        $ratio = ($pSum > 0) ? ($cappedSum / $pSum) : 1;
+                        $ratio = $pSum > 0 ? ($cappedSum / $pSum) : 1;
 
-                        $cashCollected += $order->orderPayments->where('payment_method', 'cash')->sum('amount') * $ratio;
-                        $mobileMoneyCollected += $order->orderPayments->where('payment_method', '!=', 'cash')->sum('amount') * $ratio;
+                        $cashCollected += $order->orderPayments->where('payment_method', 'cash')->sum('amount') * $ratio * $barShare;
+                        $mobileMoneyCollected += $order->orderPayments->where('payment_method', '!=', 'cash')->sum('amount') * $ratio * $barShare;
                     } else {
                         // Fallback to order fields
                         if ($order->payment_method === 'cash') {
-                            $cashCollected += $order->paid_amount;
+                            $cashCollected += (float) $order->paid_amount * $barShare;
                         } else {
-                            $mobileMoneyCollected += $order->paid_amount;
+                            $mobileMoneyCollected += (float) $order->paid_amount * $barShare;
                         }
                     }
                 }
@@ -193,9 +198,19 @@ class CounterReconciliationController extends Controller
                 // Detailed platform breakdown for the waiter
                 $waiterPlatformTotals = [];
                 foreach ($barOrders as $order) {
+                    $orderBar = (float) $order->items->sum('total_price');
+                    $orderFood = (float) ($order->kitchenOrderItems ? $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price') : 0);
+                    $orderTotal = $orderBar + $orderFood;
+                    $barShare = $orderTotal > 0 ? ($orderBar / $orderTotal) : 1;
+
+                    $pSum = (float) $order->orderPayments->sum('amount');
+                    $cappedSum = min($pSum, (float) $order->total_amount);
+                    $ratio = $pSum > 0 ? ($cappedSum / $pSum) : 1;
+
                     foreach ($order->orderPayments as $payment) {
-                        if ($payment->payment_method === 'cash')
+                        if ($payment->payment_method === 'cash') {
                             continue;
+                        }
 
                         $provider = strtolower(trim($payment->mobile_money_number ?? 'mobile'));
                         $label = 'MOBILE MONEY';
@@ -217,10 +232,9 @@ class CounterReconciliationController extends Controller
                             $label = 'KCB BANK';
                         }
 
-                        $waiterPlatformTotals[$label] = ($waiterPlatformTotals[$label] ?? 0) + $payment->amount;
+                        $waiterPlatformTotals[$label] = ($waiterPlatformTotals[$label] ?? 0) + ((float) $payment->amount * $ratio * $barShare);
                     }
                 }
-
 
                 // Re-calculate Total Recorded to match the above logic
                 $totalRecordedAmount = $cashCollected + $mobileMoneyCollected;
@@ -231,7 +245,7 @@ class CounterReconciliationController extends Controller
                 // Don't use totalPaidAmount here - that would show as submitted before reconciliation
                 $submittedAmount = $reconciliation ? $reconciliation->submitted_amount : 0;
 
-                // Calculate difference: 
+                // Calculate difference:
                 // If submitted, use submitted - total. Else use recorded - total.
                 $difference = ($submittedAmount > 0 || $reconciliation)
                     ? ($submittedAmount - $totalSales)
@@ -246,9 +260,9 @@ class CounterReconciliationController extends Controller
                     // No reconciliation record - determine status based on payment
                     if ($hasUnpaidOrders) {
                         $status = 'pending'; // Still has unpaid orders
-                    } else if ($totalPaidAmount > 0 && abs($difference) < 0.01) {
+                    } elseif ($totalPaidAmount > 0 && abs($difference) < 0.01) {
                         $status = 'paid'; // All orders paid and amounts match
-                    } else if ($totalPaidAmount > 0) {
+                    } elseif ($totalPaidAmount > 0) {
                         $status = 'partial'; // Some orders paid but amounts don't match
                     }
                 }
@@ -271,7 +285,7 @@ class CounterReconciliationController extends Controller
                                 $buyingPrice = $whStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0;
                                 $itemProfit += ($ts->total_price - ($ts->quantity * $buyingPrice));
                             }
-                        } else if ($item->productVariant) {
+                        } elseif ($item->productVariant) {
                             $variant = $item->productVariant;
                             $qty = $item->quantity;
                             if (($item->sell_type ?? 'unit') === 'tot') {
@@ -307,12 +321,12 @@ class CounterReconciliationController extends Controller
                     'orders' => $barOrders, // Only bar orders
                     'reconciliation' => $reconciliation,
                     'platform_totals' => $waiterPlatformTotals,
-                    'profit' => $waiterProfit
+                    'profit' => $waiterProfit,
                 ];
             })
             ->filter(function ($data) {
                 // Show active rows with any bar order OR already reconciled records
-                return $data['total_orders'] > 0 || !empty($data['reconciliation']);
+                return $data['total_orders'] > 0 || ! empty($data['reconciliation']);
             })
             ->sortByDesc('total_sales')
             ->values();
@@ -340,7 +354,7 @@ class CounterReconciliationController extends Controller
             } else {
                 // Staff sees their own handovers
                 $handoverQuery->where('accountant_id', $currentStaff->id);
-                
+
                 if ($handoverShiftId) {
                     // If looking at an active shift, prioritize that shift's handover
                     $handoverQuery->where('bar_shift_id', $handoverShiftId);
@@ -354,7 +368,7 @@ class CounterReconciliationController extends Controller
         }
 
         // Accountant should not see any waiter data until they receive a handover
-        if ($isAccountant && !$todayHandover) {
+        if ($isAccountant && ! $todayHandover) {
             $waiters = collect([]);
         }
 
@@ -383,8 +397,8 @@ class CounterReconciliationController extends Controller
                             (object) [
                                 'payment_method' => $order->payment_method,
                                 'mobile_money_number' => $order->mobile_money_number,
-                                'amount' => $order->paid_amount
-                            ]
+                                'amount' => $order->paid_amount,
+                            ],
                         ];
                     } else {
                         $payments = [];
@@ -434,7 +448,7 @@ class CounterReconciliationController extends Controller
             [
                 'accountant_id' => $currentStaff->id ?? null,
                 'opening_cash' => $this->getPreviousClosingCash($ownerId, $date),
-                'status' => 'open'
+                'status' => 'open',
             ]
         );
 
@@ -477,18 +491,18 @@ class CounterReconciliationController extends Controller
         // Boss only pulls out positive profit.
         $finalProfit = max(0, $netEarnings);
 
-        // 3. Money in circulation (Operating Balance):
-        // The user strictly wants this to represent ONLY the current shift's collections (excluding the opening float).
-        $moneyInCirculation = $totalRevenueToday - $expFromCirculation;
-
-        // 4. Practical Rollover (for the accountant bank):
+        // 3. Practical Rollover (for the accountant bank):
         // Whatever is actually left in the vault after pullout.
         $rolloverFloat = max(0, $totalBusinessValue - $finalProfit);
+
+        // 4. Money in circulation:
+        // Keep this equal to rollover float so tomorrow opening float and circulation always match.
+        $moneyInCirculation = $rolloverFloat;
 
         if ($ledger->status === 'open') {
             $ledger->update([
                 'profit_generated' => $stockProfit,
-                'expected_closing_cash' => $totalBusinessValue
+                'expected_closing_cash' => $totalBusinessValue,
             ]);
         }
 
@@ -540,7 +554,7 @@ class CounterReconciliationController extends Controller
         $currentStaff = $this->getCurrentStaff();
         $isAccountant = $currentStaff && strtolower($currentStaff->role->slug ?? '') === 'accountant';
 
-        if (!$isAccountant && !$this->hasPermission('bar_orders', 'edit')) {
+        if (! $isAccountant && ! $this->hasPermission('bar_orders', 'edit')) {
             return response()->json(['error' => 'You do not have permission to verify reconciliations.'], 403);
         }
 
@@ -559,16 +573,16 @@ class CounterReconciliationController extends Controller
 
         // Send Waiter SMS notifying them their money was accepted and safely verified by Counter Staff
         try {
-            $smsService = new \App\Services\HandoverSmsService();
+            $smsService = new \App\Services\HandoverSmsService;
             $smsService->sendWaiterVerificationSms($reconciliation);
         } catch (\Exception $e) {
-            \Log::error('Failed to send Waiter Verification SMS: ' . $e->getMessage());
+            \Log::error('Failed to send Waiter Verification SMS: '.$e->getMessage());
         }
 
         return response()->json([
             'success' => true,
             'message' => 'Reconciliation verified successfully.',
-            'reconciliation' => $reconciliation
+            'reconciliation' => $reconciliation,
         ]);
     }
 
@@ -580,7 +594,7 @@ class CounterReconciliationController extends Controller
         $currentStaff = $this->getCurrentStaff();
         $isAccountant = $currentStaff && strtolower($currentStaff->role->slug ?? '') === 'accountant';
 
-        if (!$isAccountant && !$this->hasPermission('bar_orders', 'edit')) {
+        if (! $isAccountant && ! $this->hasPermission('bar_orders', 'edit')) {
             return response()->json(['error' => 'You do not have permission to mark orders as paid.'], 403);
         }
 
@@ -598,12 +612,12 @@ class CounterReconciliationController extends Controller
 
         // Verify waiter belongs to owner (unless accountant)
         $waiterQuery = Staff::where('id', $validated['waiter_id']);
-        if (!$isAccountant) {
+        if (! $isAccountant) {
             $waiterQuery->where('user_id', $ownerId);
         }
         $waiter = $waiterQuery->first();
 
-        if (!$waiter) {
+        if (! $waiter) {
             return response()->json(['error' => 'Waiter not found'], 404);
         }
 
@@ -620,7 +634,7 @@ class CounterReconciliationController extends Controller
             });
 
         // If not accountant, filter by owner
-        if (!$isAccountant) {
+        if (! $isAccountant) {
             $ordersQuery->where('user_id', $ownerId);
         }
 
@@ -632,16 +646,16 @@ class CounterReconciliationController extends Controller
             ->get();
 
         // Only error out if we have NO unpaid orders AND no submitted_amount provided
-        if ($orders->isEmpty() && !isset($validated['submitted_amount'])) {
+        if ($orders->isEmpty() && ! isset($validated['submitted_amount'])) {
             return response()->json([
                 'success' => false,
-                'error' => 'No unpaid served orders found for this waiter on this date.'
+                'error' => 'No unpaid served orders found for this waiter on this date.',
             ], 400);
         }
 
         // REQUIRE ACTIVE SHIFT
         $activeShift = $this->getCurrentShift();
-        if (!$activeShift && !$isAccountant) {
+        if (! $activeShift && ! $isAccountant) {
             return response()->json(['error' => 'Please open a shift before reconciling waiters.'], 403);
         }
 
@@ -651,7 +665,7 @@ class CounterReconciliationController extends Controller
             ->where('waiter_id', $waiter->id);
 
         // If not accountant, filter by owner
-        if (!$isAccountant) {
+        if (! $isAccountant) {
             $expectedOrdersQuery->where('user_id', $ownerId);
         }
 
@@ -668,7 +682,6 @@ class CounterReconciliationController extends Controller
             ->sum(function ($order) {
                 return $order->items->sum('total_price');
             });
-
 
         DB::beginTransaction();
         try {
@@ -692,7 +705,7 @@ class CounterReconciliationController extends Controller
 
                 $order->paid_by_waiter_id = $waiter->id; // Records which waiter row was reconciled
                 // Default to cash if no method specified
-                if (!$order->payment_method) {
+                if (! $order->payment_method) {
                     $order->payment_method = 'cash';
                 }
                 if ($activeShift) {
@@ -710,7 +723,7 @@ class CounterReconciliationController extends Controller
                 'waiter_id' => $waiter->id,
                 'date' => $validated['date'],
                 'orders_count' => $updatedCount,
-                'total_amount' => $totalAmount
+                'total_amount' => $totalAmount,
             ]);
 
             // Check if reconciliation already exists for this shift/date
@@ -744,7 +757,7 @@ class CounterReconciliationController extends Controller
                     ->with(['items', 'orderPayments']);
 
                 // If not accountant, filter by owner
-                if (!$isAccountant) {
+                if (! $isAccountant) {
                     $allOrdersWithPaymentsQuery->where('user_id', $ownerId);
                 }
 
@@ -774,7 +787,7 @@ class CounterReconciliationController extends Controller
                 ->whereHas('items') // Only bar orders
                 ->with(['items', 'orderPayments']);
 
-            if (!$isAccountant) {
+            if (! $isAccountant) {
                 $barOrdersQuery->where('user_id', $ownerId);
             }
             $barOrders = $barOrdersQuery->get();
@@ -838,7 +851,7 @@ class CounterReconciliationController extends Controller
                     'notes' => json_encode([
                         'submitted_breakdown' => $breakdown,
                         'recorded_breakdown' => $waiterPlatformTotals,
-                        'waiter_note' => $request->input('notes', '')
+                        'waiter_note' => $request->input('notes', ''),
                     ]),
                     'bar_shift_id' => $activeShift ? $activeShift->id : null,
                 ]
@@ -850,7 +863,7 @@ class CounterReconciliationController extends Controller
                     'waiter_id' => $waiter->id,
                     'type' => 'payment_recorded',
                     'title' => 'Bar Orders Marked as Paid',
-                    'message' => "Counter has marked {$updatedCount} bar order(s) as paid for " . \Carbon\Carbon::parse($validated['date'])->format('M d, Y') . ". Total amount: TSh " . number_format($totalAmount, 0),
+                    'message' => "Counter has marked {$updatedCount} bar order(s) as paid for ".\Carbon\Carbon::parse($validated['date'])->format('M d, Y').'. Total amount: TSh '.number_format($totalAmount, 0),
                     'data' => [
                         'date' => $validated['date'],
                         'orders_count' => $updatedCount,
@@ -862,15 +875,15 @@ class CounterReconciliationController extends Controller
             } catch (\Exception $e) {
                 \Log::error('Failed to create notification', [
                     'waiter_id' => $waiter->id,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
             }
 
             $message = "Successfully marked {$updatedCount} order(s) as paid.";
             if ($submittedAmount < $expectedAmount) {
-                $message .= " Submitted amount: TSh " . number_format($submittedAmount, 0) . " (Expected: TSh " . number_format($expectedAmount, 0) . ")";
+                $message .= ' Submitted amount: TSh '.number_format($submittedAmount, 0).' (Expected: TSh '.number_format($expectedAmount, 0).')';
             } else {
-                $message .= " Total: TSh " . number_format($totalAmount, 0);
+                $message .= ' Total: TSh '.number_format($totalAmount, 0);
             }
 
             return response()->json([
@@ -879,18 +892,19 @@ class CounterReconciliationController extends Controller
                 'orders_count' => $updatedCount,
                 'total_amount' => $totalAmount,
                 'submitted_amount' => $submittedAmount,
-                'expected_amount' => $expectedAmount
+                'expected_amount' => $expectedAmount,
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Failed to mark all orders as paid', [
                 'waiter_id' => $waiter->id,
                 'date' => $validated['date'],
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ]);
+
             return response()->json([
                 'success' => false,
-                'error' => 'Failed to mark orders as paid: ' . $e->getMessage()
+                'error' => 'Failed to mark orders as paid: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -903,7 +917,7 @@ class CounterReconciliationController extends Controller
         $currentStaff = $this->getCurrentStaff();
         $isAccountant = $currentStaff && strtolower($currentStaff->role->slug ?? '') === 'accountant';
 
-        if (!$isAccountant && !$this->hasPermission('bar_orders', 'view')) {
+        if (! $isAccountant && ! $this->hasPermission('bar_orders', 'view')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -915,7 +929,7 @@ class CounterReconciliationController extends Controller
         $isAccountant = $currentStaff && strtolower($currentStaff->role->name ?? '') === 'accountant';
 
         // Verify waiter belongs to owner (unless accountant)
-        if (!$isAccountant && $waiter->user_id !== $ownerId) {
+        if (! $isAccountant && $waiter->user_id !== $ownerId) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -939,7 +953,7 @@ class CounterReconciliationController extends Controller
             ->where('waiter_id', $waiter->id);
 
         // If not accountant, filter by owner
-        if (!$isAccountant) {
+        if (! $isAccountant) {
             $ordersQuery->where('user_id', $ownerId);
         }
 
@@ -956,7 +970,7 @@ class CounterReconciliationController extends Controller
 
         return response()->json([
             'success' => true,
-            'orders' => $orders
+            'orders' => $orders,
         ]);
     }
 
@@ -1069,22 +1083,22 @@ class CounterReconciliationController extends Controller
                 'expected_cash' => $cashSales,
                 'actual_cash' => $breakdown['cash'] ?? 0, // Follow lowercase key pattern
                 'digital_revenue' => $digitalSales,
-                'notes' => ($activeShift->notes ? $activeShift->notes . ' | ' : '') . 'Shift closed via handover submission.'
+                'notes' => ($activeShift->notes ? $activeShift->notes.' | ' : '').'Shift closed via handover submission.',
             ]);
         }
 
         // No longer auto-reconciling here.
-        // The Counter Staff MUST explicitly reconcile each waiter in the table 
-        // BEFORE submitting the final handover. This ensures all shortages, 
-        // surpluses, and paid/unpaid statuses are accurately recorded and 
+        // The Counter Staff MUST explicitly reconcile each waiter in the table
+        // BEFORE submitting the final handover. This ensures all shortages,
+        // surpluses, and paid/unpaid statuses are accurately recorded and
         // not overwritten by automatic order matching.
 
         // Send SMS notification to accountant
         try {
-            $smsService = new \App\Services\HandoverSmsService();
+            $smsService = new \App\Services\HandoverSmsService;
             $smsService->sendHandoverSubmissionSms($handover, $ownerId);
         } catch (\Exception $e) {
-            \Log::error('SMS notification failed for handover: ' . $e->getMessage());
+            \Log::error('SMS notification failed for handover: '.$e->getMessage());
         }
 
         return back()->with('success', 'Handover mapped and sent to Accountant successful! Awaiting confirmation.');
@@ -1095,7 +1109,7 @@ class CounterReconciliationController extends Controller
      */
     public function resetReconciliation(WaiterDailyReconciliation $reconciliation)
     {
-        if (!$this->hasPermission('bar_orders', 'edit')) {
+        if (! $this->hasPermission('bar_orders', 'edit')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -1114,13 +1128,14 @@ class CounterReconciliationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Reconciliation reset successfully. Row is now reopened.'
+                'message' => 'Reconciliation reset successfully. Row is now reopened.',
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
-                'error' => 'Failed to reset reconciliation: ' . $e->getMessage()
+                'error' => 'Failed to reset reconciliation: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1151,22 +1166,27 @@ class CounterReconciliationController extends Controller
             }
 
             DB::commit();
+
             return response()->json(['success' => true]);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }
     }
+
     /**
      * Display food reconciliation page (Accountant View)
      */
     public function foodReconciliation(Request $request)
     {
         $currentStaff = $this->getCurrentStaff();
-        if (!$currentStaff) abort(403);
-        
+        if (! $currentStaff) {
+            abort(403);
+        }
+
         $roleSlug = strtolower(trim($currentStaff->role->slug ?? ''));
-        if ($roleSlug !== 'accountant' && !$this->hasPermission('bar_orders', 'view')) {
+        if ($roleSlug !== 'accountant' && ! $this->hasPermission('bar_orders', 'view')) {
             abort(403, 'Permission denied.');
         }
 
@@ -1189,8 +1209,8 @@ class CounterReconciliationController extends Controller
                 ->where('handover_type', 'accountant_to_owner')
                 ->whereDate('handover_date', $previousHandover->handover_date)
                 ->exists();
-            
-            if (!$wasSubmittedToBoss) {
+
+            if (! $wasSubmittedToBoss) {
                 // If not submitted to boss, the net physical cash from that day is our opening for today
                 $prevBreakdown = $previousHandover->payment_breakdown ?? [];
                 $prevExpensesTotal = collect($prevBreakdown['attributed_expenses'] ?? [])->sum('amount');
@@ -1210,21 +1230,21 @@ class CounterReconciliationController extends Controller
                 })
                     // OR orders today check
                     ->orWhereHas('orders', function ($q) use ($date, $location) {
-                    $q->whereDate('created_at', $date)
-                        ->whereHas('kitchenOrderItems', function($sq) {
-                            $sq->where('status', '!=', 'cancelled');
-                        });
-                    if ($location && $location !== 'all') {
-                        $q->whereHas('table', function ($sq) use ($location) {
-                            $sq->where('location', $location);
-                        });
-                    }
-                })
+                        $q->whereDate('created_at', $date)
+                            ->whereHas('kitchenOrderItems', function ($sq) {
+                                $sq->where('status', '!=', 'cancelled');
+                            });
+                        if ($location && $location !== 'all') {
+                            $q->whereHas('table', function ($sq) use ($location) {
+                                $sq->where('location', $location);
+                            });
+                        }
+                    })
                     // OR daily reconciliations check
                     ->orWhereHas('dailyReconciliations', function ($q) use ($date) {
-                    $q->where('reconciliation_date', $date)
-                        ->where('reconciliation_type', 'food');
-                });
+                        $q->where('reconciliation_date', $date)
+                            ->where('reconciliation_type', 'food');
+                    });
             })
             ->when($location && $location !== 'all', function ($q) use ($location) {
                 $q->where('location_branch', $location);
@@ -1234,7 +1254,7 @@ class CounterReconciliationController extends Controller
                     ->where('reconciliation_type', 'food');
             }])
             ->get()
-            ->map(function ($waiter) use ($ownerId, $date, $location) {
+            ->map(function ($waiter) use ($date, $location) {
                 // Get orders for this waiter and date
                 $orders = BarOrder::where('waiter_id', $waiter->id)
                     ->whereDate('created_at', $date)
@@ -1242,6 +1262,9 @@ class CounterReconciliationController extends Controller
                         $q->whereHas('table', function ($sq) use ($location) {
                             $sq->where('location', $location);
                         });
+                    })
+                    ->whereHas('kitchenOrderItems', function ($sq) {
+                        $sq->where('status', '!=', 'cancelled');
                     })
                     ->with(['items', 'kitchenOrderItems', 'orderPayments'])
                     ->where('status', '!=', 'cancelled')
@@ -1260,11 +1283,11 @@ class CounterReconciliationController extends Controller
                     if ($orderFood > 0) {
                         $foodSales += $orderFood;
                         $foodOrdersCount++;
-                        
+
                         if ($orderTotal > 0) {
-                           $share = $orderFood / $orderTotal;
-                           $cashCollected += $order->orderPayments->where('payment_method', 'cash')->sum('amount') * $share;
-                           $digitalCollected += $order->orderPayments->where('payment_method', '!=', 'cash')->sum('amount') * $share;
+                            $share = $orderFood / $orderTotal;
+                            $cashCollected += $order->orderPayments->where('payment_method', 'cash')->sum('amount') * $share;
+                            $digitalCollected += $order->orderPayments->where('payment_method', '!=', 'cash')->sum('amount') * $share;
                         }
                     }
                 }
@@ -1274,9 +1297,9 @@ class CounterReconciliationController extends Controller
                 $recordedAmount = $cashCollected + $digitalCollected;
 
                 // Difference
-                $difference = ($submittedAmount > 0 || $reconciliation) 
-                    ? ($submittedAmount - (float)$foodSales) 
-                    : ($recordedAmount - (float)$foodSales);
+                $difference = ($submittedAmount > 0 || $reconciliation)
+                    ? ($submittedAmount - (float) $foodSales)
+                    : ($recordedAmount - (float) $foodSales);
 
                 return [
                     'waiter' => $waiter,
@@ -1289,7 +1312,7 @@ class CounterReconciliationController extends Controller
                     'difference' => $difference,
                     'status' => $reconciliation ? $reconciliation->status : 'pending',
                     'reconciliation' => $reconciliation,
-                    'platform_totals' => ['cash' => $cashCollected, 'mobile' => $digitalCollected]
+                    'platform_totals' => ['cash' => $cashCollected, 'mobile' => $digitalCollected],
                 ];
             });
 
@@ -1316,19 +1339,19 @@ class CounterReconciliationController extends Controller
         $dummyChef = \App\Models\Staff::firstOrCreate(
             ['role_id' => $chefRole->id, 'user_id' => $ownerId],
             [
-                'full_name' => 'John Chef', 
+                'full_name' => 'John Chef',
                 'staff_id' => \App\Models\Staff::generateStaffId($ownerId),
-                'phone_number' => '0777777777', 
-                'email' => 'chef@example.com', 
-                'is_active' => true, 
+                'phone_number' => '0777777777',
+                'email' => 'chef@example.com',
+                'is_active' => true,
                 'salary_paid' => 0.00,
-                'password' => bcrypt('password')
+                'password' => bcrypt('password'),
             ]
         );
 
         // Get ONLY Chef Staff as requested
         $chefs = Staff::where('user_id', $ownerId)
-            ->whereHas('role', function($q) {
+            ->whereHas('role', function ($q) {
                 $q->where('slug', 'chef')->orWhere('name', 'LIKE', '%chef%');
             })
             ->where('is_active', true)
@@ -1337,17 +1360,17 @@ class CounterReconciliationController extends Controller
         $chef = $chefs->first();
 
         $totalFoodSalesToday = $foodShiftClosedForToday ? 0 : $waiters->sum('food_sales');
-        
+
         // Ledger check
         $ledger = DailyCashLedger::where('user_id', $ownerId)
             ->whereDate('ledger_date', $date)
             ->first();
 
         return view('bar.counter.reconciliation-food', compact(
-            'waiters', 
-            'date', 
-            'currentStaff', 
-            'chefHandover', 
+            'waiters',
+            'date',
+            'currentStaff',
+            'chefHandover',
             'totalFoodSalesToday',
             'foodShiftClosedForToday',
             'chefs',
@@ -1367,14 +1390,29 @@ class CounterReconciliationController extends Controller
         $orders = BarOrder::where('waiter_id', $waiter->id)
             ->where('user_id', $ownerId)
             ->whereDate('created_at', $date)
-            ->whereHas('kitchenOrderItems')
+            ->whereHas('kitchenOrderItems', function ($sq) {
+                $sq->where('status', '!=', 'cancelled');
+            })
             ->with(['items.productVariant.product', 'kitchenOrderItems.extras', 'table', 'orderPayments', 'paidByWaiter'])
             ->orderBy('created_at', 'desc')
-            ->get();
+            ->get()
+            ->map(function ($order) {
+                $activeKitchenItems = $order->kitchenOrderItems
+                    ->where('status', '!=', 'cancelled')
+                    ->values();
+
+                $order->setRelation('kitchenOrderItems', $activeKitchenItems);
+
+                return $order;
+            })
+            ->filter(function ($order) {
+                return $order->kitchenOrderItems->isNotEmpty();
+            })
+            ->values();
 
         return response()->json([
             'success' => true,
-            'orders' => $orders
+            'orders' => $orders,
         ]);
     }
 
@@ -1387,7 +1425,7 @@ class CounterReconciliationController extends Controller
             'waiter_id' => 'required|exists:staff,id',
             'date' => 'required|date',
             'submitted_amount' => 'required|numeric|min:0',
-            'notes' => 'nullable|string'
+            'notes' => 'nullable|string',
         ]);
 
         $ownerId = $this->getOwnerId();
@@ -1399,6 +1437,10 @@ class CounterReconciliationController extends Controller
             // Logic to calculate food sales (repeated from dashboard for security)
             $orders = BarOrder::where('waiter_id', $waiter->id)
                 ->whereDate('created_at', $date)
+                ->whereHas('kitchenOrderItems', function ($sq) {
+                    $sq->where('status', '!=', 'cancelled');
+                })
+                ->with(['items', 'kitchenOrderItems', 'orderPayments'])
                 ->where('status', '!=', 'cancelled')
                 ->get();
 
@@ -1426,7 +1468,7 @@ class CounterReconciliationController extends Controller
                     'user_id' => $ownerId,
                     'waiter_id' => $waiter->id,
                     'reconciliation_date' => $date,
-                    'reconciliation_type' => 'food'
+                    'reconciliation_type' => 'food',
                 ],
                 [
                     'total_sales' => $foodSales,
@@ -1437,22 +1479,24 @@ class CounterReconciliationController extends Controller
                     'difference' => $validated['submitted_amount'] - $foodSales,
                     'status' => 'reconciled',
                     'submitted_at' => now(),
-                    'notes' => $validated['notes']
+                    'notes' => $validated['notes'],
                 ]
             );
 
             // Send Waiter SMS notifying them their food money was reconciled
             try {
-                $smsService = new \App\Services\HandoverSmsService();
+                $smsService = new \App\Services\HandoverSmsService;
                 $smsService->sendWaiterVerificationSms($reconciliation);
             } catch (\Exception $e) {
-                \Log::error('Failed to send Waiter Food Verification SMS: ' . $e->getMessage());
+                \Log::error('Failed to send Waiter Food Verification SMS: '.$e->getMessage());
             }
 
             DB::commit();
+
             return response()->json(['success' => true]);
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
@@ -1465,7 +1509,7 @@ class CounterReconciliationController extends Controller
         $validated = $request->validate([
             'reconciliation_id' => 'required|exists:waiter_daily_reconciliations,id',
             'amount' => 'required|numeric|min:0',
-            'notes' => 'nullable|string'
+            'notes' => 'nullable|string',
         ]);
 
         $reconciliation = \App\Models\WaiterDailyReconciliation::findOrFail($validated['reconciliation_id']);
@@ -1474,25 +1518,25 @@ class CounterReconciliationController extends Controller
         DB::beginTransaction();
         try {
             $amount = floatval($validated['amount']);
-            
+
             // 1. Update the reconciliation record
             // Add the paid amount to submitted_amount (and cash_collected)
             $reconciliation->submitted_amount += $amount;
-            $reconciliation->cash_collected += $amount; 
+            $reconciliation->cash_collected += $amount;
             $reconciliation->difference = $reconciliation->submitted_amount - $reconciliation->expected_amount;
-            
+
             // If difference is now 0 (or positive), mark as reconciled
             if (abs($reconciliation->difference) < 0.1) {
                 $reconciliation->status = 'reconciled';
             }
-            
+
             // Add to audit trail in notes
             $oldNotes = json_decode($reconciliation->notes, true) ?: [];
             $oldNotes['settlements'][] = [
                 'amount' => $amount,
                 'date' => now()->toDateTimeString(),
                 'recorded_by' => auth()->user()->name ?? 'Accountant',
-                'staff_note' => $validated['notes'] ?? 'Shortage settled'
+                'staff_note' => $validated['notes'] ?? 'Shortage settled',
             ];
             $reconciliation->notes = json_encode($oldNotes);
             $reconciliation->save();
@@ -1505,11 +1549,11 @@ class CounterReconciliationController extends Controller
             );
 
             $ledger->total_cash_received += $amount;
-            
+
             // Re-calculate expected closing
             $totalExpenses = $ledger->expenses()->sum('amount');
             $ledger->expected_closing_cash = floatval($ledger->opening_cash) + floatval($ledger->total_cash_received) + floatval($ledger->total_digital_received) - $totalExpenses;
-            
+
             $ledger->save();
 
             // 3. Update Financial Handover if it exists (for Kitchen Master History accuracy)
@@ -1519,7 +1563,7 @@ class CounterReconciliationController extends Controller
                 ->where('department', $reconciliation->reconciliation_type === 'food' ? 'food' : 'bar')
                 ->where('handover_type', 'staff_to_accountant')
                 ->first();
-            
+
             if ($handover) {
                 $handover->amount += $amount;
                 $pBreakdown = $handover->payment_breakdown;
@@ -1536,12 +1580,13 @@ class CounterReconciliationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Shortage settled successfully! Cash added to vault and reflected in accounts.'
+                'message' => 'Shortage settled successfully! Cash added to vault and reflected in accounts.',
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Shortage Settlement Error: ' . $e->getMessage());
-            return response()->json(['error' => 'An internal error occurred: ' . $e->getMessage()], 500);
+            \Log::error('Shortage Settlement Error: '.$e->getMessage());
+
+            return response()->json(['error' => 'An internal error occurred: '.$e->getMessage()], 500);
         }
     }
 }

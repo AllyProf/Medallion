@@ -5,14 +5,15 @@ namespace App\Http\Controllers\Bar;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\HandlesStaffPermissions;
 use App\Models\BarOrder;
-use App\Models\Staff;
-use App\Models\ProductVariant;
-use App\Models\StockLocation;
-use App\Models\StockTransfer;
-use App\Models\OrderItem;
-use App\Models\StockMovement;
-use App\Models\KitchenOrderItem;
 use App\Models\FoodItem;
+use App\Models\KitchenOrderItem;
+use App\Models\OrderItem;
+use App\Models\ProductVariant;
+use App\Models\Staff;
+use App\Models\StockLocation;
+use App\Models\StockMovement;
+use App\Models\StockTransfer;
+use App\Models\TransferSale;
 use App\Services\TransferSaleService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -28,12 +29,12 @@ class CounterController extends Controller
     public function waiterOrders(Request $request)
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'view')) {
+        if (! $this->hasPermission('bar_orders', 'view')) {
             abort(403, 'You do not have permission to view waiter orders.');
         }
 
         $ownerId = $this->getOwnerId();
-        
+
         $search = $request->get('search');
         $waiter_id = $request->get('waiter_id');
         $status = $request->get('status');
@@ -41,16 +42,20 @@ class CounterController extends Controller
         // Get all orders from waiters with filters
         $ordersQuery = BarOrder::where('user_id', $ownerId)
             ->whereNotNull('waiter_id')
+            ->whereHas('items')
             ->with(['waiter', 'items.productVariant.product', 'table', 'paidByWaiter', 'orderPayments'])
             ->orderBy('created_at', 'desc');
 
         if ($search) {
-            $ordersQuery->where(function($q) use ($search) {
+            $ordersQuery->where(function ($q) use ($search) {
                 $q->where('order_number', 'LIKE', "%{$search}%")
-                  ->orWhere('customer_name', 'LIKE', "%{$search}%")
-                  ->orWhereHas('items', function($sq) use ($search) {
-                      $sq->where('product_name', 'LIKE', "%{$search}%");
-                  });
+                    ->orWhere('customer_name', 'LIKE', "%{$search}%")
+                    ->orWhereHas('items', function ($sq) use ($search) {
+                        $sq->where('product_name', 'LIKE', "%{$search}%");
+                    })
+                    ->orWhereHas('kitchenOrderItems', function ($sq) use ($search) {
+                        $sq->where('food_item_name', 'LIKE', "%{$search}%");
+                    });
             });
         }
 
@@ -67,11 +72,13 @@ class CounterController extends Controller
         // Get order counts by status (total, ignoring search filters for overview)
         $pendingCount = BarOrder::where('user_id', $ownerId)
             ->whereNotNull('waiter_id')
+            ->whereHas('items')
             ->where('status', 'pending')
             ->count();
 
         $servedCount = BarOrder::where('user_id', $ownerId)
             ->whereNotNull('waiter_id')
+            ->whereHas('items')
             ->where('status', 'served')
             ->where('payment_status', 'pending')
             ->count();
@@ -79,7 +86,7 @@ class CounterController extends Controller
         // Get all waiters for filter dropdown
         $waiters = Staff::where('user_id', $ownerId)
             ->where('is_active', true)
-            ->whereHas('role', function($query) {
+            ->whereHas('role', function ($query) {
                 $query->where('name', 'Waiter');
             })
             ->get();
@@ -93,7 +100,7 @@ class CounterController extends Controller
     public function updateOrderStatus(Request $request, BarOrder $order)
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'edit')) {
+        if (! $this->hasPermission('bar_orders', 'edit')) {
             return response()->json(['error' => 'You do not have permission to update orders.'], 403);
         }
 
@@ -109,15 +116,18 @@ class CounterController extends Controller
 
         DB::beginTransaction();
         try {
-            $updateData = ['status' => $validated['status']];
-            
-            // Add cancellation reason to notes if provided
-            if ($validated['status'] === 'cancelled' && !empty($validated['reason'])) {
-                $cancelReason = 'CANCELLED - Reason: ' . $validated['reason'];
-                $updateData['notes'] = ($order->notes ? $order->notes . ' | ' : '') . $cancelReason;
+            if ($validated['status'] === 'cancelled') {
+                $message = $this->handleCounterCancellation($order, $ownerId, $validated['reason'] ?? null);
+                DB::commit();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'order' => $order->fresh()->load(['waiter', 'items.productVariant.product', 'table']),
+                ]);
             }
 
-            $order->update($updateData);
+            $order->update(['status' => $validated['status']]);
 
             if ($validated['status'] === 'served') {
                 $order->update([
@@ -128,141 +138,145 @@ class CounterController extends Controller
                 // Deduct stock from counter when order is marked as served
                 // Only deduct if stock hasn't been deducted for the specific item
                 $order->load('items.productVariant');
-                
-                $transferSaleService = new TransferSaleService();
+
+                $transferSaleService = new TransferSaleService;
                 $currentUser = $this->getCurrentUser();
 
                 foreach ($order->items as $orderItem) {
                     // Skip if this is a food item (handled by chef) or already served
-                    if (!$orderItem->productVariant || !$orderItem->productVariant->product || $orderItem->is_served) {
+                    if (! $orderItem->productVariant || ! $orderItem->productVariant->product || $orderItem->is_served) {
                         continue;
                     }
 
-                        // Get counter stock for this variant
-                        $counterStock = StockLocation::where('user_id', $ownerId)
+                    // Get counter stock for this variant
+                    $counterStock = StockLocation::where('user_id', $ownerId)
+                        ->where('product_variant_id', $orderItem->product_variant_id)
+                        ->where('location', 'counter')
+                        ->first();
+
+                    if (! $counterStock) {
+                        Log::warning("Counter stock not found for variant {$orderItem->product_variant_id} when serving order {$order->id}");
+
+                        continue;
+                    }
+
+                    // Handle stock deduction based on sell type
+                    if (($orderItem->sell_type ?? 'unit') === 'tot') {
+                        $variant = $orderItem->productVariant;
+                        $totsPerBottle = $variant->total_tots ?: 1;
+                        $totsNeeded = $orderItem->quantity;
+
+                        // 1. Check for open bottles
+                        $openBottle = \App\Models\OpenBottle::where('user_id', $ownerId)
                             ->where('product_variant_id', $orderItem->product_variant_id)
-                            ->where('location', 'counter')
                             ->first();
 
-                        if (!$counterStock) {
-                            Log::warning("Counter stock not found for variant {$orderItem->product_variant_id} when serving order {$order->id}");
-                            continue;
-                        }
-
-                        // Handle stock deduction based on sell type
-                        if (($orderItem->sell_type ?? 'unit') === 'tot') {
-                            $variant = $orderItem->productVariant;
-                            $totsPerBottle = $variant->total_tots ?: 1;
-                            $totsNeeded = $orderItem->quantity;
-                            
-                            // 1. Check for open bottles
-                            $openBottle = \App\Models\OpenBottle::where('user_id', $ownerId)
-                                ->where('product_variant_id', $orderItem->product_variant_id)
-                                ->first();
-                                
-                            if ($openBottle) {
-                                if ($openBottle->tots_remaining >= $totsNeeded) {
-                                    // Current open bottle is enough
-                                    $openBottle->decrement('tots_remaining', $totsNeeded);
-                                    if ($openBottle->tots_remaining <= 0) {
-                                        $openBottle->delete();
-                                    }
-                                    $totsNeeded = 0;
-                                } else {
-                                    // Use up current open bottle, then need more
-                                    $totsNeeded -= $openBottle->tots_remaining;
+                        if ($openBottle) {
+                            if ($openBottle->tots_remaining >= $totsNeeded) {
+                                // Current open bottle is enough
+                                $openBottle->decrement('tots_remaining', $totsNeeded);
+                                if ($openBottle->tots_remaining <= 0) {
                                     $openBottle->delete();
                                 }
+                                $totsNeeded = 0;
+                            } else {
+                                // Use up current open bottle, then need more
+                                $totsNeeded -= $openBottle->tots_remaining;
+                                $openBottle->delete();
                             }
-                            
-                            // 2. Open new bottles if needed
-                            while ($totsNeeded > 0) {
-                                if ($counterStock->quantity < 1) {
-                                    DB::rollBack();
-                                    return response()->json([
-                                        'error' => "Insufficient stock for {$variant->product->name}. No bottles left to open for shots.",
-                                    ], 400);
-                                }
-                                
-                                // Open one bottle
-                                $counterStock->decrement('quantity', 1);
-                                
-                                if ($totsNeeded >= $totsPerBottle) {
-                                    $totsNeeded -= $totsPerBottle;
-                                } else {
-                                    // Bottle has remaining tots
-                                    \App\Models\OpenBottle::create([
-                                        'user_id' => $ownerId,
-                                        'product_variant_id' => $variant->id,
-                                        'tots_remaining' => $totsPerBottle - $totsNeeded,
-                                    ]);
-                                    $totsNeeded = 0;
-                                }
+                        }
 
-                                // Record bottle opening as a internal movement or note
-                                StockMovement::create([
-                                    'user_id' => $ownerId,
-                                    'product_variant_id' => $variant->id,
-                                    'movement_type' => 'usage',
-                                    'from_location' => 'counter',
-                                    'to_location' => null,
-                                    'quantity' => 1,
-                                    'unit_price' => $orderItem->unit_price,
-                                    'reference_type' => BarOrder::class,
-                                    'reference_id' => $order->id,
-                                    'created_by' => $currentUser ? $currentUser->id : null,
-                                    'notes' => 'Bottle opened for shots: ' . $order->order_number,
-                                ]);
-                            }
-                        } else {
-                            // Standard unit/bottle deduction
-                            if ($counterStock->quantity < $orderItem->quantity) {
+                        // 2. Open new bottles if needed
+                        while ($totsNeeded > 0) {
+                            if ($counterStock->quantity < 1) {
                                 DB::rollBack();
+
                                 return response()->json([
-                                    'error' => "Insufficient stock for {$orderItem->productVariant->product->name}. Available: {$counterStock->quantity}, Required: {$orderItem->quantity}",
+                                    'error' => "Insufficient stock for {$variant->product->name}. No bottles left to open for shots.",
                                 ], 400);
                             }
 
-                            $counterStock->decrement('quantity', $orderItem->quantity);
+                            // Open one bottle
+                            $counterStock->decrement('quantity', 1);
 
-                            // Record stock movement
+                            if ($totsNeeded >= $totsPerBottle) {
+                                $totsNeeded -= $totsPerBottle;
+                            } else {
+                                // Bottle has remaining tots
+                                \App\Models\OpenBottle::create([
+                                    'user_id' => $ownerId,
+                                    'product_variant_id' => $variant->id,
+                                    'tots_remaining' => $totsPerBottle - $totsNeeded,
+                                ]);
+                                $totsNeeded = 0;
+                            }
+
+                            // Record bottle opening as a internal movement or note
                             StockMovement::create([
                                 'user_id' => $ownerId,
-                                'product_variant_id' => $orderItem->product_variant_id,
-                                'movement_type' => 'sale',
+                                'product_variant_id' => $variant->id,
+                                'movement_type' => 'usage',
                                 'from_location' => 'counter',
                                 'to_location' => null,
-                                'quantity' => $orderItem->quantity,
+                                'quantity' => 1,
                                 'unit_price' => $orderItem->unit_price,
                                 'reference_type' => BarOrder::class,
                                 'reference_id' => $order->id,
                                 'created_by' => $currentUser ? $currentUser->id : null,
-                                'notes' => 'Order served: ' . $order->order_number,
+                                'notes' => 'Bottle opened for shots: '.$order->order_number,
                             ]);
                         }
+                    } else {
+                        // Standard unit/bottle deduction
+                        if ($counterStock->quantity < $orderItem->quantity) {
+                            DB::rollBack();
 
-                        // Attribute sale to transfers using FIFO
-                        $transferSaleService->attributeSaleToTransfer($orderItem, $ownerId);
+                            return response()->json([
+                                'error' => "Insufficient stock for {$orderItem->productVariant->product->name}. Available: {$counterStock->quantity}, Required: {$orderItem->quantity}",
+                            ], 400);
+                        }
 
-                        // Mark item as served to prevent double deduction
-                        $orderItem->update(['is_served' => true]);
+                        $counterStock->decrement('quantity', $orderItem->quantity);
+
+                        // Record stock movement
+                        StockMovement::create([
+                            'user_id' => $ownerId,
+                            'product_variant_id' => $orderItem->product_variant_id,
+                            'movement_type' => 'sale',
+                            'from_location' => 'counter',
+                            'to_location' => null,
+                            'quantity' => $orderItem->quantity,
+                            'unit_price' => $orderItem->unit_price,
+                            'reference_type' => BarOrder::class,
+                            'reference_id' => $order->id,
+                            'created_by' => $currentUser ? $currentUser->id : null,
+                            'notes' => 'Order served: '.$order->order_number,
+                        ]);
                     }
+
+                    // Attribute sale to transfers using FIFO
+                    $transferSaleService->attributeSaleToTransfer($orderItem, $ownerId);
+
+                    // Mark item as served to prevent double deduction
+                    $orderItem->update(['is_served' => true]);
                 }
+            }
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => $validated['status'] === 'served' 
-                    ? 'Order marked as served. Stock has been deducted from counter.' 
+                'message' => $validated['status'] === 'served'
+                    ? 'Order marked as served. Stock has been deducted from counter.'
                     : 'Order status updated successfully',
                 'order' => $order->load(['waiter', 'items.productVariant.product', 'table']),
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Failed to update order status: ' . $e->getMessage());
+            \Log::error('Failed to update order status: '.$e->getMessage());
+
             return response()->json([
-                'error' => 'Failed to update order status: ' . $e->getMessage(),
+                'error' => 'Failed to update order status: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -273,7 +287,7 @@ class CounterController extends Controller
     public function markAsPaid(Request $request, BarOrder $order)
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'edit')) {
+        if (! $this->hasPermission('bar_orders', 'edit')) {
             return response()->json(['error' => 'You do not have permission to mark orders as paid.'], 403);
         }
 
@@ -283,7 +297,7 @@ class CounterController extends Controller
         }
 
         $validated = $request->validate([
-            'paid_amount' => 'required|numeric|min:0|max:' . $order->total_amount,
+            'paid_amount' => 'required|numeric|min:0|max:'.$order->total_amount,
             'waiter_id' => 'nullable|exists:staff,id', // Waiter who collected payment (optional for customer orders)
         ]);
 
@@ -315,7 +329,7 @@ class CounterController extends Controller
     public function getOrdersByStatus(Request $request)
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'view')) {
+        if (! $this->hasPermission('bar_orders', 'view')) {
             return response()->json(['error' => 'You do not have permission to view orders.'], 403);
         }
 
@@ -324,6 +338,7 @@ class CounterController extends Controller
 
         $query = BarOrder::where('user_id', $ownerId)
             ->whereNotNull('waiter_id')
+            ->whereHas('items')
             ->with(['waiter', 'items.productVariant.product', 'table', 'paidByWaiter']);
 
         if ($status !== 'all') {
@@ -344,7 +359,7 @@ class CounterController extends Controller
     public function getLatestOrders(Request $request)
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'view')) {
+        if (! $this->hasPermission('bar_orders', 'view')) {
             return response()->json(['error' => 'You do not have permission to view orders.'], 403);
         }
 
@@ -354,19 +369,21 @@ class CounterController extends Controller
         // Get new orders (pending status only for announcements)
         $newOrders = BarOrder::where('user_id', $ownerId)
             ->whereNotNull('waiter_id')
+            ->whereHas('items')
             ->where('status', 'pending')
             ->where('id', '>', $lastOrderId)
             ->with(['waiter', 'items.productVariant.product', 'table'])
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(function($order) {
+            ->map(function ($order) {
                 return [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
                     'waiter_name' => $order->waiter ? $order->waiter->full_name : 'N/A',
                     'table_number' => $order->table ? $order->table->table_number : null,
-                    'items' => $order->items->map(function($item) {
+                    'items' => $order->items->map(function ($item) {
                         $productName = $item->productVariant->product->name ?? 'N/A';
+
                         return [
                             'name' => $productName,
                             'quantity' => $item->quantity,
@@ -395,7 +412,7 @@ class CounterController extends Controller
     public function dashboard()
     {
         // Check permission - allow both bar_orders and inventory permissions
-        if (!$this->hasPermission('bar_orders', 'view') && !$this->hasPermission('inventory', 'view')) {
+        if (! $this->hasPermission('bar_orders', 'view') && ! $this->hasPermission('inventory', 'view')) {
             abort(403, 'You do not have permission to access counter dashboard.');
         }
 
@@ -418,27 +435,27 @@ class CounterController extends Controller
             ->sum('total_amount');
 
         // Get counter stock statistics
-        $counterStockItems = ProductVariant::whereHas('product', function($query) use ($ownerId) {
+        $counterStockItems = ProductVariant::whereHas('product', function ($query) use ($ownerId) {
             $query->where('user_id', $ownerId);
         })
-        ->whereHas('stockLocations', function($query) use ($ownerId) {
-            $query->where('user_id', $ownerId)->where('location', 'counter')->where('quantity', '>', 0);
-        })
-        ->count();
+            ->whereHas('stockLocations', function ($query) use ($ownerId) {
+                $query->where('user_id', $ownerId)->where('location', 'counter')->where('quantity', '>', 0);
+            })
+            ->count();
 
         // Get low stock threshold from settings
-        $lowStockThreshold = \App\Models\SystemSetting::get('low_stock_threshold_' . $ownerId, 10);
-        
-        $lowStockItems = ProductVariant::whereHas('product', function($query) use ($ownerId) {
+        $lowStockThreshold = \App\Models\SystemSetting::get('low_stock_threshold_'.$ownerId, 10);
+
+        $lowStockItems = ProductVariant::whereHas('product', function ($query) use ($ownerId) {
             $query->where('user_id', $ownerId);
         })
-        ->whereHas('stockLocations', function($query) use ($ownerId, $lowStockThreshold) {
-            $query->where('user_id', $ownerId)
-                  ->where('location', 'counter')
-                  ->where('quantity', '>', 0)
-                  ->where('quantity', '<', $lowStockThreshold);
-        })
-        ->count();
+            ->whereHas('stockLocations', function ($query) use ($ownerId, $lowStockThreshold) {
+                $query->where('user_id', $ownerId)
+                    ->where('location', 'counter')
+                    ->where('quantity', '>', 0)
+                    ->where('quantity', '<', $lowStockThreshold);
+            })
+            ->count();
 
         // Get pending stock transfer requests (transfers requested by counter/owner)
         // Since transfers are always warehouse to counter, we count all pending transfers
@@ -447,59 +464,60 @@ class CounterController extends Controller
             ->count();
 
         // Get warehouse stock statistics
-        $warehouseStockItems = ProductVariant::whereHas('product', function($query) use ($ownerId) {
+        $warehouseStockItems = ProductVariant::whereHas('product', function ($query) use ($ownerId) {
             $query->where('user_id', $ownerId);
         })
-        ->whereHas('stockLocations', function($query) use ($ownerId) {
-            $query->where('user_id', $ownerId)->where('location', 'warehouse')->where('quantity', '>', 0);
-        })
-        ->count();
+            ->whereHas('stockLocations', function ($query) use ($ownerId) {
+                $query->where('user_id', $ownerId)->where('location', 'warehouse')->where('quantity', '>', 0);
+            })
+            ->count();
 
         // Get low stock threshold from settings
-        $lowStockThreshold = \App\Models\SystemSetting::get('low_stock_threshold_' . $ownerId, 10);
-        $criticalStockThreshold = \App\Models\SystemSetting::get('critical_stock_threshold_' . $ownerId, 5);
-        
+        $lowStockThreshold = \App\Models\SystemSetting::get('low_stock_threshold_'.$ownerId, 10);
+        $criticalStockThreshold = \App\Models\SystemSetting::get('critical_stock_threshold_'.$ownerId, 5);
+
         // Get low stock items (both warehouse and counter)
-        $lowStockItemsList = ProductVariant::whereHas('product', function($query) use ($ownerId) {
+        $lowStockItemsList = ProductVariant::whereHas('product', function ($query) use ($ownerId) {
             $query->where('user_id', $ownerId);
         })
-        ->with(['product', 'stockLocations' => function($query) use ($ownerId) {
-            $query->where('user_id', $ownerId);
-        }])
-        ->get()
-        ->filter(function($variant) use ($lowStockThreshold) {
-            $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
-            $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-            $warehouseQty = $warehouseStock ? $warehouseStock->quantity : 0;
-            $counterQty = $counterStock ? $counterStock->quantity : 0;
-            $totalQty = $warehouseQty + $counterQty;
-            return $totalQty > 0 && $totalQty < $lowStockThreshold;
-        })
-        ->take(10)
-        ->map(function($variant) use ($ownerId, $criticalStockThreshold) {
-            $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
-            $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-            $warehouseQty = $warehouseStock ? $warehouseStock->quantity : 0;
-            $counterQty = $counterStock ? $counterStock->quantity : 0;
-            $totalQty = $warehouseQty + $counterQty;
-            
-            $m = $variant->measurement;
-            if (is_numeric($m) && $m > 0) {
-                $m = ($m < 10) ? $m . 'L' : $m . 'ml';
-            }
-            
-            return [
-                'id' => $variant->id,
-                'product_name' => $variant->display_name ?: $variant->product->name,
-                'variant' => $m,
-                'warehouse_qty' => $warehouseQty,
-                'counter_qty' => $counterQty,
-                'total_qty' => $totalQty,
-                'is_critical' => $totalQty < $criticalStockThreshold,
-                'unit' => $variant->unit ?? 'btl',
-                'packaging' => $variant->packaging ?? 'pkg',
-            ];
-        });
+            ->with(['product', 'stockLocations' => function ($query) use ($ownerId) {
+                $query->where('user_id', $ownerId);
+            }])
+            ->get()
+            ->filter(function ($variant) use ($lowStockThreshold) {
+                $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
+                $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+                $warehouseQty = $warehouseStock ? $warehouseStock->quantity : 0;
+                $counterQty = $counterStock ? $counterStock->quantity : 0;
+                $totalQty = $warehouseQty + $counterQty;
+
+                return $totalQty > 0 && $totalQty < $lowStockThreshold;
+            })
+            ->take(10)
+            ->map(function ($variant) use ($criticalStockThreshold) {
+                $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
+                $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+                $warehouseQty = $warehouseStock ? $warehouseStock->quantity : 0;
+                $counterQty = $counterStock ? $counterStock->quantity : 0;
+                $totalQty = $warehouseQty + $counterQty;
+
+                $m = $variant->measurement;
+                if (is_numeric($m) && $m > 0) {
+                    $m = ($m < 10) ? $m.'L' : $m.'ml';
+                }
+
+                return [
+                    'id' => $variant->id,
+                    'product_name' => $variant->display_name ?: $variant->product->name,
+                    'variant' => $m,
+                    'warehouse_qty' => $warehouseQty,
+                    'counter_qty' => $counterQty,
+                    'total_qty' => $totalQty,
+                    'is_critical' => $totalQty < $criticalStockThreshold,
+                    'unit' => $variant->unit ?? 'btl',
+                    'packaging' => $variant->packaging ?? 'pkg',
+                ];
+            });
 
         // Recent stock transfer requests
         $recentTransferRequests = StockTransfer::where('user_id', $ownerId)
@@ -518,10 +536,10 @@ class CounterController extends Controller
 
         // --- NEW POS DATA FOR COUNTER ---
         // Get all products with counter stock
-        $variants = ProductVariant::whereHas('product', function($query) use ($ownerId) {
+        $variants = ProductVariant::whereHas('product', function ($query) use ($ownerId) {
             $query->where('user_id', $ownerId)
-                  ->where(function($q) {
-                      $q->where('category', 'like', '%beverage%')
+                ->where(function ($q) {
+                    $q->where('category', 'like', '%beverage%')
                         ->orWhere('category', 'like', '%drink%')
                         ->orWhere('category', 'like', '%alcohol%')
                         ->orWhere('category', 'like', '%beer%')
@@ -530,72 +548,80 @@ class CounterController extends Controller
                         ->orWhere('category', 'like', '%water%')
                         ->orWhere('category', 'like', '%soda%')
                         ->orWhere('category', 'like', '%item%');
-                  });
+                });
         })
-        ->with(['product', 'stockLocations' => function($query) use ($ownerId) {
-            $query->where('user_id', $ownerId)
-                  ->where('location', 'counter');
-        }])
-        ->get()
-        ->filter(function($variant) {
-            $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-            return $counterStock && $counterStock->quantity > 0;
-        })
-        ->map(function($variant) {
-            $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-            $category = $variant->product->category ?? '';
-            $isAlcoholic = stripos($category, 'alcoholic') !== false;
-            
-            $portionLabel = (function($cat) {
-                $c = strtolower(trim($cat));
-                if (str_contains($c, 'wine')) return 'Glass';
-                if (str_contains($c, 'spirit') || str_contains($c, 'liquor') || str_contains($c, 'vodka') || str_contains($c, 'whiskey') || str_contains($c, 'gin')) return 'Shot';
-                return 'Tot';
-            })($category);
+            ->with(['product', 'stockLocations' => function ($query) use ($ownerId) {
+                $query->where('user_id', $ownerId)
+                    ->where('location', 'counter');
+            }])
+            ->get()
+            ->filter(function ($variant) {
+                $counterStock = $variant->stockLocations->where('location', 'counter')->first();
 
-            $qty = $counterStock->quantity;
-            $m = $variant->measurement;
-            if (is_numeric($m) && $m > 0) {
-                $m = ($m < 10) ? $m . 'L' : $m . 'ml';
-            }
-            $pkg = $variant->packaging;
-            if (in_array(strtolower($pkg), ['crate', 'carton', 'box', 'pkg', 'case', 'piece', 'pieces', 'pcs', 'unit'])) $pkg = '';
-            
-            $variantStr = trim($m . ($pkg ? ' - ' . $pkg : ''));
-            $product_name = $variant->display_name ?: $variant->product->name;
-            
-            // Hide variant string if it's completely redundant with the display name
-            if ($variantStr && stripos($product_name, $variantStr) !== false) {
-                $variantStr = '';
-            }
+                return $counterStock && $counterStock->quantity > 0;
+            })
+            ->map(function ($variant) {
+                $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+                $category = $variant->product->category ?? '';
+                $isAlcoholic = stripos($category, 'alcoholic') !== false;
 
-            return [
-                'id' => $variant->id,
-                'product_name' => $product_name,
-                'variant_name' => $variant->name,
-                'variant' => $variantStr,
-                'quantity' => $qty,
-                'selling_price' => $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0,
-                'selling_price_per_tot' => $counterStock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0,
-                'can_sell_in_tots' => $variant->can_sell_in_tots,
-                'total_tots' => $variant->total_tots,
-                'items_per_package' => $variant->items_per_package ?? 1,
-                'measurement' => $variant->measurement,
-                'packaging_type' => $variant->packaging ?? 'pkg',
-                'unit' => (in_array(strtolower($variant->unit), ['ml', 'l', 'g', 'kg', 'mls'])) ? 'btl' : ($variant->unit ?? 'btl'),
-                'portion_label' => $portionLabel,
-                'category' => $category,
-                'is_alcoholic' => $isAlcoholic,
-                'product_image' => $variant->product->image ?? null,
-            ];
-        });
+                $portionLabel = (function ($cat) {
+                    $c = strtolower(trim($cat));
+                    if (str_contains($c, 'wine')) {
+                        return 'Glass';
+                    }
+                    if (str_contains($c, 'spirit') || str_contains($c, 'liquor') || str_contains($c, 'vodka') || str_contains($c, 'whiskey') || str_contains($c, 'gin')) {
+                        return 'Shot';
+                    }
+
+                    return 'Tot';
+                })($category);
+
+                $qty = $counterStock->quantity;
+                $m = $variant->measurement;
+                if (is_numeric($m) && $m > 0) {
+                    $m = ($m < 10) ? $m.'L' : $m.'ml';
+                }
+                $pkg = $variant->packaging;
+                if (in_array(strtolower($pkg), ['crate', 'carton', 'box', 'pkg', 'case', 'piece', 'pieces', 'pcs', 'unit'])) {
+                    $pkg = '';
+                }
+
+                $variantStr = trim($m.($pkg ? ' - '.$pkg : ''));
+                $product_name = $variant->display_name ?: $variant->product->name;
+
+                // Hide variant string if it's completely redundant with the display name
+                if ($variantStr && stripos($product_name, $variantStr) !== false) {
+                    $variantStr = '';
+                }
+
+                return [
+                    'id' => $variant->id,
+                    'product_name' => $product_name,
+                    'variant_name' => $variant->name,
+                    'variant' => $variantStr,
+                    'quantity' => $qty,
+                    'selling_price' => $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0,
+                    'selling_price_per_tot' => $counterStock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0,
+                    'can_sell_in_tots' => $variant->can_sell_in_tots,
+                    'total_tots' => $variant->total_tots,
+                    'items_per_package' => $variant->items_per_package ?? 1,
+                    'measurement' => $variant->measurement,
+                    'packaging_type' => $variant->packaging ?? 'pkg',
+                    'unit' => (in_array(strtolower($variant->unit), ['ml', 'l', 'g', 'kg', 'mls'])) ? 'btl' : ($variant->unit ?? 'btl'),
+                    'portion_label' => $portionLabel,
+                    'category' => $category,
+                    'is_alcoholic' => $isAlcoholic,
+                    'product_image' => $variant->product->image ?? null,
+                ];
+            });
 
         // Get all active tables
         $tables = \App\Models\BarTable::where('user_id', $ownerId)
             ->where('is_active', true)
             ->orderBy('table_number')
             ->get()
-            ->map(function($table) {
+            ->map(function ($table) {
                 return [
                     'id' => $table->id,
                     'table_number' => $table->table_number,
@@ -617,13 +643,13 @@ class CounterController extends Controller
 
         // Get completed and served orders (for history view in POS)
         $completedOrders = BarOrder::where('user_id', $ownerId)
-            ->where(function($query) {
+            ->where(function ($query) {
                 $query->where('status', 'served')
-                    ->orWhereHas('kitchenOrderItems', function($q) {
+                    ->orWhereHas('kitchenOrderItems', function ($q) {
                         $q->where('status', 'completed');
                     });
             })
-            ->with(['kitchenOrderItems' => function($query) {
+            ->with(['kitchenOrderItems' => function ($query) {
                 $query->where('status', 'completed')->orderBy('updated_at', 'desc');
             }, 'items.productVariant.product', 'table', 'waiter'])
             ->orderBy('updated_at', 'desc')
@@ -637,12 +663,12 @@ class CounterController extends Controller
             $roleName = strtolower(trim($staff->role->name ?? ''));
             if (in_array($roleName, ['counter', 'bar counter'])) {
                 $bar_shift = $this->getCurrentShift();
-                if (!$bar_shift) {
+                if (! $bar_shift) {
                     return redirect()->route('bar.counter.open-shift');
                 }
             }
         }
-        
+
         $bar_shift = $this->getCurrentShift();
 
         return view('bar.counter.dashboard', compact(
@@ -671,7 +697,9 @@ class CounterController extends Controller
     public function openShift()
     {
         $staff = $this->getCurrentStaff();
-        if (!$staff) return redirect()->route('dashboard');
+        if (! $staff) {
+            return redirect()->route('dashboard');
+        }
 
         // If already has an open shift, redirect to dashboard
         if ($this->getCurrentShift()) {
@@ -679,29 +707,30 @@ class CounterController extends Controller
         }
 
         $ownerId = $this->getOwnerId();
-        
+
         // Get all products with counter stock for verification
-        $counterStockItems = \App\Models\ProductVariant::whereHas('product', function($query) use ($ownerId) {
-                $query->where('user_id', $ownerId);
-            })
-            ->with(['product', 'stockLocations' => function($query) use ($ownerId) {
+        $counterStockItems = \App\Models\ProductVariant::whereHas('product', function ($query) use ($ownerId) {
+            $query->where('user_id', $ownerId);
+        })
+            ->with(['product', 'stockLocations' => function ($query) use ($ownerId) {
                 $query->where('user_id', $ownerId)
-                      ->where('location', 'counter');
+                    ->where('location', 'counter');
             }])
             ->get()
-            ->filter(function($variant) {
+            ->filter(function ($variant) {
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+
                 return $counterStock && $counterStock->quantity > 0;
             })
-            ->map(function($variant) {
+            ->map(function ($variant) {
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-                
+
                 // Logic for measurement unit
                 $mUnit = '';
-                if ($variant->measurement && !preg_match('/[a-zA-Z]/', $variant->measurement)) {
+                if ($variant->measurement && ! preg_match('/[a-zA-Z]/', $variant->measurement)) {
                     // If measurement is purely numeric, try to find unit
                     // Usually beverages are ml or L
-                    $mUnit = (float)$variant->measurement > 10 ? 'ml' : 'L';
+                    $mUnit = (float) $variant->measurement > 10 ? 'ml' : 'L';
                 }
 
                 return [
@@ -709,7 +738,7 @@ class CounterController extends Controller
                     'category' => $variant->product->category ?? 'General',
                     'quantity' => $counterStock->quantity,
                     'quantity_unit' => 'Btl',
-                    'measurement' => $variant->measurement . $mUnit,
+                    'measurement' => $variant->measurement.$mUnit,
                 ];
             });
 
@@ -722,7 +751,9 @@ class CounterController extends Controller
     public function storeShift(Request $request)
     {
         $staff = $this->getCurrentStaff();
-        if (!$staff) return abort(403);
+        if (! $staff) {
+            return abort(403);
+        }
 
         // All fields are now automated or optional
         \App\Models\BarShift::create([
@@ -732,7 +763,7 @@ class CounterController extends Controller
             'opened_at' => now(),
             'status' => 'open',
             'opening_cash' => 0, // Automated to zero as requested
-            'notes' => $request->notes ?? 'Shift opened after stock verification.'
+            'notes' => $request->notes ?? 'Shift opened after stock verification.',
         ]);
 
         return redirect()->route('bar.counter.dashboard')->with('success', 'Shift opened successfully. Good luck!');
@@ -743,7 +774,9 @@ class CounterController extends Controller
      */
     public function closeShift(Request $request, \App\Models\BarShift $shift)
     {
-        if ($shift->user_id !== $this->getOwnerId()) return abort(403);
+        if ($shift->user_id !== $this->getOwnerId()) {
+            return abort(403);
+        }
 
         $validated = $request->validate([
             'actual_cash' => 'required|numeric|min:0',
@@ -764,12 +797,12 @@ class CounterController extends Controller
         $shiftOrders = \App\Models\BarOrder::where('bar_shift_id', $shift->id)
             ->where('status', '!=', 'cancelled')
             ->get();
-            
+
         $cashSales = 0;
         $digitalSales = 0;
-        
+
         foreach ($shiftOrders as $order) {
-            $amt = (float)($order->paid_amount ?: $order->total_amount);
+            $amt = (float) ($order->paid_amount ?: $order->total_amount);
             if (in_array($order->payment_method, ['mobile_money', 'bank_transfer', 'card', 'bank'])) {
                 $digitalSales += $amt;
             } else {
@@ -796,9 +829,9 @@ class CounterController extends Controller
     {
         // Check permission - allow inventory view or stock_transfer view, or counter/stock keeper roles
         $canView = $this->hasPermission('inventory', 'view') || $this->hasPermission('stock_transfer', 'view');
-        
+
         // Allow counter and stock keeper roles even without explicit permission
-        if (!$canView && session('is_staff')) {
+        if (! $canView && session('is_staff')) {
             $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
             if ($staff && $staff->role) {
                 $roleName = strtolower(trim($staff->role->name ?? ''));
@@ -807,40 +840,42 @@ class CounterController extends Controller
                 }
             }
         }
-        
-        if (!$canView) {
+
+        if (! $canView) {
             abort(403, 'You do not have permission to view warehouse stock.');
         }
 
         $ownerId = $this->getOwnerId();
 
-        $variants = ProductVariant::whereHas('product', function($query) use ($ownerId) {
+        $variants = ProductVariant::whereHas('product', function ($query) use ($ownerId) {
             $query->where('user_id', $ownerId)
-                   ->where(function($q) {
-                       $q->where('category', 'like', '%beverage%')
-                         ->orWhere('category', 'like', '%drink%')
-                         ->orWhere('category', 'like', '%alcohol%')
-                         ->orWhere('category', 'like', '%beer%')
-                         ->orWhere('category', 'like', '%wine%')
-                         ->orWhere('category', 'like', '%spirit%')
-                         ->orWhere('category', 'like', '%water%')
-                         ->orWhere('category', 'like', '%soda%')
-                         ->orWhere('category', 'like', '%item%');
-                   });
+                ->where(function ($q) {
+                    $q->where('category', 'like', '%beverage%')
+                        ->orWhere('category', 'like', '%drink%')
+                        ->orWhere('category', 'like', '%alcohol%')
+                        ->orWhere('category', 'like', '%beer%')
+                        ->orWhere('category', 'like', '%wine%')
+                        ->orWhere('category', 'like', '%spirit%')
+                        ->orWhere('category', 'like', '%water%')
+                        ->orWhere('category', 'like', '%soda%')
+                        ->orWhere('category', 'like', '%item%');
+                });
         })
-        ->with(['product', 'stockLocations' => function($query) use ($ownerId) {
-            $query->where('user_id', $ownerId);
-        }])
-        ->get()
-        ->filter(function($variant) {
-            $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
-            return $warehouseStock && $warehouseStock->quantity > 0;
-        });
+            ->with(['product', 'stockLocations' => function ($query) use ($ownerId) {
+                $query->where('user_id', $ownerId);
+            }])
+            ->get()
+            ->filter(function ($variant) {
+                $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
+
+                return $warehouseStock && $warehouseStock->quantity > 0;
+            });
         $variants = ProductVariant::whereIn('id', $variants->pluck('id'))
             ->get()
-            ->map(function($variant) use ($ownerId) {
+            ->map(function ($variant) use ($ownerId) {
                 $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->where('user_id', $ownerId)->first();
                 $counterStock = $variant->stockLocations->where('location', 'counter')->where('user_id', $ownerId)->first();
+
                 return [
                     'id' => $variant->id,
                     'product_name' => $variant->product->name,
@@ -872,7 +907,7 @@ class CounterController extends Controller
     public function stockSheet(Request $request, $location = 'warehouse')
     {
         $ownerId = $this->getOwnerId();
-        
+
         // RESTRICT ACCESS - Counter staff only sees Counter stock sheet
         $staffMember = $this->getCurrentStaff();
         if ($staffMember && $location === 'warehouse') {
@@ -881,51 +916,53 @@ class CounterController extends Controller
                 return redirect()->route('bar.stock-sheet', 'counter')->with('error', 'Unauthorized access to warehouse stock sheet.');
             }
         }
-        
+
         // Basic filtering: warehouse or counter
         // We'll call the general report 'warehouse' by default or 'counter'
 
-        $stockData = ProductVariant::with(['product', 'stockLocations' => function($q) use ($ownerId) {
-                $q->where('user_id', $ownerId);
-            }])
-            ->whereHas('product', fn($q) => $q->where('user_id', $ownerId))
+        $stockData = ProductVariant::with(['product', 'stockLocations' => function ($q) use ($ownerId) {
+            $q->where('user_id', $ownerId);
+        }])
+            ->whereHas('product', fn ($q) => $q->where('user_id', $ownerId))
             ->get()
-            ->map(function ($variant) use ($ownerId) {
+            ->map(function ($variant) {
                 $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
-                $counterStock   = $variant->stockLocations->where('location', 'counter')->first();
+                $counterStock = $variant->stockLocations->where('location', 'counter')->first();
 
-                $warehouseQty = $warehouseStock ? (float)$warehouseStock->quantity : 0;
-                $counterQty   = $counterStock   ? (float)$counterStock->quantity   : 0;
-                $totalQty     = $warehouseQty + $counterQty;
+                $warehouseQty = $warehouseStock ? (float) $warehouseStock->quantity : 0;
+                $counterQty = $counterStock ? (float) $counterStock->quantity : 0;
+                $totalQty = $warehouseQty + $counterQty;
 
-                $itemsPerPkg  = (int)($variant->items_per_package ?? 1);
-                if ($itemsPerPkg <= 0) $itemsPerPkg = 1;
+                $itemsPerPkg = (int) ($variant->items_per_package ?? 1);
+                if ($itemsPerPkg <= 0) {
+                    $itemsPerPkg = 1;
+                }
 
                 // CLEAN SPECIFIC ITEM NAME
                 $displayName = $variant->name ?? $variant->product->name;
                 if (in_array(strtolower($displayName), ['none', 'standard', 'regular', '-', 'default', '', 'standard packaging', 'none packaging'])) {
                     $displayName = $variant->product->name;
                 }
-                
+
                 // If the product name is already in the variant name, simplify
                 if (str_contains($displayName, $variant->product->name) && $displayName != $variant->product->name) {
-                    $displayName = trim(str_replace($variant->product->name, '', $displayName), " -");
+                    $displayName = trim(str_replace($variant->product->name, '', $displayName), ' -');
                 }
 
                 return [
-                    'item_id'         => $variant->id,
-                    'item_name'       => $displayName,
-                    'measurement'     => $variant->measurement ?? '',
-                    'packaging'       => $variant->packaging ?? 'Piece',
-                    'items_per_pkg'   => $itemsPerPkg,
-                    'brand'           => $variant->product->brand ?? '-',
-                    'category'        => $variant->product->category ?? 'General',
-                    'warehouse_qty'   => $warehouseQty,
-                    'counter_qty'     => $counterQty,
-                    'total_in_stock'  => $totalQty,
-                    'unit'            => $variant->unit ?? 'btl',
-                    'buying_price'    => $warehouseStock->average_buying_price  ?? $variant->buying_price_per_unit  ?? 0,
-                    'selling_price'   => $counterStock->selling_price           ?? $variant->selling_price_per_unit ?? 0,
+                    'item_id' => $variant->id,
+                    'item_name' => $displayName,
+                    'measurement' => $variant->measurement ?? '',
+                    'packaging' => $variant->packaging ?? 'Piece',
+                    'items_per_pkg' => $itemsPerPkg,
+                    'brand' => $variant->product->brand ?? '-',
+                    'category' => $variant->product->category ?? 'General',
+                    'warehouse_qty' => $warehouseQty,
+                    'counter_qty' => $counterQty,
+                    'total_in_stock' => $totalQty,
+                    'unit' => $variant->unit ?? 'btl',
+                    'buying_price' => $warehouseStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0,
+                    'selling_price' => $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0,
                 ];
             })
             ->sortBy('item_name')
@@ -933,64 +970,65 @@ class CounterController extends Controller
 
         $owner = \App\Models\User::find($ownerId);
         $staff = $this->getCurrentStaff();
-        
+
         // Find specific staff for Signatures
         $allStaff = \App\Models\Staff::where('user_id', $ownerId)->with('role')->get();
-        $accountant = $allStaff->filter(fn($s) => str_contains(strtolower($s->role->name ?? ''), 'accountant'))->first()?->full_name ?? ($staff && str_contains(strtolower($staff->role->name ?? ''), 'accountant') ? $staff->full_name : 'Authorized Accountant');
-        $stockKeeper = $allStaff->filter(fn($s) => str_contains(strtolower($s->role->name ?? ''), 'keeper') || str_contains(strtolower($s->role->name ?? ''), 'counter'))->first()?->full_name ?? ($staff && str_contains(strtolower($staff->role->name ?? ''), 'keeper') ? $staff->full_name : 'Authorized Warehouse Keeper');
+        $accountant = $allStaff->filter(fn ($s) => str_contains(strtolower($s->role->name ?? ''), 'accountant'))->first()?->full_name ?? ($staff && str_contains(strtolower($staff->role->name ?? ''), 'accountant') ? $staff->full_name : 'Authorized Accountant');
+        $stockKeeper = $allStaff->filter(fn ($s) => str_contains(strtolower($s->role->name ?? ''), 'keeper') || str_contains(strtolower($s->role->name ?? ''), 'counter'))->first()?->full_name ?? ($staff && str_contains(strtolower($staff->role->name ?? ''), 'keeper') ? $staff->full_name : 'Authorized Warehouse Keeper');
 
         $businessName = $owner->business_name ?? 'MauzoLink Bar';
-        $generatedAt  = now()->format('d M Y, H:i');
+        $generatedAt = now()->format('d M Y, H:i');
 
         // Basic Sales Stats for the Header
         $todayStats = [
-            'bottles_sold' => \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId) {
-                                $q->where('user_id', $ownerId)->whereDate('created_at', today());
-                             })->sum('quantity'),
+            'bottles_sold' => \App\Models\OrderItem::whereHas('order', function ($q) use ($ownerId) {
+                $q->where('user_id', $ownerId)->whereDate('created_at', today());
+            })->sum('quantity'),
             'total_revenue' => \App\Models\BarOrder::where('user_id', $ownerId)->whereDate('created_at', today())->where('payment_status', 'paid')->sum('total_amount'),
             'sales_variants' => $stockData->count(),
-            'inventory_items' => $stockData->where('total_in_stock', '>', 0)->count()
+            'inventory_items' => $stockData->where('total_in_stock', '>', 0)->count(),
         ];
 
         // Export CSV if requested
         if ($request->get('export') === 'csv') {
-            $locationRequested = $location; 
-            
-            $filename = "bar_stock_sheet_" . $locationRequested . "_" . date('Y-m-d') . ".csv";
+            $locationRequested = $location;
+
+            $filename = 'bar_stock_sheet_'.$locationRequested.'_'.date('Y-m-d').'.csv';
             $headers = [
                 'Content-Type' => 'text/csv',
-                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+                'Content-Disposition' => 'attachment; filename="'.$filename.'"',
             ];
 
-            $callback = function() use ($stockData, $businessName, $generatedAt, $locationRequested) {
+            $callback = function () use ($stockData, $businessName, $generatedAt, $locationRequested) {
                 $handle = fopen('php://output', 'w');
-                $title = strtoupper($locationRequested) . " STOCK SHEET - $businessName";
+                $title = strtoupper($locationRequested)." STOCK SHEET - $businessName";
                 fputcsv($handle, [$title, "Generated: $generatedAt"]);
                 fputcsv($handle, []);
-                
+
                 if ($locationRequested === 'warehouse') {
                     fputcsv($handle, ['#', 'ITEM NAME', 'VARIANT', 'BRAND', 'CATEGORY', 'QTY IN WAREHOUSE', 'UNIT', 'BUYING PRICE', 'STOCK VALUE (TZS)', 'STATUS']);
-                    $filteredData = $stockData->filter(fn($r) => $r['warehouse_qty'] > 0)->values();
+                    $filteredData = $stockData->filter(fn ($r) => $r['warehouse_qty'] > 0)->values();
                     foreach ($filteredData as $i => $row) {
                         fputcsv($handle, [
-                            $i + 1, $row['item_name'], $row['variant'], $row['brand'], $row['category'], 
-                            $row['warehouse_qty'], $row['unit'], number_format($row['buying_price']), 
-                            number_format($row['warehouse_qty'] * $row['buying_price']), $row['status']
+                            $i + 1, $row['item_name'], $row['variant'], $row['brand'], $row['category'],
+                            $row['warehouse_qty'], $row['unit'], number_format($row['buying_price']),
+                            number_format($row['warehouse_qty'] * $row['buying_price']), $row['status'],
                         ]);
                     }
                 } else {
                     fputcsv($handle, ['#', 'ITEM NAME', 'VARIANT', 'BRAND', 'CATEGORY', 'QTY AT COUNTER', 'UNIT', 'SELLING PRICE', 'STOCK VALUE (TZS)', 'STATUS']);
-                    $filteredData = $stockData->filter(fn($r) => $r['counter_qty'] > 0)->values();
+                    $filteredData = $stockData->filter(fn ($r) => $r['counter_qty'] > 0)->values();
                     foreach ($filteredData as $i => $row) {
                         fputcsv($handle, [
-                            $i + 1, $row['item_name'], $row['variant'], $row['brand'], $row['category'], 
-                            $row['counter_qty'], $row['unit'], number_format($row['selling_price']), 
-                            number_format($row['counter_qty'] * $row['selling_price']), $row['status']
+                            $i + 1, $row['item_name'], $row['variant'], $row['brand'], $row['category'],
+                            $row['counter_qty'], $row['unit'], number_format($row['selling_price']),
+                            number_format($row['counter_qty'] * $row['selling_price']), $row['status'],
                         ]);
                     }
                 }
                 fclose($handle);
             };
+
             return response()->stream($callback, 200, $headers);
         }
 
@@ -1004,9 +1042,9 @@ class CounterController extends Controller
     {
         // Check permission - allow inventory view or stock_transfer view, or counter/stock keeper roles
         $canView = $this->hasPermission('inventory', 'view') || $this->hasPermission('stock_transfer', 'view');
-        
+
         // Allow counter and stock keeper roles even without explicit permission
-        if (!$canView && session('is_staff')) {
+        if (! $canView && session('is_staff')) {
             $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
             if ($staff && $staff->role) {
                 $roleName = strtolower(trim($staff->role->name ?? ''));
@@ -1015,8 +1053,8 @@ class CounterController extends Controller
                 }
             }
         }
-        
-        if (!$canView) {
+
+        if (! $canView) {
             abort(403, 'You do not have permission to view counter stock.');
         }
 
@@ -1028,52 +1066,58 @@ class CounterController extends Controller
             ->pluck('product_variant_id');
 
         $variants = ProductVariant::whereIn('id', $counterVariantIds)
-            ->whereHas('product', function($query) use ($ownerId) {
+            ->whereHas('product', function ($query) use ($ownerId) {
                 $query->where('user_id', $ownerId);
             })
-            ->with(['product', 'stockLocations' => function($query) use ($ownerId) {
+            ->with(['product', 'stockLocations' => function ($query) use ($ownerId) {
                 $query->where('user_id', $ownerId)->where('location', 'counter');
             }])
             ->get()
-            ->map(function($variant) {
-                $counterStock    = $variant->stockLocations->where('location', 'counter')->first();
+            ->map(function ($variant) {
+                $counterStock = $variant->stockLocations->where('location', 'counter')->first();
                 $itemsPerPackage = $variant->items_per_package ?? 1;
-                $packaging       = $variant->packaging ?? 'Package';
-                $quantity        = $counterStock ? $counterStock->quantity : 0;
-                $packages        = $itemsPerPackage > 1 ? floor($quantity / $itemsPerPackage) : 0;
-                $remainingBottles= $itemsPerPackage > 1 ? ($quantity % $itemsPerPackage) : $quantity;
+                $packaging = $variant->packaging ?? 'Package';
+                $quantity = $counterStock ? $counterStock->quantity : 0;
+                $packages = $itemsPerPackage > 1 ? floor($quantity / $itemsPerPackage) : 0;
+                $remainingBottles = $itemsPerPackage > 1 ? ($quantity % $itemsPerPackage) : $quantity;
 
                 // Normalize Category
                 $cat = $variant->product->category ?? 'General';
                 $c = strtolower(trim($cat));
-                if (str_contains($c, 'water')) $cat = 'Water';
-                elseif (str_contains($c, 'soda') || str_contains($c, 'soft drink')) $cat = 'Soft Drinks';
-                elseif (str_contains($c, 'juice')) $cat = 'Juice';
-                elseif (str_contains($c, 'beer') || str_contains($c, 'spirit') || str_contains($c, 'wine') || str_contains($c, 'liquor')) $cat = 'Bar Drinks';
-                else $cat = ucwords($c);
+                if (str_contains($c, 'water')) {
+                    $cat = 'Water';
+                } elseif (str_contains($c, 'soda') || str_contains($c, 'soft drink')) {
+                    $cat = 'Soft Drinks';
+                } elseif (str_contains($c, 'juice')) {
+                    $cat = 'Juice';
+                } elseif (str_contains($c, 'beer') || str_contains($c, 'spirit') || str_contains($c, 'wine') || str_contains($c, 'liquor')) {
+                    $cat = 'Bar Drinks';
+                } else {
+                    $cat = ucwords($c);
+                }
 
                 return [
-                    'id'                   => $variant->id,
-                    'product_name'         => $variant->product->name,
-                    'variant_name'         => $variant->name,
-                    'product_image'        => $variant->product->image,
-                    'brand'                => $variant->product->brand ?? 'N/A',
-                    'category'             => $cat,
-                    'variant'              => $variant->measurement,
-                    'quantity'             => $quantity,
-                    'items_per_package'    => $itemsPerPackage,
-                    'packaging'            => $packaging,
-                    'packages'             => $packages,
-                    'remaining_bottles'    => $remainingBottles,
-                    'selling_price'        => $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0,
-                    'selling_price_per_tot'=> $counterStock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0,
-                    'can_sell_in_tots'     => $variant->can_sell_in_tots && ($variant->total_tots > 0),
-                    'buying_price'         => $counterStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0,
-                    'is_low_stock'         => $quantity < 10,
-                    'unit'                 => $variant->unit ?? 'btl',
+                    'id' => $variant->id,
+                    'product_name' => $variant->product->name,
+                    'variant_name' => $variant->name,
+                    'product_image' => $variant->product->image,
+                    'brand' => $variant->product->brand ?? 'N/A',
+                    'category' => $cat,
+                    'variant' => $variant->measurement,
+                    'quantity' => $quantity,
+                    'items_per_package' => $itemsPerPackage,
+                    'packaging' => $packaging,
+                    'packages' => $packages,
+                    'remaining_bottles' => $remainingBottles,
+                    'selling_price' => $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0,
+                    'selling_price_per_tot' => $counterStock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0,
+                    'can_sell_in_tots' => $variant->can_sell_in_tots && ($variant->total_tots > 0),
+                    'buying_price' => $counterStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0,
+                    'is_low_stock' => $quantity < 10,
+                    'unit' => $variant->unit ?? 'btl',
                 ];
             })
-            ->filter(fn($v) => $v['quantity'] > 0) // Only items with actual counter stock
+            ->filter(fn ($v) => $v['quantity'] > 0) // Only items with actual counter stock
             ->values();
 
         $totalValue = 0; // Hidden for counter staff confidentiality
@@ -1081,13 +1125,16 @@ class CounterController extends Controller
         // Final Filters from Processed items
         $categories = $variants->pluck('category')->unique()->sort()->values();
         $brands = $variants->pluck('brand')->unique()
-            ->filter(fn($b) => stripos($b, 'bonite') === false)
-            ->filter(function($brand) use ($categories) {
+            ->filter(fn ($b) => stripos($b, 'bonite') === false)
+            ->filter(function ($brand) use ($categories) {
                 $b = strtolower(trim($brand ?? ''));
                 foreach ($categories as $cat) {
                     $c = strtolower(trim($cat));
-                    if ($b === $c || str_contains($b, $c) || str_contains($c, $b)) return false;
+                    if ($b === $c || str_contains($b, $c) || str_contains($c, $b)) {
+                        return false;
+                    }
                 }
+
                 return true;
             })
             ->sort()->values();
@@ -1095,14 +1142,13 @@ class CounterController extends Controller
         return view('bar.counter.counter-stock', compact('variants', 'totalValue', 'categories', 'brands'));
     }
 
-
     /**
      * Request Stock Transfer from Warehouse
      */
     public function requestStockTransfer(Request $request)
     {
         // Check permission
-        if (!$this->hasPermission('stock_transfer', 'create')) {
+        if (! $this->hasPermission('stock_transfer', 'create')) {
             return response()->json(['error' => 'You do not have permission to request stock transfers.'], 403);
         }
 
@@ -1117,13 +1163,13 @@ class CounterController extends Controller
 
         DB::beginTransaction();
         try {
-            $variant = ProductVariant::with(['product', 'stockLocations' => function($query) use ($ownerId) {
+            $variant = ProductVariant::with(['product', 'stockLocations' => function ($query) use ($ownerId) {
                 $query->where('user_id', $ownerId);
             }])->findOrFail($validated['variant_id']);
 
             $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
-            
-            if (!$warehouseStock || $warehouseStock->quantity < ($validated['quantity_requested'] * ($variant->items_per_package ?? 1))) {
+
+            if (! $warehouseStock || $warehouseStock->quantity < ($validated['quantity_requested'] * ($variant->items_per_package ?? 1))) {
                 throw new \Exception("Insufficient warehouse stock for {$variant->product->name}");
             }
 
@@ -1135,7 +1181,7 @@ class CounterController extends Controller
 
             // Get owner user ID
             $ownerUser = $this->getCurrentUser();
-            
+
             // Create stock transfer request
             $transfer = StockTransfer::create([
                 'user_id' => $ownerId,
@@ -1158,6 +1204,7 @@ class CounterController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -1171,7 +1218,7 @@ class CounterController extends Controller
     public function analytics()
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'view')) {
+        if (! $this->hasPermission('bar_orders', 'view')) {
             abort(403, 'You do not have permission to view analytics.');
         }
 
@@ -1191,43 +1238,44 @@ class CounterController extends Controller
             ->get();
 
         // Get top selling products
-        $topProducts = OrderItem::whereHas('order', function($query) use ($ownerId) {
+        $topProducts = OrderItem::whereHas('order', function ($query) use ($ownerId) {
             $query->where('user_id', $ownerId)
-                  ->where('payment_status', 'paid')
-                  ->where('created_at', '>=', now()->subDays(30));
+                ->where('payment_status', 'paid')
+                ->where('created_at', '>=', now()->subDays(30));
         })
-        ->select(
-            'product_variant_id',
-            DB::raw('SUM(quantity) as total_quantity'),
-            DB::raw('SUM(total_price) as total_revenue')
-        )
-        ->groupBy('product_variant_id')
-        ->orderBy('total_quantity', 'desc')
-        ->limit(10)
-        ->with('productVariant.product')
-        ->get();
+            ->select(
+                'product_variant_id',
+                DB::raw('SUM(quantity) as total_quantity'),
+                DB::raw('SUM(total_price) as total_revenue')
+            )
+            ->groupBy('product_variant_id')
+            ->orderBy('total_quantity', 'desc')
+            ->limit(10)
+            ->with('productVariant.product')
+            ->get();
 
         // Calculate expected revenue (based on counter stock)
-        $counterStock = ProductVariant::whereHas('product', function($query) use ($ownerId) {
+        $counterStock = ProductVariant::whereHas('product', function ($query) use ($ownerId) {
             $query->where('user_id', $ownerId);
         })
-        ->whereHas('stockLocations', function($query) use ($ownerId) {
-            $query->where('user_id', $ownerId)->where('location', 'counter')->where('quantity', '>', 0);
-        })
-        ->with(['product', 'stockLocations' => function($query) use ($ownerId) {
-            $query->where('user_id', $ownerId)->where('location', 'counter');
-        }])
-        ->get()
-        ->map(function($variant) {
-            $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-            $sellingPrice = $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0;
-            return [
-                'product_name' => $variant->product->name,
-                'quantity' => $counterStock->quantity,
-                'selling_price' => $sellingPrice,
-                'potential_revenue' => $counterStock->quantity * $sellingPrice,
-            ];
-        });
+            ->whereHas('stockLocations', function ($query) use ($ownerId) {
+                $query->where('user_id', $ownerId)->where('location', 'counter')->where('quantity', '>', 0);
+            })
+            ->with(['product', 'stockLocations' => function ($query) use ($ownerId) {
+                $query->where('user_id', $ownerId)->where('location', 'counter');
+            }])
+            ->get()
+            ->map(function ($variant) {
+                $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+                $sellingPrice = $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0;
+
+                return [
+                    'product_name' => $variant->product->name,
+                    'quantity' => $counterStock->quantity,
+                    'selling_price' => $sellingPrice,
+                    'potential_revenue' => $counterStock->quantity * $sellingPrice,
+                ];
+            });
 
         $expectedRevenue = $counterStock->sum('potential_revenue');
 
@@ -1259,7 +1307,7 @@ class CounterController extends Controller
     public function customerOrders()
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'view')) {
+        if (! $this->hasPermission('bar_orders', 'view')) {
             abort(403, 'You do not have permission to view customer orders.');
         }
 
@@ -1298,7 +1346,7 @@ class CounterController extends Controller
     public function stockTransferRequests()
     {
         // Check permission
-        if (!$this->hasPermission('stock_transfer', 'view')) {
+        if (! $this->hasPermission('stock_transfer', 'view')) {
             abort(403, 'You do not have permission to view stock transfer requests.');
         }
 
@@ -1318,7 +1366,7 @@ class CounterController extends Controller
     public function recordVoice()
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'view')) {
+        if (! $this->hasPermission('bar_orders', 'view')) {
             abort(403, 'You do not have permission to record voice announcements.');
         }
 
@@ -1331,7 +1379,7 @@ class CounterController extends Controller
     public function saveVoiceClip(Request $request)
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'view')) {
+        if (! $this->hasPermission('bar_orders', 'view')) {
             return response()->json(['error' => 'You do not have permission.'], 403);
         }
 
@@ -1355,7 +1403,7 @@ class CounterController extends Controller
         try {
             $audioBinary = null;
             $extension = 'webm';
-            
+
             // Check if it's a file upload or base64
             if ($request->hasFile('audio_file')) {
                 // Handle file upload
@@ -1363,17 +1411,17 @@ class CounterController extends Controller
                 $extension = $file->getClientOriginalExtension();
                 // Validate extension
                 $allowedExtensions = ['mp3', 'wav', 'ogg', 'webm', 'm4a', 'aac'];
-                if (!in_array(strtolower($extension), $allowedExtensions)) {
+                if (! in_array(strtolower($extension), $allowedExtensions)) {
                     return response()->json([
                         'success' => false,
-                        'error' => 'Invalid file format. Allowed: ' . implode(', ', $allowedExtensions),
+                        'error' => 'Invalid file format. Allowed: '.implode(', ', $allowedExtensions),
                     ], 400);
                 }
                 $audioBinary = file_get_contents($file->getRealPath());
             } else {
                 // Handle base64 audio
                 $audioData = $request->input('audio');
-                
+
                 // Extract MIME type and data from data URI
                 if (preg_match('/data:audio\/([^;]+);base64,(.+)/', $audioData, $matches)) {
                     $extension = $matches[1]; // e.g., webm, mp3, wav
@@ -1389,11 +1437,11 @@ class CounterController extends Controller
                         }
                     }
                 }
-                
+
                 $audioBinary = base64_decode($audioData);
             }
 
-            if (!$audioBinary) {
+            if (! $audioBinary) {
                 return response()->json([
                     'success' => false,
                     'error' => 'Invalid audio data',
@@ -1401,16 +1449,16 @@ class CounterController extends Controller
             }
 
             // Generate filename with proper extension
-            $filename = time() . '_' . uniqid() . '.' . $extension;
+            $filename = time().'_'.uniqid().'.'.$extension;
             $directory = public_path('storage/voice-clips');
-            
+
             // Create directory if it doesn't exist
-            if (!file_exists($directory)) {
+            if (! file_exists($directory)) {
                 mkdir($directory, 0755, true);
             }
 
             // Save audio file
-            $filePath = $directory . '/' . $filename;
+            $filePath = $directory.'/'.$filename;
             file_put_contents($filePath, $audioBinary);
 
             // Save to database
@@ -1418,7 +1466,7 @@ class CounterController extends Controller
                 'user_id' => $ownerId,
                 'name' => $validated['name'],
                 'category' => $validated['category'],
-                'audio_path' => 'voice-clips/' . $filename,
+                'audio_path' => 'voice-clips/'.$filename,
             ]);
 
             return response()->json([
@@ -1430,7 +1478,7 @@ class CounterController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'error' => 'Failed to save voice clip: ' . $e->getMessage(),
+                'error' => 'Failed to save voice clip: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1441,7 +1489,7 @@ class CounterController extends Controller
     public function getVoiceClips()
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'view')) {
+        if (! $this->hasPermission('bar_orders', 'view')) {
             return response()->json(['error' => 'You do not have permission.'], 403);
         }
 
@@ -1450,12 +1498,12 @@ class CounterController extends Controller
         $clips = \App\Models\VoiceClip::where('user_id', $ownerId)
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(function($clip) {
+            ->map(function ($clip) {
                 return [
                     'id' => $clip->id,
                     'name' => $clip->name,
                     'category' => $clip->category,
-                    'audio_url' => asset('storage/' . $clip->audio_path),
+                    'audio_url' => asset('storage/'.$clip->audio_path),
                     'created_at' => $clip->created_at->format('M d, Y H:i'),
                 ];
             });
@@ -1472,7 +1520,7 @@ class CounterController extends Controller
     public function updateVoiceClip(Request $request, $id)
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'view')) {
+        if (! $this->hasPermission('bar_orders', 'view')) {
             return response()->json(['error' => 'You do not have permission.'], 403);
         }
 
@@ -1483,7 +1531,7 @@ class CounterController extends Controller
             ->where('user_id', $ownerId)
             ->first();
 
-        if (!$clip) {
+        if (! $clip) {
             return response()->json(['error' => 'Voice clip not found.'], 404);
         }
 
@@ -1505,7 +1553,7 @@ class CounterController extends Controller
         try {
             $audioBinary = null;
             $extension = pathinfo($clip->audio_path, PATHINFO_EXTENSION); // Keep original extension if no new audio
-            
+
             // Check if it's a file upload or base64
             if ($request->hasFile('audio_file')) {
                 // Handle file upload
@@ -1513,17 +1561,17 @@ class CounterController extends Controller
                 $extension = $file->getClientOriginalExtension();
                 // Validate extension
                 $allowedExtensions = ['mp3', 'wav', 'ogg', 'webm', 'm4a', 'aac'];
-                if (!in_array(strtolower($extension), $allowedExtensions)) {
+                if (! in_array(strtolower($extension), $allowedExtensions)) {
                     return response()->json([
                         'success' => false,
-                        'error' => 'Invalid file format. Allowed: ' . implode(', ', $allowedExtensions),
+                        'error' => 'Invalid file format. Allowed: '.implode(', ', $allowedExtensions),
                     ], 400);
                 }
                 $audioBinary = file_get_contents($file->getRealPath());
-            } else if ($request->has('audio')) {
+            } elseif ($request->has('audio')) {
                 // Handle base64 audio
                 $audioData = $request->input('audio');
-                
+
                 // Extract MIME type and data from data URI
                 if (preg_match('/data:audio\/([^;]+);base64,(.+)/', $audioData, $matches)) {
                     $extension = $matches[1]; // e.g., webm, mp3, wav
@@ -1539,7 +1587,7 @@ class CounterController extends Controller
                         }
                     }
                 }
-                
+
                 $audioBinary = base64_decode($audioData);
             }
 
@@ -1554,26 +1602,26 @@ class CounterController extends Controller
             // If new audio provided, replace the file
             if ($audioBinary) {
                 // Delete old audio file
-                $oldFilePath = public_path('storage/' . $clip->audio_path);
+                $oldFilePath = public_path('storage/'.$clip->audio_path);
                 if (file_exists($oldFilePath)) {
                     @unlink($oldFilePath);
                 }
 
                 // Generate new filename with proper extension
-                $filename = time() . '_' . uniqid() . '.' . $extension;
+                $filename = time().'_'.uniqid().'.'.$extension;
                 $directory = public_path('storage/voice-clips');
-                
+
                 // Create directory if it doesn't exist
-                if (!file_exists($directory)) {
+                if (! file_exists($directory)) {
                     mkdir($directory, 0755, true);
                 }
 
                 // Save new audio file
-                $filePath = $directory . '/' . $filename;
+                $filePath = $directory.'/'.$filename;
                 file_put_contents($filePath, $audioBinary);
 
                 // Update audio path
-                $clip->audio_path = 'voice-clips/' . $filename;
+                $clip->audio_path = 'voice-clips/'.$filename;
             }
 
             $clip->save();
@@ -1587,7 +1635,7 @@ class CounterController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'error' => 'Failed to update voice clip: ' . $e->getMessage(),
+                'error' => 'Failed to update voice clip: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -1598,7 +1646,7 @@ class CounterController extends Controller
     public function deleteVoiceClip($id)
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'view')) {
+        if (! $this->hasPermission('bar_orders', 'view')) {
             return response()->json(['error' => 'You do not have permission.'], 403);
         }
 
@@ -1608,12 +1656,12 @@ class CounterController extends Controller
             ->where('user_id', $ownerId)
             ->first();
 
-        if (!$clip) {
+        if (! $clip) {
             return response()->json(['error' => 'Voice clip not found.'], 404);
         }
 
         // Delete audio file
-        $filePath = public_path('storage/' . $clip->audio_path);
+        $filePath = public_path('storage/'.$clip->audio_path);
         if (file_exists($filePath)) {
             @unlink($filePath);
         }
@@ -1633,20 +1681,20 @@ class CounterController extends Controller
     public function createOrder(Request $request)
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'create')) {
+        if (! $this->hasPermission('bar_orders', 'create')) {
             return response()->json(['error' => 'You do not have permission to create orders.'], 403);
         }
 
         $ownerId = $this->getOwnerId();
         $staff = $this->getCurrentStaff();
-        
-        if (!$staff || !$staff->is_active) {
+
+        if (! $staff || ! $staff->is_active) {
             return response()->json(['error' => 'Unauthorized'], 401);
         }
 
         // REQUIRE ACTIVE SHIFT
         $activeShift = $this->getCurrentShift();
-        if (!$activeShift) {
+        if (! $activeShift) {
             return response()->json(['error' => 'Please open a shift before creating orders.'], 403);
         }
 
@@ -1659,12 +1707,12 @@ class CounterController extends Controller
             'customer_phone' => 'nullable|string|max:20',
             'order_notes' => 'nullable|string|max:1000',
         ]);
-        
+
         DB::beginTransaction();
         try {
             $existingOrderId = $request->input('existing_order_id');
             $existingOrder = $existingOrderId ? BarOrder::find($existingOrderId) : null;
-            
+
             // Calculate total and prepare items
             $totalAmount = 0;
             $orderItems = [];
@@ -1674,11 +1722,11 @@ class CounterController extends Controller
             foreach ($request->input('items') as $item) {
                 // Handle food items
                 if (isset($item['food_item_id']) && $item['food_item_id'] !== null) {
-                    $unitPrice = (float)$item['price'];
-                    $quantity = (int)$item['quantity'];
+                    $unitPrice = (float) $item['price'];
+                    $quantity = (int) $item['quantity'];
                     $itemTotal = $quantity * $unitPrice;
                     $totalAmount += $itemTotal;
-                    
+
                     $kitchenOrderItems[] = [
                         'food_item_id' => $item['food_item_id'],
                         'food_item_name' => $item['product_name'] ?? 'Food Item',
@@ -1689,29 +1737,32 @@ class CounterController extends Controller
                         'special_instructions' => $item['notes'] ?? null,
                         'status' => 'pending',
                     ];
-                    
-                    $foodItemNote = $quantity . 'x ' . ($item['product_name'] ?? 'Food Item') . 
-                                   (isset($item['variant_name']) && $item['variant_name'] ? ' (' . $item['variant_name'] . ')' : '') . 
-                                   ' - Tsh ' . number_format($unitPrice, 0);
-                    
+
+                    $foodItemNote = $quantity.'x '.($item['product_name'] ?? 'Food Item').
+                                   (isset($item['variant_name']) && $item['variant_name'] ? ' ('.$item['variant_name'].')' : '').
+                                   ' - Tsh '.number_format($unitPrice, 0);
+
                     if (isset($item['notes']) && $item['notes']) {
-                        $foodItemNote .= ' [Note: ' . $item['notes'] . ']';
+                        $foodItemNote .= ' [Note: '.$item['notes'].']';
                     }
-                    
+
                     $foodItemsNotes[] = $foodItemNote;
+
                     continue;
                 }
-                
+
                 // Handle Regular product variants (drinks)
-                if (!isset($item['variant_id'])) continue;
+                if (! isset($item['variant_id'])) {
+                    continue;
+                }
 
                 $sellType = $item['sell_type'] ?? 'unit';
-                $variant = ProductVariant::with(['product', 'stockLocations' => function($query) use ($ownerId) {
+                $variant = ProductVariant::with(['product', 'stockLocations' => function ($query) use ($ownerId) {
                     $query->where('user_id', $ownerId)->where('location', 'counter');
                 }])->findOrFail($item['variant_id']);
 
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-                if (!$counterStock) {
+                if (! $counterStock) {
                     throw new \Exception("Counter stock not found for {$variant->product->name}");
                 }
 
@@ -1721,9 +1772,9 @@ class CounterController extends Controller
                     $openBottle = \App\Models\OpenBottle::where('user_id', $ownerId)
                         ->where('product_variant_id', $variant->id)
                         ->first();
-                    
+
                     $totalTotsAvailable = ($counterStock->quantity * $totsPerBottle) + ($openBottle ? $openBottle->tots_remaining : 0);
-                    
+
                     if ($totalTotsAvailable < $item['quantity']) {
                         throw new \Exception("Insufficient shots for {$variant->product->name}. [Available: {$totalTotsAvailable}]");
                     }
@@ -1733,7 +1784,7 @@ class CounterController extends Controller
                     }
                 }
 
-                $sellingPrice = $sellType === 'tot' 
+                $sellingPrice = $sellType === 'tot'
                     ? ($counterStock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0)
                     : ($counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0);
 
@@ -1748,22 +1799,22 @@ class CounterController extends Controller
                     'total_price' => $itemTotal,
                 ];
             }
-            
+
             // Build order notes
             $notesParts = [];
-            if (!empty($foodItemsNotes)) {
-                $notesParts[] = 'FOOD ITEMS: ' . implode(', ', $foodItemsNotes);
+            if (! empty($foodItemsNotes)) {
+                $notesParts[] = 'FOOD ITEMS: '.implode(', ', $foodItemsNotes);
             }
-            if (!empty($validated['order_notes'])) {
-                $notesParts[] = 'ORDER NOTES: ' . $validated['order_notes'];
+            if (! empty($validated['order_notes'])) {
+                $notesParts[] = 'ORDER NOTES: '.$validated['order_notes'];
             }
             $newNotes = implode(' | ', $notesParts);
 
-            if ($existingOrder && !in_array($existingOrder->status, ['cancelled', 'voided', 'rejected'])) {
+            if ($existingOrder && ! in_array($existingOrder->status, ['cancelled', 'voided', 'rejected'])) {
                 // UPDATE EXISTING (active) ORDER
                 $existingOrder->total_amount += $totalAmount;
-                if (!empty($newNotes)) {
-                    $existingOrder->notes = ($existingOrder->notes ? $existingOrder->notes . ' | ' : '') . $newNotes;
+                if (! empty($newNotes)) {
+                    $existingOrder->notes = ($existingOrder->notes ? $existingOrder->notes.' | ' : '').$newNotes;
                 }
                 // If it was served, revert back to pending to process the new items
                 if ($existingOrder->status === 'served' || $existingOrder->status === 'completed') {
@@ -1776,25 +1827,25 @@ class CounterController extends Controller
                 // CREATE NEW ORDER (also when existingOrder is cancelled/voided)
                 $orderNumber = BarOrder::generateOrderNumber($ownerId);
                 $order = BarOrder::create([
-                    'user_id'        => $ownerId,
-                    'order_number'   => $orderNumber,
-                    'waiter_id'      => $staff->id,
-                    'order_source'   => 'counter',
-                    'table_id'       => $validated['table_id'] ?? null,
-                    'customer_name'  => $validated['customer_name'] ?? null,
+                    'user_id' => $ownerId,
+                    'order_number' => $orderNumber,
+                    'waiter_id' => $staff->id,
+                    'order_source' => 'counter',
+                    'table_id' => $validated['table_id'] ?? null,
+                    'customer_name' => $validated['customer_name'] ?? null,
                     'customer_phone' => $validated['customer_phone'] ?? null,
-                    'status'         => 'pending',
+                    'status' => 'pending',
                     'payment_status' => 'pending',
-                    'total_amount'   => $totalAmount,
-                    'paid_amount'    => 0,
-                    'notes'          => $newNotes,
-                    'bar_shift_id'   => $activeShift->id,
+                    'total_amount' => $totalAmount,
+                    'paid_amount' => 0,
+                    'notes' => $newNotes,
+                    'bar_shift_id' => $activeShift->id,
                 ]);
                 $message = 'Order created successfully';
             }
 
             // Create items and attribute via service
-            $transferSaleService = new \App\Services\TransferSaleService();
+            $transferSaleService = new \App\Services\TransferSaleService;
             foreach ($orderItems as $item) {
                 $orderItem = OrderItem::create([
                     'order_id' => $order->id,
@@ -1831,6 +1882,7 @@ class CounterController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json(['success' => false, 'error' => $e->getMessage()], 400);
         }
     }
@@ -1841,7 +1893,7 @@ class CounterController extends Controller
     public function cancelOrder(Request $request, BarOrder $order)
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'edit')) {
+        if (! $this->hasPermission('bar_orders', 'edit')) {
             return response()->json(['error' => 'You do not have permission to cancel orders.'], 403);
         }
 
@@ -1860,20 +1912,17 @@ class CounterController extends Controller
 
         DB::beginTransaction();
         try {
-            $order->status = 'cancelled';
-            $cancelReason = !empty($validated['reason']) ? 'CANCELLED - Reason: ' . $validated['reason'] : 'CANCELLED';
-            $order->notes = ($order->notes ? $order->notes . ' | ' : '') . $cancelReason;
-            $order->save();
-
+            $message = $this->handleCounterCancellation($order, $ownerId, $validated['reason'] ?? null);
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Order cancelled successfully'
+                'message' => $message,
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => 'Failed to cancel order: ' . $e->getMessage()], 500);
+
+            return response()->json(['error' => 'Failed to cancel order: '.$e->getMessage()], 500);
         }
     }
 
@@ -1883,7 +1932,7 @@ class CounterController extends Controller
     public function recordPayment(Request $request, BarOrder $order)
     {
         // Check permission
-        if (!$this->hasPermission('bar_orders', 'edit')) {
+        if (! $this->hasPermission('bar_orders', 'edit')) {
             return response()->json(['error' => 'You do not have permission.'], 403);
         }
 
@@ -1902,16 +1951,16 @@ class CounterController extends Controller
         try {
             $staff = $this->getCurrentStaff();
             $activeShift = $this->getCurrentShift();
-            
-            if (!$activeShift) {
+
+            if (! $activeShift) {
                 return response()->json(['error' => 'Please open a shift before recording payments.'], 403);
             }
-            
+
             // Map the frontend 'bank' string to the database enum 'bank_transfer'
             $paymentMethod = $validated['payment_method'] === 'bank' ? 'bank_transfer' : $validated['payment_method'];
-            
+
             $remainingBalance = $order->total_amount - $order->paid_amount;
-            
+
             // If already fully paid, don't record another payment
             if ($remainingBalance <= 0) {
                 return response()->json(['error' => 'This order is already fully paid.'], 400);
@@ -1946,23 +1995,27 @@ class CounterController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => 'Failed to record payment: ' . $e->getMessage()], 500);
+
+            return response()->json(['error' => 'Failed to record payment: '.$e->getMessage()], 500);
         }
     }
+
     /**
      * View Shift History
      */
     public function shiftHistory()
     {
         $staff = $this->getCurrentStaff();
-        if (!$staff) return redirect()->route('dashboard');
+        if (! $staff) {
+            return redirect()->route('dashboard');
+        }
 
         $ownerId = $this->getOwnerId();
-        
+
         // Get shifts for this owner, specifically for this staff member (if applicable)
         $shifts = \App\Models\BarShift::where('user_id', $ownerId)
             ->where('staff_id', $staff->id)
-            ->with(['orders' => function($q) {
+            ->with(['orders' => function ($q) {
                 $q->where('status', '!=', 'cancelled');
             }])
             ->orderBy('opened_at', 'desc')
@@ -1974,7 +2027,7 @@ class CounterController extends Controller
             if (($shift->status === 'closed' && $shift->expected_cash == 0 && $shift->digital_revenue == 0) || $shift->status === 'open') {
                 // Not summarized correctly? Let's check both linked and unlinked during that timeframe
                 $shiftOrders = $shift->orders;
-                
+
                 if ($shiftOrders->isEmpty() || $shift->status === 'open') {
                     // Try to find unlinked orders during this timeframe or refresh open shift data
                     $shiftOrders = \App\Models\BarOrder::where('user_id', $ownerId)
@@ -1987,7 +2040,7 @@ class CounterController extends Controller
                 $cashSales = 0;
                 $digitalSales = 0;
                 foreach ($shiftOrders as $order) {
-                    $amt = (float)($order->paid_amount ?: $order->total_amount);
+                    $amt = (float) ($order->paid_amount ?: $order->total_amount);
                     if (in_array($order->payment_method, ['mobile_money', 'bank_transfer', 'card', 'bank'])) {
                         $digitalSales += $amt;
                     } else {
@@ -2000,5 +2053,99 @@ class CounterController extends Controller
         }
 
         return view('bar.counter.shift-history', compact('shifts', 'staff'));
+    }
+
+    /**
+     * Counter cancel: if active kitchen food remains, only remove drink lines and keep the ticket open.
+     * Otherwise fully cancel the order (drinks + kitchen).
+     */
+    protected function handleCounterCancellation(BarOrder $order, int $ownerId, ?string $reason): string
+    {
+        $order->load(['items', 'kitchenOrderItems']);
+
+        $hadDrinks = $order->items->isNotEmpty();
+        $hasActiveFood = $order->kitchenOrderItems->contains(function (KitchenOrderItem $k) {
+            return ! in_array($k->status, ['cancelled', 'completed'], true);
+        });
+
+        if ($hadDrinks && $hasActiveFood) {
+            $this->stripBarItemsFromOrder($order, $ownerId);
+            $suffix = 'BAR LINES VOIDED AT COUNTER'.($reason ? ' — '.$reason : '');
+            $order->notes = $order->notes ? $order->notes.' | '.$suffix : $suffix;
+            $order->save();
+
+            return 'Drink lines removed at counter. Food items on this ticket stay active for the kitchen.';
+        }
+
+        if ($hadDrinks) {
+            $this->stripBarItemsFromOrder($order, $ownerId);
+        }
+
+        $order->status = 'cancelled';
+        $suffix = $reason ? 'CANCELLED - Reason: '.$reason : 'CANCELLED';
+        $order->notes = $order->notes ? $order->notes.' | '.$suffix : $suffix;
+        $order->save();
+
+        $order->kitchenOrderItems()->whereNotIn('status', ['completed'])->update(['status' => 'cancelled']);
+
+        return 'Order cancelled.';
+    }
+
+    /**
+     * Remove all bar order lines with the same stock / transfer-sale rules as waiter full cancel.
+     */
+    protected function stripBarItemsFromOrder(BarOrder $order, int $ownerId): void
+    {
+        $order->load('items');
+        if ($order->items->isEmpty()) {
+            return;
+        }
+
+        $itemIds = $order->items->pluck('id');
+        $removedTotal = (float) $order->items->sum('total_price');
+
+        $affectedTransferIds = TransferSale::whereIn('order_item_id', $itemIds)
+            ->pluck('stock_transfer_id')
+            ->unique()
+            ->filter();
+
+        $transferSaleService = new TransferSaleService;
+
+        foreach ($order->items as $item) {
+            if (! $item->product_variant_id || ! $item->is_served) {
+                continue;
+            }
+
+            $counterStock = StockLocation::where('user_id', $order->user_id)
+                ->where('product_variant_id', $item->product_variant_id)
+                ->where('location', 'counter')
+                ->first();
+
+            if (! $counterStock) {
+                continue;
+            }
+
+            if (($item->sell_type ?? 'unit') === 'unit') {
+                $counterStock->increment('quantity', $item->quantity);
+            }
+        }
+
+        TransferSale::whereIn('order_item_id', $itemIds)->delete();
+        foreach ($affectedTransferIds as $transferId) {
+            $transfer = StockTransfer::find($transferId);
+            if ($transfer) {
+                $transferSaleService->checkTransferCompletion($transfer, $order->user_id);
+            }
+        }
+
+        OrderItem::whereIn('id', $itemIds)->delete();
+
+        $order->total_amount = max(0, (float) $order->total_amount - $removedTotal);
+        if ((float) $order->paid_amount > $order->total_amount) {
+            $order->paid_amount = $order->total_amount;
+        }
+
+        $order->save();
+        $order->refresh();
     }
 }

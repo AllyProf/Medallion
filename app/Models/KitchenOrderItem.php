@@ -79,6 +79,25 @@ class KitchenOrderItem extends Model
     }
 
     /**
+     * Lines that should appear on the printed kitchen docket (excludes drink-style food menu categories).
+     * Eager-load `foodItem` when filtering collections to avoid N+1 queries.
+     */
+    public function appearsOnKitchenDocket(): bool
+    {
+        if ($this->status === 'cancelled') {
+            return false;
+        }
+
+        if (! $this->food_item_id) {
+            return true;
+        }
+
+        $category = $this->foodItem?->category;
+
+        return ! FoodItem::categoryLooksLikeBeverage($category);
+    }
+
+    /**
      * Get the extras for this kitchen order item.
      */
     public function extras()

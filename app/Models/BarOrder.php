@@ -52,12 +52,12 @@ class BarOrder extends Model
     public static function generateOrderNumber($userId)
     {
         $prefix = 'ORD';
-        
+
         // Get the last order number across all users to ensure global uniqueness
-        $lastOrder = self::where('order_number', 'like', $prefix . '-%')
+        $lastOrder = self::where('order_number', 'like', $prefix.'-%')
             ->orderByRaw('CAST(SUBSTRING(order_number, 5) AS UNSIGNED) DESC')
             ->first();
-        
+
         if ($lastOrder) {
             // Extract the number part (e.g., "ORD-47" -> "47")
             $lastNumber = (int) substr($lastOrder->order_number, 4); // Skip "ORD-"
@@ -65,8 +65,8 @@ class BarOrder extends Model
         } else {
             $newNumber = 1;
         }
-        
-        return $prefix . '-' . str_pad($newNumber, 2, '0', STR_PAD_LEFT);
+
+        return $prefix.'-'.str_pad($newNumber, 2, '0', STR_PAD_LEFT);
     }
 
     /**
@@ -190,6 +190,7 @@ class BarOrder extends Model
         if ($this->relationLoaded('kitchenOrderItems')) {
             return $this->kitchenOrderItems->count() > 0;
         }
+
         return $this->kitchenOrderItems()->count() > 0;
     }
 
@@ -202,6 +203,7 @@ class BarOrder extends Model
         if ($this->relationLoaded('items')) {
             return $this->items->count() > 0;
         }
+
         return $this->items()->count() > 0;
     }
 
@@ -210,10 +212,10 @@ class BarOrder extends Model
      */
     public function isFoodOrderReady()
     {
-        if (!$this->hasFoodItems()) {
+        if (! $this->hasFoodItems()) {
             return true; // No food items, so considered "ready"
         }
-        
+
         // Use collection if already loaded, otherwise query
         if ($this->relationLoaded('kitchenOrderItems')) {
             $totalFoodItems = $this->kitchenOrderItems->count();
@@ -226,7 +228,7 @@ class BarOrder extends Model
                 ->where('status', 'completed')
                 ->count();
         }
-        
+
         return $totalFoodItems === $completedFoodItems && $totalFoodItems > 0;
     }
 
@@ -247,16 +249,17 @@ class BarOrder extends Model
         $hasBar = $this->hasBarItems();
 
         // Bar order only
-        if ($hasBar && !$hasFood) {
+        if ($hasBar && ! $hasFood) {
             if ($this->status !== 'served') {
                 return 'Payment can be recorded after order is marked as served';
             }
+
             return null; // Ready for payment
         }
 
         // Food order only
-        if ($hasFood && !$hasBar) {
-            if (!$this->isFoodOrderReady()) {
+        if ($hasFood && ! $hasBar) {
+            if (! $this->isFoodOrderReady()) {
                 if ($this->relationLoaded('kitchenOrderItems')) {
                     $total = $this->kitchenOrderItems->count();
                     $completed = $this->kitchenOrderItems->where('status', 'completed')->count();
@@ -264,20 +267,22 @@ class BarOrder extends Model
                     $total = $this->kitchenOrderItems()->count();
                     $completed = $this->kitchenOrderItems()->where('status', 'completed')->count();
                 }
+
                 return "Payment can be recorded after all food items are taken. ({$completed}/{$total} items completed)";
             }
+
             return null; // Ready for payment
         }
 
         // Mixed order
         if ($hasFood && $hasBar) {
             $messages = [];
-            
+
             if ($this->status !== 'served') {
                 $messages[] = 'Drinks must be marked as served';
             }
-            
-            if (!$this->isFoodOrderReady()) {
+
+            if (! $this->isFoodOrderReady()) {
                 if ($this->relationLoaded('kitchenOrderItems')) {
                     $total = $this->kitchenOrderItems->count();
                     $completed = $this->kitchenOrderItems->where('status', 'completed')->count();
@@ -287,10 +292,11 @@ class BarOrder extends Model
                 }
                 $messages[] = "All food items must be taken ({$completed}/{$total} completed)";
             }
-            
-            if (!empty($messages)) {
-                return 'Payment can be recorded after: ' . implode(' AND ', $messages);
+
+            if (! empty($messages)) {
+                return 'Payment can be recorded after: '.implode(' AND ', $messages);
             }
+
             return null; // Ready for payment
         }
 
@@ -316,12 +322,12 @@ class BarOrder extends Model
         $hasBar = $this->hasBarItems();
 
         // Bar order only
-        if ($hasBar && !$hasFood) {
+        if ($hasBar && ! $hasFood) {
             return $this->status === 'served';
         }
 
         // Food order only
-        if ($hasFood && !$hasBar) {
+        if ($hasFood && ! $hasBar) {
             return $this->isFoodOrderReady();
         }
 
@@ -332,6 +338,57 @@ class BarOrder extends Model
 
         // Order with no items (shouldn't happen, but handle gracefully)
         return false;
+    }
+
+    /**
+     * Notes to show as "Reason" on counter screens when order is cancelled (excludes FOOD ITEMS: order snapshot).
+     */
+    public function counterCancellationSummary(): ?string
+    {
+        if ($this->status !== 'cancelled' || empty($this->notes)) {
+            return null;
+        }
+
+        $parts = array_map('trim', explode('|', $this->notes));
+        $keep = [];
+        foreach ($parts as $part) {
+            if ($part === '') {
+                continue;
+            }
+            if (preg_match('/^FOOD ITEMS:/i', $part)) {
+                continue;
+            }
+            if (preg_match('/^ORDER NOTES:/i', $part)) {
+                continue;
+            }
+            if (preg_match('/^ADDED ITEMS:/i', $part)) {
+                continue;
+            }
+            if (preg_match('/^(CANCELLED|BAR LINES VOIDED|FOOD CANCELLED)/i', $part)) {
+                $keep[] = $part;
+            }
+        }
+
+        return empty($keep) ? null : implode(' · ', $keep);
+    }
+
+    /**
+     * When counter removed drink lines but food is still active (order stays pending).
+     */
+    public function barLinesVoidAtCounterSummary(): ?string
+    {
+        if (empty($this->notes) || ! str_contains($this->notes, 'BAR LINES VOIDED')) {
+            return null;
+        }
+
+        foreach (explode('|', $this->notes) as $part) {
+            $part = trim($part);
+            if (str_starts_with($part, 'BAR LINES VOIDED')) {
+                return $part;
+            }
+        }
+
+        return 'BAR LINES VOIDED AT COUNTER';
     }
 
     /**

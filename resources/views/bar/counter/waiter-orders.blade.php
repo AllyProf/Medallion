@@ -161,8 +161,9 @@
                   @endif
                 </td>
                 <td>
+                  {{-- Counter view: bar/drink lines only (kitchen food is handled on food/chef screens) --}}
                   <ul class="list-unstyled mb-0">
-                    @foreach($order->items->take(3) as $item)
+                    @forelse($order->items->take(3) as $item)
                     <li>
                       @if($item->productVariant)
                         @php
@@ -182,7 +183,9 @@
                         <small>{{ $item->quantity }}x N/A</small>
                       @endif
                     </li>
-                    @endforeach
+                    @empty
+                    <li><small class="text-muted">—</small></li>
+                    @endforelse
                     @if($order->items->count() > 3)
                     <li><small class="text-muted">+{{ $order->items->count() - 3 }} more</small></li>
                     @endif
@@ -193,8 +196,15 @@
                   <span class="badge badge-{{ $order->status === 'pending' ? 'warning' : ($order->status === 'served' ? 'success' : 'secondary') }}">
                     {{ ucfirst($order->status) }}
                   </span>
-                  @if($order->status === 'cancelled' && $order->notes)
-                    <br><small class="text-danger">Reason: {{ $order->notes }}</small>
+                  @if($order->status === 'cancelled')
+                    @php $cancelSummary = $order->counterCancellationSummary(); @endphp
+                    @if($cancelSummary)
+                      <br><small class="text-danger">Reason: {{ $cancelSummary }}</small>
+                    @else
+                      <br><small class="text-muted">Cancelled</small>
+                    @endif
+                  @elseif($order->barLinesVoidAtCounterSummary())
+                    <br><small class="text-info">{{ $order->barLinesVoidAtCounterSummary() }}</small>
                   @endif
                 </td>
                 <td>
@@ -513,17 +523,7 @@ $(document).ready(function() {
                         <td class="text-right font-weight-bold">TSh ${parseInt(item.total_price).toLocaleString()}</td>
                     </tr>`;
                 });
-                
-                if (order.kitchen_order_items && order.kitchen_order_items.length > 0) {
-                    order.kitchen_order_items.forEach(item => {
-                        itemsHtml += `<tr class="table-info">
-                            <td>${item.food_item_name} <small class="text-muted">(${item.variant_name || ''})</small> <span class="badge badge-info ml-1">FOOD</span></td>
-                            <td class="text-center">${item.quantity}</td>
-                            <td class="text-right">TSh ${parseInt(item.total_price || (item.price * item.quantity)).toLocaleString()}</td>
-                        </tr>`;
-                    });
-                }
-                
+
                 itemsHtml += `</tbody></table></div>`;
 
                 // Payment Info

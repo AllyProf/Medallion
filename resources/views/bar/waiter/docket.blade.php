@@ -6,19 +6,21 @@
     <title>Kitchen Docket - {{ $order->order_number }}</title>
     <style>
         @media print {
-            body { margin: 0; padding: 5px; }
+            body { margin: 0; padding: 4px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             .no-print { display: none !important; }
-            @page { margin: 0.3cm; size: 80mm auto; }
+            @page { margin: 0.2cm; size: 80mm auto; }
         }
         * { box-sizing: border-box; }
         body {
             font-family: 'Courier New', Courier, monospace;
-            max-width: 300px;
+            max-width: 320px;
             margin: 0 auto;
-            padding: 8px;
+            padding: 10px;
             background: #fff;
             color: #000;
-            font-size: 13px;
+            font-size: 15px;
+            font-weight: 600;
+            -webkit-font-smoothing: antialiased;
         }
         .header {
             text-align: center;
@@ -27,7 +29,7 @@
             margin-bottom: 8px;
         }
         .brand-name {
-            font-size: 17px;
+            font-size: 19px;
             font-weight: 900;
             letter-spacing: 1px;
             line-height: 1.2;
@@ -35,36 +37,36 @@
             text-transform: uppercase;
         }
         .docket-title {
-            font-size: 26px;
+            font-size: 30px;
             font-weight: 900;
             letter-spacing: 2px;
             line-height: 1.1;
         }
         .order-num {
-            font-size: 20px;
-            font-weight: bold;
-            margin-top: 4px;
-            border: 2px solid #000;
-            display: inline-block;
-            padding: 2px 12px;
-        }
-        .table-banner {
             font-size: 22px;
             font-weight: 900;
-            background: #000;
-            color: #fff;
+            margin-top: 4px;
+            border: 3px solid #000;
+            display: inline-block;
+            padding: 4px 14px;
+        }
+        .table-banner {
+            font-size: 24px;
+            font-weight: 900;
+            background: #000 !important;
+            color: #fff !important;
             text-align: center;
-            padding: 4px;
-            margin: 6px 0;
+            padding: 6px 4px;
+            margin: 8px 0;
             letter-spacing: 3px;
         }
         .meta-row {
             display: flex;
             justify-content: space-between;
-            font-size: 14px;
+            font-size: 15px;
             margin-bottom: 4px;
             line-height: 1.35;
-            font-weight: 700;
+            font-weight: 800;
             gap: 8px;
             white-space: nowrap;
         }
@@ -79,35 +81,36 @@
             white-space: normal;
             word-break: break-word;
         }
-        .divider { border: none; border-top: 2px dashed #000; margin: 6px 0; }
+        .divider { border: none; border-top: 3px dashed #000; margin: 8px 0; }
         .item-row {
-            margin-bottom: 10px;
-            border-bottom: 1px dashed #ccc;
-            padding-bottom: 6px;
+            margin-bottom: 12px;
+            border-bottom: 2px dashed #000;
+            padding-bottom: 8px;
         }
         .item-main {
             display: flex;
             justify-content: space-between;
             align-items: baseline;
-            font-size: 17px;
+            font-size: 19px;
             font-weight: 900;
         }
-        .item-main .name { flex: 1; padding-right: 6px; }
-        .item-main .price { white-space: nowrap; font-size: 14px; }
+        .item-main .name { flex: 1; padding-right: 6px; color: #000; }
+        .item-main .price { white-space: nowrap; font-size: 16px; font-weight: 900; }
         .item-variant {
-            font-size:14px;
-            font-weight: bold;
+            font-size: 16px;
+            font-weight: 800;
             margin-left: 18px;
-            color: #222;
+            color: #000;
         }
         .item-note {
-            font-size: 12px;
+            font-size: 14px;
+            font-weight: 700;
             font-style: italic;
             margin-left: 18px;
-            margin-top: 3px;
-            border-left: 3px solid #000;
-            padding-left: 5px;
-            color: #333;
+            margin-top: 4px;
+            border-left: 4px solid #000;
+            padding-left: 6px;
+            color: #000;
         }
         .total-section {
             border-top: 3px double #000;
@@ -117,21 +120,23 @@
         .total-row {
             display: flex;
             justify-content: space-between;
-            font-size: 16px;
+            font-size: 18px;
             font-weight: 900;
         }
         .footer {
             text-align: center;
-            font-size: 11px;
-            margin-top: 10px;
-            padding-top: 6px;
-            border-top: 1px dashed #000;
-            line-height: 1.4;
+            font-size: 13px;
+            font-weight: 700;
+            margin-top: 12px;
+            padding-top: 8px;
+            border-top: 2px dashed #000;
+            line-height: 1.45;
+            color: #000;
         }
         .powered-by {
-            margin-top: 4px;
-            font-size: 11px;
-            font-weight: 700;
+            margin-top: 6px;
+            font-size: 12px;
+            font-weight: 800;
         }
         .no-print {
             text-align: center;
@@ -173,7 +178,7 @@
     <hr class="divider">
 
     @php $foodTotal = 0; @endphp
-    @foreach($order->kitchenOrderItems->where('status', '!=', 'cancelled') as $item)
+    @foreach($docketKitchenItems as $item)
         @php $foodTotal += $item->total_price; @endphp
         <div class="item-row">
             <div class="item-main">

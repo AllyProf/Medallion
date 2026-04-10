@@ -411,25 +411,30 @@ $(document).ready(function() {
             <tr><th>Order Ref</th><th>Items Description</th><th class="text-right">Price</th></tr>
           </thead><tbody>`;
           
+        let renderedOrders = 0;
         response.orders.forEach(order => {
           let foodTotal = 0;
           let itemsHtml = '<div class="small">';
           order.kitchen_order_items.forEach(item => {
-            if(item.status !== 'cancelled') {
-              foodTotal += parseFloat(item.total_price);
-              itemsHtml += `<div class="mb-1"><strong>${item.food_item_name}</strong> <span class="text-muted">x${item.quantity}</span></div>`;
-            } else {
-              itemsHtml += `<div class="text-danger"><del>${item.food_item_name}</del> (Cancelled)</div>`;
-            }
+            foodTotal += parseFloat(item.total_price);
+            itemsHtml += `<div class="mb-1"><strong>${item.food_item_name}</strong> <span class="text-muted">x${item.quantity}</span></div>`;
           });
           itemsHtml += '</div>';
-          
+
+          if (foodTotal <= 0) {
+            return;
+          }
+
+          renderedOrders += 1;
           html += `<tr>
             <td class="font-weight-bold">#${order.order_number}<br><small class="text-muted">${new Date(order.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</small></td>
             <td>${itemsHtml}</td>
             <td class="text-right font-weight-bold">TSh ${foodTotal.toLocaleString()}</td>
           </tr>`;
         });
+        if (renderedOrders === 0) {
+          html += `<tr><td colspan="3" class="text-center text-muted py-4">No active food orders found for this waiter.</td></tr>`;
+        }
         html += '</tbody></table></div>';
         $('#food-orders-content').html(html);
       }

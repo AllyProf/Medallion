@@ -514,6 +514,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                      data-variant="{{ $f->variant_name }}"
                      data-price="{{ $f->price }}"
                      data-extras="{{ json_encode($f->extras ?? []) }}"
+                     data-food-category="{{ $f->category }}"
                      data-type="food">
                     @if($f->image)
                         <img src="{{ asset('storage/' . $f->image) }}" class="prod-img">
@@ -588,7 +589,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                 <div class="action-buttons">
                     <button class="btn-action btn-calc"><i class="fa fa-calculator"></i></button>
                     <button class="btn-action btn-trash" id="btn-clear-cart"><i class="fa fa-trash-o"></i></button>
-                    <button class="btn-action btn-place" id="btn-finish-order" disabled>Place Order & Print</button>
+                    <button class="btn-action btn-place" id="btn-finish-order" disabled>Place Order</button>
                 </div>
             </div>
         </div>
@@ -737,6 +738,13 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 @push('scripts')
 <script>
     let cart = [];
+
+    function foodCategoryIsBeverage(cat) {
+        if (!cat || typeof cat !== 'string') return false;
+        const c = cat.toLowerCase();
+        const keywords = ['beverage', 'drink', 'alcohol', 'beer', 'wine', 'spirit', 'liquor', 'vodka', 'whiskey', 'whisky', 'gin', 'rum', 'soda', 'water', 'juice', 'cocktail', 'coffee', 'tea', 'smoothie'];
+        return keywords.some(kw => c.includes(kw));
+    }
     let editingOrderId = null; // Track if we are adding to an existing order
 
     // Search
@@ -773,6 +781,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         
         $('#m-id').val(d.id);
         $('#m-type').val(d.type);
+        $('#m-id').data('foodCategory', d.type === 'food' ? String(d.foodCategory || '') : '');
         $('#m-price').val(d.price);
         $('#m-price-tot').val(canSellTot ? d.priceTot : "");
         $('#m-portion-label').val(d.portionLabel || 'Tot');
@@ -871,7 +880,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         }
     };
 
-    function addToCartFast(id, type, name, variant, price, sellType, qty, notes, available) {
+    function addToCartFast(id, type, name, variant, price, sellType, qty, notes, available, foodCategory) {
         qty = parseInt(qty) || 1;
         available = parseInt(available) || 9999;
         const existingIdx = cart.findIndex(i => (type === 'food' ? i.food_item_id == id : i.variant_id == id) && i.sell_type === sellType);
@@ -901,7 +910,12 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                 available: available, 
                 type: type 
             };
-            if (type === 'food') row.food_item_id = id; else row.variant_id = id;
+            if (type === 'food') {
+                row.food_item_id = id;
+                row.food_category = foodCategory || '';
+            } else {
+                row.variant_id = id;
+            }
             cart.push(row);
         }
         updateCart();
@@ -958,7 +972,8 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             return;
         }
 
-        addToCartFast(id, type, name, variant, finalPrice, sellType, qty, notes, available);
+        const foodCategory = type === 'food' ? ($('#m-id').data('foodCategory') || '') : '';
+        addToCartFast(id, type, name, variant, finalPrice, sellType, qty, notes, available, foodCategory);
         $('#addItemModal').modal('hide');
         $('#m-note').val(''); // Clear it
     });
@@ -1023,7 +1038,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             if (result.isConfirmed) {
                 cart = []; 
                 editingOrderId = null;
-                $('#btn-finish-order').text('Place Order & Print').css('background', '').css('color', '');
+                $('#btn-finish-order').text('Place Order').css('background', '').css('color', '');
                 updateCart(); 
                 $('#form-order-table').val('');
             }
@@ -1170,17 +1185,20 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         }
 
         const waiterName = $('#form-waiter-name-display').text().replace('✓ ', '').trim() || 'Staff';
-        let itemsSummary = '<div style="text-align:left; font-size:0.9rem; max-height:200px; overflow-y:auto; background:#1a1a1a; padding:10px; border-radius:8px; border: 1px solid #333;">';
+        let itemsSummary = '<div style="text-align:left; font-size:0.95rem; max-height:220px; overflow-y:auto; background:#2d2d2d; color:#ffffff; padding:12px; border-radius:10px; border:1px solid #555; box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);">';
         let total = 0;
         cart.forEach(item => {
             const rowTotal = item.price * item.quantity;
             total += rowTotal;
-            itemsSummary += `<div style="display:flex; justify-content:space-between; margin-bottom:5px; border-bottom:1px solid #333; padding-bottom:3px;">
-                <span>${item.quantity}x ${item.name}</span>
-                <span style="color:var(--accent-green);">TSh ${rowTotal.toLocaleString()}</span>
+            const variantBit = (item.variant && String(item.variant).trim()) ? ` <span style="color:#c8c8c8;font-size:0.85em;font-weight:400;">(${String(item.variant).trim()})</span>` : '';
+            itemsSummary += `<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:6px; border-bottom:1px solid #4a4a4a; padding-bottom:6px;">
+                <div style="flex:1; min-width:0; color:#ffffff; text-align:left;">
+                    <span style="font-weight:600;">${item.quantity}× ${item.name}</span>${variantBit}
+                </div>
+                <span style="color:#8ef0a0; white-space:nowrap; font-weight:700;">TSh ${rowTotal.toLocaleString()}</span>
             </div>`;
         });
-        itemsSummary += `</div><div style="text-align:right; font-size:1.2rem; font-weight:bold; margin-top:10px; color:var(--accent-yellow);">Total: TSh ${total.toLocaleString()}</div>`;
+        itemsSummary += `</div><div style="text-align:right; font-size:1.2rem; font-weight:bold; margin-top:12px; color:#ffd666;">Total: TSh ${total.toLocaleString()}</div>`;
 
         Swal.fire({
             title: 'Confirm Order Placement',
@@ -1189,11 +1207,11 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     <span class="badge badge-info" style="font-size:1rem; padding:8px 15px;">Waiter: ${waiterName}</span>
                 </div>
                 ${itemsSummary}
-                <div class="mt-3 text-muted" style="font-size:0.8rem;">Click button below to finalize and print receipt</div>
+                <div class="mt-3" style="font-size:0.8rem; color:#cccccc; line-height:1.4;">Kitchen docket prints for food only. Print the full receipt (food + drinks) from <strong style="color:#fff;">My Orders</strong>.</div>
             `,
             icon: 'question',
             showCancelButton: true,
-            confirmButtonText: '<i class="fa fa-print"></i> PLACE ORDER & PRINT',
+            confirmButtonText: '<i class="fa fa-check"></i> PLACE ORDER',
             cancelButtonText: 'Review Changes',
             confirmButtonColor: 'var(--accent-green)',
             cancelButtonColor: '#444',
@@ -1237,7 +1255,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     },
                     success: function(orderRes) {
                         if (orderRes.success) {
-                            btn.prop('disabled', false).html('Place Order & Print');
+                            btn.prop('disabled', false).html('Place Order');
                             
                             KioskToast.fire({
                                 icon: 'success',
@@ -1245,24 +1263,20 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                             });
 
                             const isUpdating = !!editingOrderId;
-                            // 1. Trigger Auto-Print Immediately
                             const orderIdStr = orderRes.order.id;
-                            const hadFoodItems = cart.some(i => i.type === 'food');
-                            
-                            const receiptUrl = '{{ url("/bar/kiosk/print-receipt") }}/' + orderIdStr;
-                            window.open(receiptUrl, '_blank', 'width=400,height=600');
+                            const needsKitchenDocket = cart.some(i => i.type === 'food' && !(i.food_category && foodCategoryIsBeverage(i.food_category)));
 
-                            if (hadFoodItems) {
+                            if (needsKitchenDocket) {
                                 setTimeout(() => {
                                     const docketUrl = '{{ url("/bar/kiosk/print-docket") }}/' + orderIdStr;
-                                    window.open(docketUrl, '_blank', 'width=400,height=600');
-                                }, 800);
+                                    window.open(docketUrl, '_blank', 'width=420,height=700');
+                                }, 400);
                             }
 
                             // 2. Clear Cart and UI immediately
                             cart = [];
                             editingOrderId = null;
-                            $('#btn-finish-order').text('Place Order & Print').removeClass('btn-info').addClass('btn-yellow');
+                            $('#btn-finish-order').text('Place Order').removeClass('btn-info').addClass('btn-yellow');
                             updateCart();
                             $('#form-order-table').val('');
                             $('#form-customer-name').val('');
@@ -1304,7 +1318,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                                 // Reset cart state (already done above, but being safe)
                                 cart = [];
                                 editingOrderId = null;
-                                $('#btn-finish-order').text('Place Order & Print').removeClass('btn-info').addClass('btn-yellow');
+                                $('#btn-finish-order').text('Place Order').removeClass('btn-info').addClass('btn-yellow');
                                 updateCart();
                                 
                                 // Refresh background data
@@ -1313,7 +1327,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                         }
                     },
                     error: function(xhr) {
-                        btn.prop('disabled', false).html('Place Order & Print');
+                        btn.prop('disabled', false).html('Place Order');
                         let msg = 'Failed sending ticket.';
                         if (xhr.responseJSON && xhr.responseJSON.errors) {
                             msg = Object.values(xhr.responseJSON.errors).flat().join(' ');
@@ -1325,7 +1339,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                 });
             },
             error: function(xhr) {
-                btn.prop('disabled', false).html('Place Order & Print');
+                btn.prop('disabled', false).html('Place Order');
                 KioskToast.fire({ icon: 'error', title: xhr.responseJSON?.error || 'Auth failed' });
                 $('#form-waiter-pin').val('').focus();
             }
@@ -1436,7 +1450,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                      data-variant="${f.variant_name || ''}"
                      data-price="${f.price}"
                      data-extras='${JSON.stringify(f.extras || [])}'
-                     data-category="${catSlug}"
+                     data-food-category="${String(f.category || '').replace(/"/g, '&quot;')}"
                      data-type="food">
                     ${imgHtml}
                     <div class="prod-info">
@@ -1480,46 +1494,6 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         } else {
             $('.category-pill[data-category="all"]').trigger('click');
         }
-
-        // Re-binding removed because of event delegation (document.on)
-        $(document).on('click', '.pos-item', function() {
-            const d = $(this).data();
-            const canSellTot = (d.canTot == "true" || d.canTot === true);
-            
-            $('#m-id').data('available', d.available); // Set it for the modal
-            $('#m-id').val(d.id);
-            $('#m-type').val(d.type);
-            $('#m-price').val(d.price);
-            $('#m-price-tot').val(canSellTot ? d.priceTot : "");
-            $('#m-portion-label').val(d.portionLabel || 'Tot');
-            $('#m-total-tots').val(d.totalTots || 1);
-            $('#m-unit-label').val(d.unitLabel || 'btl');
-            
-            $('#m-name').text(d.name);
-            $('#m-variant').text(d.variant ? '(' + d.variant + ')' : '');
-            $('#m-price-display').text('TSh ' + parseFloat(d.price).toLocaleString());
-            $('#m-quantity').val(1);
-            
-            const unitLabel = (d.unitLabel === 'btl') ? 'Bottle' : 'Piece';
-            $('#m-unit-text').text(unitLabel);
-            $('#m-portion-text').text(d.portionLabel || 'Shot');
-
-            if (d.type === 'drink') {
-                $('#m-sell-group').show();
-                $('#m-stock-display').html('<i class="fa fa-database"></i> Stock: ' + d.available.toLocaleString() + ' ' + unitLabel + 's');
-                if (canSellTot) {
-                    $('#m-label-tot').show();
-                } else {
-                    $('#m-label-tot').hide();
-                    $('input[name="m_sell_type"][value="unit"]').prop('checked', true).change().parent().addClass('active').siblings().removeClass('active');
-                }
-            } else {
-                $('#m-sell-group').hide();
-                $('#m-stock-display').html('');
-            }
-
-            $('#addItemModal').modal('show');
-        });
     }
 
     window.fetchOngoingOrders = function(filterType = null, silent = false) {
@@ -1596,9 +1570,17 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             // Food Items
             if(order.kitchen_order_items && order.kitchen_order_items.length > 0) {
                 order.kitchen_order_items.forEach(item => {
-                    let statusLabel = `<span class="badge ${item.status === 'ready' ? 'badge-success' : 'badge-warning'}" style="font-size:0.65rem;">${item.status.toUpperCase()}</span>`;
-                    itemHtml += `<div style="display:flex; justify-content:space-between; font-size:0.85rem; border-bottom:1px solid var(--bg-main); padding:4px 0; color:var(--text-muted);">
-                        <span>${item.quantity}x ${item.food_item_name} ${statusLabel}</span>
+                    const foodOff = item.status === 'cancelled';
+                    const statusLabel = foodOff
+                        ? `<span class="badge badge-secondary" style="font-size:0.65rem;">FOOD OFF</span>`
+                        : `<span class="badge ${item.status === 'ready' ? 'badge-success' : 'badge-warning'}" style="font-size:0.65rem;">${item.status.toUpperCase()}</span>`;
+                    const canRemoveFood = order.status !== 'cancelled' && !foodOff && item.status !== 'completed';
+                    const removeFoodBtn = canRemoveFood
+                        ? `<button type="button" class="btn btn-link btn-sm p-0 ml-1 align-baseline text-danger" style="font-size:0.72rem;vertical-align:middle;" onclick="event.preventDefault();event.stopPropagation();cancelKioskFoodItem(${item.id})" title="Remove this food only (drinks stay on the ticket)"><i class="fa fa-times-circle"></i></button>`
+                        : '';
+                    const lineStyle = foodOff ? 'opacity:0.75;text-decoration:line-through;' : '';
+                    itemHtml += `<div style="display:flex; justify-content:space-between; font-size:0.85rem; border-bottom:1px solid var(--bg-main); padding:4px 0; color:var(--text-muted);${lineStyle}">
+                        <span>${item.quantity}x ${item.food_item_name} ${statusLabel}${removeFoodBtn}</span>
                         <span>TSh ${parseFloat(item.total_price).toLocaleString()}</span>
                     </div>`;
                 });
@@ -1622,14 +1604,17 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                         <div class="mt-2" style="background:var(--bg-input); padding:8px; border-radius:4px;">
                             ${itemHtml}
                         </div>
-                        <div class="mt-3" style="display:flex; flex-wrap: wrap; gap:10px;">
+                        <div class="mt-3" style="display:flex; flex-wrap: wrap; gap:10px; align-items:center;">
                             <button class="btn btn-sm btn-outline-primary" style="flex:1; min-width: 100px;" onclick="prepareAddItem(${order.id}, '${order.order_number}')"><i class="fa fa-plus"></i> Add</button>
                             <button class="btn btn-sm btn-info" style="flex:1; min-width: 100px;" onclick="printKioskOrder(${order.id})"><i class="fa fa-print"></i> Receipt</button>
-                            ${order.kitchen_order_items && order.kitchen_order_items.length > 0 ? 
+                            ${(order.kitchen_docket_item_count && order.kitchen_docket_item_count > 0) ? 
                                 `<button class="btn btn-sm btn-warning" style="flex:1; min-width: 100px;" onclick="printKioskDocket(${order.id})"><i class="fa fa-fire"></i> Docket</button>` : ''
                             }
-                            ${order.status !== 'cancelled' ? 
-                                `<button class="btn btn-sm btn-danger" style="flex:1; min-width: 100px;" onclick="cancelKioskOrder(${order.id})"><i class="fa fa-times"></i> Cancel</button>` : ''
+                            ${order.status !== 'cancelled' && !(order.items && order.items.length) ? 
+                                `<button class="btn btn-sm btn-danger" style="flex:1; min-width: 100px;" onclick="cancelKioskOrder(${order.id})"><i class="fa fa-ban"></i> Void ticket (food only)</button>` : ''
+                            }
+                            ${order.status !== 'cancelled' && order.items && order.items.length ? 
+                                `<div class="small text-muted" style="flex-basis:100%; line-height:1.35;"><i class="fa fa-info-circle"></i> Drinks are voided or adjusted at the <strong>counter</strong> only. Use <i class="fa fa-times-circle text-danger"></i> on a line to remove <strong>food</strong> only.</div>` : ''
                             }
                         </div>
                     </div>
@@ -1814,14 +1799,45 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         }
     };
 
+    window.cancelKioskFoodItem = function(kitchenItemId) {
+        Swal.fire({
+            title: 'Remove this food?',
+            html: '<p class="text-left mb-0">This only cancels the <strong>kitchen line</strong>. Drinks on the same ticket stay — the order stays open for the counter.</p>',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: 'var(--accent-red)',
+            confirmButtonText: 'Yes, remove food',
+            cancelButtonText: 'Back',
+            background: 'var(--bg-surface)',
+            color: 'var(--text-main)'
+        }).then((result) => {
+            if (!result.isConfirmed) return;
+            $.ajax({
+                url: '{{ url("bar/kiosk/cancel-food-item") }}/' + kitchenItemId,
+                type: 'POST',
+                data: { _token: '{{ csrf_token() }}', reason: 'Waiter removed from kiosk' },
+                success: function(res) {
+                    if (res.success) {
+                        KioskToast.fire({ icon: 'success', title: 'Food removed from ticket' });
+                        fetchOngoingOrders(null, true);
+                    }
+                },
+                error: function(xhr) {
+                    KioskToast.fire({ icon: 'error', title: xhr.responseJSON?.error || 'Could not remove food' });
+                }
+            });
+        });
+    };
+
     window.cancelKioskOrder = function(orderId) {
         Swal.fire({
-            title: 'Cancel Ticket?',
-            text: 'Are you sure you want to completely void this pending ticket?',
+            title: 'Void this food-only ticket?',
+            html: '<p class="text-left mb-0">This ticket has <strong>no drinks</strong>. Voiding will cancel all remaining kitchen (food) lines and close the ticket. Tickets that include drinks must be voided at the <strong>counter</strong>.</p>',
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: 'var(--accent-red)',
-            confirmButtonText: 'Yes, Cancel it',
+            confirmButtonText: 'Yes, void ticket',
+            cancelButtonText: 'Back',
             background: 'var(--bg-surface)',
             color: 'var(--text-main)'
         }).then((result) => {
@@ -1991,13 +2007,13 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             $('.top-btn-ongoing').text('Oda Zinazoendelea');
             $('.top-btn-kitchen').html('Hali ya Jikoni <span class="badge badge-light ml-1" style="color: black;">0</span>');
             $('.top-btn-my').text('Oda Zangu');
-            $('#btn-finish-order').text('Tuma Oda & Chapisha');
+            $('#btn-finish-order').text('Tuma Oda');
             $('#btn-add-confirm').text('ONGEZA KWENYE TIKETI');
         } else {
             $('.top-btn-ongoing').text('Ongoing Order');
             $('.top-btn-kitchen').html('Kitchen Status <span class="badge badge-light ml-1" style="color: black;">0</span>');
             $('.top-btn-my').text('My Order');
-            $('#btn-finish-order').text('Place Order & Print');
+            $('#btn-finish-order').text('Place Order');
             $('#btn-add-confirm').text('ADD TO TICKET');
         }
     };

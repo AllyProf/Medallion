@@ -4,12 +4,14 @@ namespace App\Http\Controllers\Bar;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Traits\HandlesStaffPermissions;
-use App\Models\ProductVariant;
 use App\Models\BarOrder;
-use App\Models\OrderItem;
-use App\Models\KitchenOrderItem;
 use App\Models\FoodItem;
+use App\Models\KitchenOrderItem;
+use App\Models\OrderItem;
+use App\Models\ProductVariant;
 use App\Models\StockLocation;
+use App\Models\StockTransfer;
+use App\Models\TransferSale;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -25,13 +27,13 @@ class WaiterController extends Controller
         // Check if user is a waiter (staff with waiter role)
         $staff = $this->getCurrentStaff();
 
-        if (!$staff || !$staff->is_active) {
+        if (! $staff || ! $staff->is_active) {
             abort(403, 'You must be logged in as an active waiter to access this page.');
         }
 
         // Check if staff has waiter role
         $role = $staff->role;
-        if (!$role || strtolower($role->name) !== 'waiter') {
+        if (! $role || strtolower($role->name) !== 'waiter') {
             abort(403, 'You do not have permission to access the waiter dashboard.');
         }
 
@@ -57,11 +59,12 @@ class WaiterController extends Controller
                 'stockLocations' => function ($query) use ($ownerId) {
                     $query->where('user_id', $ownerId)
                         ->where('location', 'counter');
-                }
+                },
             ])
             ->get()
             ->filter(function ($variant) {
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+
                 return $counterStock && $counterStock->quantity > 0;
             })
             ->map(function ($variant) {
@@ -71,22 +74,26 @@ class WaiterController extends Controller
 
                 $portionLabel = (function ($cat) {
                     $c = strtolower(trim($cat));
-                    if (str_contains($c, 'wine'))
+                    if (str_contains($c, 'wine')) {
                         return 'Glass';
-                    if (str_contains($c, 'spirit') || str_contains($c, 'liquor') || str_contains($c, 'vodka') || str_contains($c, 'whiskey') || str_contains($c, 'gin'))
+                    }
+                    if (str_contains($c, 'spirit') || str_contains($c, 'liquor') || str_contains($c, 'vodka') || str_contains($c, 'whiskey') || str_contains($c, 'gin')) {
                         return 'Shot';
+                    }
+
                     return 'Tot';
                 })($category);
 
                 $m = $variant->measurement;
                 if (is_numeric($m) && $m > 0) {
-                    $m = ($m < 10) ? $m . 'L' : $m . 'ml';
+                    $m = ($m < 10) ? $m.'L' : $m.'ml';
                 }
                 $pkg = $variant->packaging;
-                if (in_array(strtolower($pkg), ['crate', 'carton', 'box', 'pkg', 'case', 'piece', 'pieces', 'pcs', 'unit']))
+                if (in_array(strtolower($pkg), ['crate', 'carton', 'box', 'pkg', 'case', 'piece', 'pieces', 'pcs', 'unit'])) {
                     $pkg = '';
+                }
 
-                $variantStr = trim($m . ($pkg ? ' - ' . $pkg : ''));
+                $variantStr = trim($m.($pkg ? ' - '.$pkg : ''));
                 $product_name = $variant->display_name ?: $variant->product->name;
 
                 // Hide variant string if it's completely redundant with the display name
@@ -164,7 +171,7 @@ class WaiterController extends Controller
                 },
                 'items.productVariant.product',
                 'table',
-                'waiter'
+                'waiter',
             ])
             ->orderBy('updated_at', 'desc')
             ->limit(20)
@@ -186,18 +193,18 @@ class WaiterController extends Controller
         if ($orderSource === 'kiosk') {
             // Get waiter from kiosk session
             $waiterId = session('kiosk_waiter_id');
-            if (!$waiterId) {
+            if (! $waiterId) {
                 return response()->json(['error' => 'Please login first'], 401);
             }
             $staff = \App\Models\Staff::find($waiterId);
-            if (!$staff || !$staff->is_active) {
+            if (! $staff || ! $staff->is_active) {
                 return response()->json(['error' => 'Invalid waiter session'], 401);
             }
             // Verify waiter role (be more flexible)
             $role = $staff->role;
             $roleName = $role ? strtolower($role->name) : '';
             $roleSlug = $role ? strtolower($role->slug) : '';
-            if (!str_contains($roleName, 'waiter') && $roleSlug !== 'waiter') {
+            if (! str_contains($roleName, 'waiter') && $roleSlug !== 'waiter') {
                 return response()->json(['error' => 'This account is not authorized as a waiter'], 403);
             }
             // Owner comes from the waiter's own user_id (no Auth session needed for public kiosk)
@@ -206,7 +213,7 @@ class WaiterController extends Controller
             // Web order - use current staff
             $ownerId = $this->getOwnerId();
             $staff = $this->getCurrentStaff();
-            if (!$staff || !$staff->is_active) {
+            if (! $staff || ! $staff->is_active) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
         }
@@ -247,9 +254,9 @@ class WaiterController extends Controller
         // Manually validate items and preserve all fields
         $validatedItems = [];
         foreach ($itemsBeforeValidation as $index => $item) {
-            if (!isset($item['quantity']) || !is_numeric($item['quantity']) || $item['quantity'] < 1) {
+            if (! isset($item['quantity']) || ! is_numeric($item['quantity']) || $item['quantity'] < 1) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
-                    "items.{$index}.quantity" => 'Quantity must be at least 1.'
+                    "items.{$index}.quantity" => 'Quantity must be at least 1.',
                 ]);
             }
             // Preserve ALL fields from the original item
@@ -263,8 +270,8 @@ class WaiterController extends Controller
         \Log::info('Validating order items (after preserving fields)', [
             'items_count' => count($validated['items']),
             'items' => $validated['items'],
-            'first_item_keys' => !empty($validated['items'][0]) ? array_keys($validated['items'][0]) : [],
-            'first_item_full' => !empty($validated['items'][0]) ? $validated['items'][0] : null
+            'first_item_keys' => ! empty($validated['items'][0]) ? array_keys($validated['items'][0]) : [],
+            'first_item_full' => ! empty($validated['items'][0]) ? $validated['items'][0] : null,
         ]);
 
         foreach ($validated['items'] as $index => $item) {
@@ -279,38 +286,38 @@ class WaiterController extends Controller
                 'food_item_id_value' => $item['food_item_id'] ?? 'not set',
             ]);
 
-            if (!$hasVariantId && !$hasFoodItemId) {
+            if (! $hasVariantId && ! $hasFoodItemId) {
                 \Log::error("Item {$index} missing both variant_id and food_item_id", ['item' => $item]);
                 throw \Illuminate\Validation\ValidationException::withMessages([
-                    "items.{$index}" => 'Each item must have either variant_id (for drinks) or food_item_id (for food items).'
+                    "items.{$index}" => 'Each item must have either variant_id (for drinks) or food_item_id (for food items).',
                 ]);
             }
 
             if ($hasFoodItemId) {
                 // Map frontend 'name' to 'product_name' if missing
-                if (empty($item['product_name']) && !empty($item['name'])) {
+                if (empty($item['product_name']) && ! empty($item['name'])) {
                     $item['product_name'] = $item['name'];
                 }
-                
+
                 // Map frontend 'variant' to 'variant_name' if missing
-                if (empty($item['variant_name']) && !empty($item['variant'])) {
+                if (empty($item['variant_name']) && ! empty($item['variant'])) {
                     $item['variant_name'] = $item['variant'];
                     // Remove parentheses if name was passed with them e.g. "(ndogo)"
                     $item['variant_name'] = trim($item['variant_name'], '()');
                 }
 
                 // Validate food item fields
-                if (empty($item['product_name']) || !isset($item['price']) || $item['price'] <= 0) {
+                if (empty($item['product_name']) || ! isset($item['price']) || $item['price'] <= 0) {
                     \Log::error("Food item validation failed at index {$index}", ['item' => $item]);
                     throw \Illuminate\Validation\ValidationException::withMessages([
-                        "items.{$index}" => 'Food items must include product_name and a valid price greater than 0.'
+                        "items.{$index}" => 'Food items must include product_name and a valid price greater than 0.',
                     ]);
                 }
                 // Validate food_item_id exists in database
                 $foodItemId = (int) $item['food_item_id'];
-                if (!\App\Models\FoodItem::where('id', $foodItemId)->where('user_id', $ownerId)->exists()) {
+                if (! \App\Models\FoodItem::where('id', $foodItemId)->where('user_id', $ownerId)->exists()) {
                     throw \Illuminate\Validation\ValidationException::withMessages([
-                        "items.{$index}.food_item_id" => 'Invalid food item ID.'
+                        "items.{$index}.food_item_id" => 'Invalid food item ID.',
                     ]);
                 }
                 // Update the item in the local array to keep the mapped names
@@ -318,15 +325,15 @@ class WaiterController extends Controller
                 // Notes are optional for food items, but if provided, validate length
                 if (isset($item['notes']) && strlen($item['notes']) > 500) {
                     throw \Illuminate\Validation\ValidationException::withMessages([
-                        "items.{$index}.notes" => 'Special instructions cannot exceed 500 characters.'
+                        "items.{$index}.notes" => 'Special instructions cannot exceed 500 characters.',
                     ]);
                 }
             } else {
                 // Validate variant exists
                 $variantId = (int) $item['variant_id'];
-                if (!\App\Models\ProductVariant::where('id', $variantId)->exists()) {
+                if (! \App\Models\ProductVariant::where('id', $variantId)->exists()) {
                     throw \Illuminate\Validation\ValidationException::withMessages([
-                        "items.{$index}.variant_id" => 'Invalid product variant ID.'
+                        "items.{$index}.variant_id" => 'Invalid product variant ID.',
                     ]);
                 }
             }
@@ -356,29 +363,30 @@ class WaiterController extends Controller
                     $kitchenOrderItems[] = [
                         'food_item_id' => $item['food_item_id'], // Link to food_items table
                         'food_item_name' => $item['product_name'] ?? 'Food Item', // Keep for backward compatibility
-                        'variant_name' => (!empty($item['variant_name'])) ? $item['variant_name'] : null,
+                        'variant_name' => (! empty($item['variant_name'])) ? $item['variant_name'] : null,
                         'quantity' => $quantity,
                         'unit_price' => $unitPrice,
                         'total_price' => $itemTotal,
-                        'special_instructions' => (!empty($item['notes'])) ? $item['notes'] : null,
+                        'special_instructions' => (! empty($item['notes'])) ? $item['notes'] : null,
                         'status' => 'pending', // Will be managed by chef
                     ];
 
                     // Also keep in notes for backward compatibility
-                    $foodItemNote = $item['quantity'] . 'x ' . ($item['product_name'] ?? 'Food Item') .
-                        ($item['variant_name'] ? ' (' . $item['variant_name'] . ')' : '') .
-                        ' - Tsh ' . number_format($unitPrice, 0);
+                    $foodItemNote = $item['quantity'].'x '.($item['product_name'] ?? 'Food Item').
+                        ($item['variant_name'] ? ' ('.$item['variant_name'].')' : '').
+                        ' - Tsh '.number_format($unitPrice, 0);
 
-                    if (!empty($item['notes'])) {
-                        $foodItemNote .= ' [Note: ' . $item['notes'] . ']';
+                    if (! empty($item['notes'])) {
+                        $foodItemNote .= ' [Note: '.$item['notes'].']';
                     }
 
                     $foodItemsNotes[] = $foodItemNote;
+
                     continue;
                 }
 
                 // Handle regular product variants (drinks)
-                if (!isset($item['variant_id']) || !$item['variant_id']) {
+                if (! isset($item['variant_id']) || ! $item['variant_id']) {
                     continue; // Skip invalid items
                 }
 
@@ -387,12 +395,12 @@ class WaiterController extends Controller
                     'product',
                     'stockLocations' => function ($query) use ($ownerId) {
                         $query->where('user_id', $ownerId)->where('location', 'counter');
-                    }
+                    },
                 ])->findOrFail($item['variant_id']);
 
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
 
-                if (!$counterStock) {
+                if (! $counterStock) {
                     throw new \Exception("Counter stock not found for {$variant->product->name}");
                 }
 
@@ -433,16 +441,16 @@ class WaiterController extends Controller
 
             // Build order notes with food items
             $notesParts = [];
-            if (!empty($foodItemsNotes)) {
-                $notesParts[] = 'FOOD ITEMS: ' . implode(', ', $foodItemsNotes);
+            if (! empty($foodItemsNotes)) {
+                $notesParts[] = 'FOOD ITEMS: '.implode(', ', $foodItemsNotes);
             }
 
             // Add general order notes if provided
-            if (!empty($validated['order_notes'])) {
-                $notesParts[] = 'ORDER NOTES: ' . $validated['order_notes'];
+            if (! empty($validated['order_notes'])) {
+                $notesParts[] = 'ORDER NOTES: '.$validated['order_notes'];
             }
 
-            $orderNotes = !empty($notesParts) ? implode(' | ', $notesParts) : '';
+            $orderNotes = ! empty($notesParts) ? implode(' | ', $notesParts) : '';
 
             // Find active shift for this business/location
             $activeShift = \App\Models\BarShift::where('user_id', $ownerId)
@@ -451,7 +459,7 @@ class WaiterController extends Controller
                 ->first();
 
             // If not found by branch, get any open shift for owner (fallback)
-            if (!$activeShift) {
+            if (! $activeShift) {
                 $activeShift = \App\Models\BarShift::where('user_id', $ownerId)
                     ->where('status', 'open')
                     ->first();
@@ -476,7 +484,7 @@ class WaiterController extends Controller
             ]);
 
             // Create order items (drinks)
-            $transferSaleService = new \App\Services\TransferSaleService();
+            $transferSaleService = new \App\Services\TransferSaleService;
 
             foreach ($orderItems as $item) {
                 $orderItem = OrderItem::create([
@@ -517,6 +525,7 @@ class WaiterController extends Controller
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             DB::rollBack();
+
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -529,6 +538,7 @@ class WaiterController extends Controller
                 'trace' => $e->getTraceAsString(),
                 'request_data' => $request->all(),
             ]);
+
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),
@@ -543,7 +553,7 @@ class WaiterController extends Controller
     {
         $staff = $this->getCurrentStaff();
 
-        if (!$staff || !$staff->is_active) {
+        if (! $staff || ! $staff->is_active) {
             abort(403, 'You must be logged in as an active waiter.');
         }
 
@@ -567,7 +577,7 @@ class WaiterController extends Controller
         $staff = $this->getCurrentStaff();
         $kioskWaiterId = session('kiosk_waiter_id');
 
-        if (!$staff && !$kioskWaiterId) {
+        if (! $staff && ! $kioskWaiterId) {
             return response()->json(['error' => 'Authentication required to cancel order'], 403);
         }
 
@@ -577,7 +587,7 @@ class WaiterController extends Controller
             if ($order->user_id !== $staff->user_id) {
                 return response()->json(['error' => 'Order not found or does not belong to your business'], 404);
             }
-            
+
             // If it's a waiter, they can only cancel their own. Manager/Accountant can cancel any.
             $role = strtolower($staff->role->name ?? '');
             if ($role === 'waiter' && $order->waiter_id != $staff->id) {
@@ -588,11 +598,19 @@ class WaiterController extends Controller
             if ($order->waiter_id != $kioskWaiterId) {
                 return response()->json(['error' => 'You can only cancel your own orders'], 403);
             }
+
+            // Kiosk: waiters may not void tickets that include drinks — counter handles bar items
+            $order->loadCount('items');
+            if ($order->items_count > 0) {
+                return response()->json([
+                    'error' => 'Tickets with drinks cannot be voided from the kiosk. Remove food with the food controls, or ask the counter to void or adjust drinks.',
+                ], 403);
+            }
         }
 
         // Only allow cancellation of unpaid orders
         if ($order->payment_status === 'paid' || $order->status === 'cancelled') {
-            return response()->json(['error' => 'Cannot cancel an order that is already ' . $order->status . ' or ' . $order->payment_status], 400);
+            return response()->json(['error' => 'Cannot cancel an order that is already '.$order->status.' or '.$order->payment_status], 400);
         }
 
         $validated = $request->validate([
@@ -601,46 +619,65 @@ class WaiterController extends Controller
 
         DB::beginTransaction();
         try {
-            // 1. Return stock for drinks (Bar Items)
+            $order->load(['items']);
+
+            // Pending kiosk/waiter orders do not decrement counter stock until the counter marks
+            // the order served — so cancelling must not add bottles back unless already served.
+            $itemIds = $order->items->pluck('id');
+            $affectedTransferIds = TransferSale::whereIn('order_item_id', $itemIds)
+                ->pluck('stock_transfer_id')
+                ->unique()
+                ->filter();
+
+            $transferSaleService = new \App\Services\TransferSaleService;
+
             foreach ($order->items as $item) {
-                if ($item->product_variant_id) {
-                    $counterStock = \App\Models\StockLocation::where('user_id', $order->user_id)
-                        ->where('product_variant_id', $item->product_variant_id)
-                        ->where('location', 'counter')
-                        ->first();
-                    
-                    if ($counterStock) {
-                        // If it's a shot/tot sale, we should ideally handle the open bottle, 
-                        // but for simplicity we return the quantity or shots.
-                        // For now, let's just return the units if it's a unit sale.
-                        if ($item->sell_type === 'unit') {
-                            $counterStock->increment('quantity', $item->quantity);
-                        } else {
-                            // If it's shots, it's more complex (might need fractional bottle return).
-                            // For a simple cancel, we usually return whatever we can.
-                        }
-                    }
+                if (! $item->product_variant_id || ! $item->is_served) {
+                    continue;
+                }
+
+                $counterStock = StockLocation::where('user_id', $order->user_id)
+                    ->where('product_variant_id', $item->product_variant_id)
+                    ->where('location', 'counter')
+                    ->first();
+
+                if (! $counterStock) {
+                    continue;
+                }
+
+                if (($item->sell_type ?? 'unit') === 'unit') {
+                    $counterStock->increment('quantity', $item->quantity);
+                }
+                // Tot/shot sales: stock was adjusted in serve flow (open bottles); mirror reversal would go here.
+            }
+
+            TransferSale::whereIn('order_item_id', $itemIds)->delete();
+            foreach ($affectedTransferIds as $transferId) {
+                $transfer = StockTransfer::find($transferId);
+                if ($transfer) {
+                    $transferSaleService->checkTransferCompletion($transfer, $order->user_id);
                 }
             }
 
-            // 2. Mark order as cancelled
+            // Mark order as cancelled
             $order->status = 'cancelled';
-            $cancelReason = !empty($validated['reason']) ? 'CANCELLED - Reason: ' . $validated['reason'] : 'CANCELLED';
-            $order->notes = ($order->notes ? $order->notes . ' | ' : '') . $cancelReason;
+            $cancelReason = ! empty($validated['reason']) ? 'CANCELLED - Reason: '.$validated['reason'] : 'CANCELLED';
+            $order->notes = ($order->notes ? $order->notes.' | ' : '').$cancelReason;
             $order->save();
 
-            // 3. Mark all kitchen order items as cancelled
+            // Mark all kitchen order items as cancelled
             $order->kitchenOrderItems()->where('status', '!=', 'completed')->update(['status' => 'cancelled']);
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Order cancelled successfully and stock returned'
+                'message' => 'Order cancelled successfully.',
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => 'Failed to cancel order: ' . $e->getMessage()], 500);
+
+            return response()->json(['error' => 'Failed to cancel order: '.$e->getMessage()], 500);
         }
     }
 
@@ -651,7 +688,7 @@ class WaiterController extends Controller
     {
         $staff = $this->getCurrentStaff();
 
-        if (!$staff || !$staff->is_active) {
+        if (! $staff || ! $staff->is_active) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -667,10 +704,11 @@ class WaiterController extends Controller
         }
 
         // Check if payment can be recorded using the model's validation logic
-        if (!$order->canRecordPayment()) {
+        if (! $order->canRecordPayment()) {
             $message = $order->getPaymentReadinessMessage();
+
             return response()->json([
-                'error' => $message ?: 'Payment cannot be recorded at this time'
+                'error' => $message ?: 'Payment cannot be recorded at this time',
             ], 400);
         }
 
@@ -705,7 +743,7 @@ class WaiterController extends Controller
 
             // Send payment notification SMS to waiter and customer
             try {
-                $smsService = new \App\Services\WaiterSmsService();
+                $smsService = new \App\Services\WaiterSmsService;
                 $smsService->sendPaymentNotification($order, $validated['payment_method'], $order->total_amount);
 
                 // Send thank you SMS to customer
@@ -716,7 +754,7 @@ class WaiterController extends Controller
                 // Log error but don't fail the payment recording
                 \Log::error('Failed to send payment SMS notification', [
                     'order_id' => $order->id,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
             }
 
@@ -737,10 +775,10 @@ class WaiterController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
-            return response()->json(['error' => 'Failed to record payment: ' . $e->getMessage()], 500);
+
+            return response()->json(['error' => 'Failed to record payment: '.$e->getMessage()], 500);
         }
     }
-
 
     /**
      * Print receipt for an order
@@ -757,11 +795,10 @@ class WaiterController extends Controller
         }
         // Kiosk: no staff session — just load the order (it's valid if it exists via route model binding)
 
-        $order->load(['items.productVariant.product', 'table', 'waiter']);
+        $order->load(['items.productVariant.product', 'kitchenOrderItems', 'table', 'waiter']);
 
         return view('bar.waiter.receipt', compact('order'));
     }
-
 
     /**
      * Kiosk Interface - Public Product Display
@@ -772,12 +809,12 @@ class WaiterController extends Controller
         $ownerId = $this->getOwnerId();
 
         // If no authenticated user, try to get from request parameter
-        if (!$ownerId) {
+        if (! $ownerId) {
             $ownerId = $request->input('user_id');
         }
 
         // If still no owner ID, try to auto-detect from business
-        if (!$ownerId) {
+        if (! $ownerId) {
             // Get the first user with business_type 'bar' or restaurant
             $owner = \App\Models\User::where(function ($query) {
                 $query->where('business_type', 'bar')
@@ -793,7 +830,7 @@ class WaiterController extends Controller
             }
 
             // If still no owner ID, show error
-            if (!$ownerId) {
+            if (! $ownerId) {
                 abort(403, 'No business found. Please contact administrator.');
             }
         }
@@ -817,11 +854,12 @@ class WaiterController extends Controller
                 'stockLocations' => function ($query) use ($ownerId) {
                     $query->where('user_id', $ownerId)
                         ->where('location', 'counter');
-                }
+                },
             ])
             ->get()
             ->filter(function ($variant) {
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+
                 return $counterStock && $counterStock->quantity > 0;
             })
             ->map(function ($variant) {
@@ -831,23 +869,27 @@ class WaiterController extends Controller
 
                 $portionLabel = (function ($cat) {
                     $c = strtolower(trim($cat));
-                    if (str_contains($c, 'wine'))
+                    if (str_contains($c, 'wine')) {
                         return 'Glass';
-                    if (str_contains($c, 'spirit') || str_contains($c, 'liquor') || str_contains($c, 'vodka') || str_contains($c, 'whiskey') || str_contains($c, 'gin'))
+                    }
+                    if (str_contains($c, 'spirit') || str_contains($c, 'liquor') || str_contains($c, 'vodka') || str_contains($c, 'whiskey') || str_contains($c, 'gin')) {
                         return 'Shot';
+                    }
+
                     return 'Tot';
                 })($category);
 
                 $qty = $counterStock->quantity;
                 $m = $variant->measurement;
                 if (is_numeric($m) && $m > 0) {
-                    $m = ($m < 10) ? $m . 'L' : $m . 'ml';
+                    $m = ($m < 10) ? $m.'L' : $m.'ml';
                 }
                 $pkg = $variant->packaging;
-                if (in_array(strtolower($pkg), ['crate', 'carton', 'box', 'pkg', 'case', 'piece', 'pieces', 'pcs', 'unit']))
+                if (in_array(strtolower($pkg), ['crate', 'carton', 'box', 'pkg', 'case', 'piece', 'pieces', 'pcs', 'unit'])) {
                     $pkg = '';
+                }
 
-                $variantStr = trim($m . ($pkg ? ' - ' . $pkg : ''));
+                $variantStr = trim($m.($pkg ? ' - '.$pkg : ''));
                 $product_name = $variant->display_name ?: $variant->product->name;
 
                 // Hide variant string if it's completely redundant with the display name
@@ -895,11 +937,9 @@ class WaiterController extends Controller
             ->with([
                 'extras' => function ($q) {
                     $q->where('is_available', true);
-                }
+                },
             ])
             ->get();
-
-
 
         $waiters = \App\Models\Staff::where('user_id', $ownerId)
             ->where('is_active', true)
@@ -917,14 +957,14 @@ class WaiterController extends Controller
     public function kioskProductsJson(Request $request)
     {
         $ownerId = $this->getOwnerId() ?: $request->input('user_id');
-        if (!$ownerId) {
+        if (! $ownerId) {
             $waiterId = session('kiosk_waiter_id');
             $staff = $waiterId ? \App\Models\Staff::find($waiterId) : null;
             $ownerId = $staff ? $staff->user_id : null;
         }
 
         // Auto-detect owner if still not found
-        if (!$ownerId) {
+        if (! $ownerId) {
             if (auth()->check()) {
                 $user = auth()->user();
                 // If it's the main owner/business
@@ -932,8 +972,8 @@ class WaiterController extends Controller
                     $ownerId = $user->id;
                 } else {
                     // Try to find the person who created this staff/accountant or use the first bar/restaurant user
-                    $owner = \App\Models\User::where('id', $user->user_id)->first() 
-                            ?? \App\Models\User::where('business_type', 'restaurant')->first() 
+                    $owner = \App\Models\User::where('id', $user->user_id)->first()
+                            ?? \App\Models\User::where('business_type', 'restaurant')->first()
                             ?? \App\Models\User::where('business_type', 'bar')->first();
                     $ownerId = $owner ? $owner->id : null;
                 }
@@ -943,7 +983,7 @@ class WaiterController extends Controller
             }
         }
 
-        if (!$ownerId) {
+        if (! $ownerId) {
             return response()->json(['error' => 'No business ID found'], 400);
         }
 
@@ -974,11 +1014,12 @@ class WaiterController extends Controller
                 'stockLocations' => function ($query) use ($ownerId) {
                     $query->where('user_id', $ownerId)
                         ->where('location', 'counter');
-                }
+                },
             ])
             ->get()
             ->filter(function ($variant) {
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+
                 return $counterStock && $counterStock->quantity > 0;
             })
             ->map(function ($variant) {
@@ -988,23 +1029,27 @@ class WaiterController extends Controller
 
                 $portionLabel = (function ($cat) {
                     $c = strtolower(trim($cat));
-                    if (str_contains($c, 'wine'))
+                    if (str_contains($c, 'wine')) {
                         return 'Glass';
-                    if (str_contains($c, 'spirit') || str_contains($c, 'liquor') || str_contains($c, 'vodka') || str_contains($c, 'whiskey') || str_contains($c, 'gin'))
+                    }
+                    if (str_contains($c, 'spirit') || str_contains($c, 'liquor') || str_contains($c, 'vodka') || str_contains($c, 'whiskey') || str_contains($c, 'gin')) {
                         return 'Shot';
+                    }
+
                     return 'Tot';
                 })($category);
 
                 $qty = $counterStock->quantity;
                 $m = $variant->measurement;
                 if (is_numeric($m) && $m > 0) {
-                    $m = ($m < 10) ? $m . 'L' : $m . 'ml';
+                    $m = ($m < 10) ? $m.'L' : $m.'ml';
                 }
                 $pkg = $variant->packaging;
-                if (in_array(strtolower($pkg), ['crate', 'carton', 'box', 'pkg', 'case', 'piece', 'pieces', 'pcs', 'unit']))
+                if (in_array(strtolower($pkg), ['crate', 'carton', 'box', 'pkg', 'case', 'piece', 'pieces', 'pcs', 'unit'])) {
                     $pkg = '';
+                }
 
-                $variantStr = trim($m . ($pkg ? ' - ' . $pkg : ''));
+                $variantStr = trim($m.($pkg ? ' - '.$pkg : ''));
                 $product_name = $variant->display_name ?: $variant->product->name;
 
                 // Hide variant string if it's completely redundant with the display name
@@ -1049,7 +1094,7 @@ class WaiterController extends Controller
             ->with([
                 'extras' => function ($q) {
                     $q->where('is_available', true);
-                }
+                },
             ])
             ->get();
 
@@ -1058,7 +1103,7 @@ class WaiterController extends Controller
             'foodItems' => $foodItems,
             'tables' => $tables,
             'kitchenReadyCount' => $kitchenReadyCount,
-            'success' => true
+            'success' => true,
         ];
     }
 
@@ -1076,7 +1121,7 @@ class WaiterController extends Controller
         \Log::info('Kiosk Identify Request', [
             'pin' => $validated['pin'],
             'owner_id' => $ownerId,
-            'all_request' => $request->all()
+            'all_request' => $request->all(),
         ]);
 
         $staff = \App\Models\Staff::where('pin', $validated['pin'])
@@ -1088,8 +1133,9 @@ class WaiterController extends Controller
             \Log::info('Staff match found for PIN', ['staff_id' => $staff->id, 'role' => $staff->role->name ?? 'none']);
         }
 
-        if (!$staff) {
+        if (! $staff) {
             \Log::warning('Kiosk Identify Failed: Staff not found', ['pin' => $validated['pin'], 'owner_id' => $ownerId]);
+
             return response()->json(['error' => 'No active waiter found with this PIN'], 404);
         }
 
@@ -1142,7 +1188,7 @@ class WaiterController extends Controller
             $staff = \App\Models\Staff::find($validated['waiter_id']);
         }
 
-        if (!$staff || !$staff->is_active) {
+        if (! $staff || ! $staff->is_active) {
             return response()->json(['error' => 'Invalid waiter or PIN'], 401);
         }
 
@@ -1174,6 +1220,7 @@ class WaiterController extends Controller
     public function kioskLogout()
     {
         session()->forget(['kiosk_waiter_id', 'kiosk_waiter_name', 'kiosk_waiter_staff_id']);
+
         return response()->json(['success' => true]);
     }
 
@@ -1183,20 +1230,27 @@ class WaiterController extends Controller
     public function kioskOrders(Request $request)
     {
         $waiterId = session('kiosk_waiter_id');
-        if (!$waiterId) {
+        if (! $waiterId) {
             return response()->json(['success' => false, 'error' => 'Not authenticated in Kiosk session'], 401);
         }
 
-        $orders = \App\Models\BarOrder::with(['items.productVariant.product', 'table', 'orderPayments', 'kitchenOrderItems'])
+        $orders = \App\Models\BarOrder::with(['items.productVariant.product', 'table', 'orderPayments', 'kitchenOrderItems.foodItem'])
             ->where('waiter_id', $waiterId)
             ->whereIn('status', ['pending', 'preparing', 'ready', 'served'])
             ->where('payment_status', 'pending')
             ->orderBy('created_at', 'desc')
             ->get();
 
+        $orders->each(function (\App\Models\BarOrder $order) {
+            $order->setAttribute(
+                'kitchen_docket_item_count',
+                $order->kitchenOrderItems->filter(fn (\App\Models\KitchenOrderItem $i) => $i->appearsOnKitchenDocket())->count()
+            );
+        });
+
         return response()->json([
             'success' => true,
-            'orders' => $orders
+            'orders' => $orders,
         ]);
     }
 
@@ -1206,7 +1260,7 @@ class WaiterController extends Controller
     public function kioskHistory(Request $request)
     {
         $waiterId = session('kiosk_waiter_id');
-        if (!$waiterId) {
+        if (! $waiterId) {
             return response()->json(['success' => false, 'error' => 'Not authenticated in Kiosk session'], 401);
         }
 
@@ -1233,7 +1287,7 @@ class WaiterController extends Controller
         return response()->json([
             'success' => true,
             'orders' => $orders,
-            'stats' => $stats
+            'stats' => $stats,
         ]);
     }
 
@@ -1245,7 +1299,7 @@ class WaiterController extends Controller
         $waiterId = session('kiosk_waiter_id');
         $staff = $waiterId ? \App\Models\Staff::find($waiterId) : $this->getCurrentStaff();
 
-        if (!$staff) {
+        if (! $staff) {
             // Try to find staff by PIN if provided in request or session
             $pin = $request->input('pin') ?: session('kiosk_waiter_pin'); // Assuming we might store PIN temporarily
             if ($pin) {
@@ -1253,7 +1307,7 @@ class WaiterController extends Controller
             }
         }
 
-        if (!$staff) {
+        if (! $staff) {
             return response()->json(['error' => 'Authentication required. Please enter your PIN again.'], 401);
         }
 
@@ -1263,18 +1317,18 @@ class WaiterController extends Controller
         if ($order->user_id != $ownerId) {
             return response()->json([
                 'error' => 'Order not found in this business',
-                'debug' => ['order_owner' => $order->user_id, 'staff_owner' => $ownerId]
+                'debug' => ['order_owner' => $order->user_id, 'staff_owner' => $ownerId],
             ], 404);
         }
 
         // Verify waiter ownership (Waiters can only add to their own, Managers to any)
         $role = strtolower($staff->role->name ?? '');
         $isManager = in_array($role, ['manager', 'accountant', 'admin']);
-        
-        if (!$isManager && $order->waiter_id != $staff->id) {
+
+        if (! $isManager && $order->waiter_id != $staff->id) {
             return response()->json([
                 'error' => 'You can only add items to your own orders. This ticket belongs to another waiter.',
-                'debug' => ['order_waiter' => $order->waiter_id, 'current_waiter' => $staff->id]
+                'debug' => ['order_waiter' => $order->waiter_id, 'current_waiter' => $staff->id],
             ], 403);
         }
 
@@ -1299,12 +1353,12 @@ class WaiterController extends Controller
 
                 if ($isFood) {
                     // Map frontend 'name' to 'product_name' if missing
-                    if (empty($item['product_name']) && !empty($item['name'])) {
+                    if (empty($item['product_name']) && ! empty($item['name'])) {
                         $item['product_name'] = $item['name'];
                     }
-                    
+
                     // Map frontend 'variant' to 'variant_name' if missing
-                    if (empty($item['variant_name']) && !empty($item['variant'])) {
+                    if (empty($item['variant_name']) && ! empty($item['variant'])) {
                         $item['variant_name'] = $item['variant'];
                         $item['variant_name'] = trim($item['variant_name'], '()');
                     }
@@ -1317,28 +1371,29 @@ class WaiterController extends Controller
                     $kitchenOrderItems[] = [
                         'food_item_id' => $item['food_item_id'],
                         'food_item_name' => $item['product_name'] ?? 'Food Item',
-                        'variant_name' => (!empty($item['variant_name'])) ? $item['variant_name'] : null,
+                        'variant_name' => (! empty($item['variant_name'])) ? $item['variant_name'] : null,
                         'quantity' => $quantity,
                         'unit_price' => $unitPrice,
                         'total_price' => $itemTotal,
-                        'special_instructions' => (!empty($item['notes'])) ? $item['notes'] : null,
+                        'special_instructions' => (! empty($item['notes'])) ? $item['notes'] : null,
                         'status' => 'pending',
                     ];
 
-                    $foodItemNote = $quantity . 'x ' . ($item['product_name'] ?? 'Food Item') .
-                        ($item['variant_name'] ? ' (' . $item['variant_name'] . ')' : '') .
-                        ' - Tsh ' . number_format($unitPrice, 0);
+                    $foodItemNote = $quantity.'x '.($item['product_name'] ?? 'Food Item').
+                        ($item['variant_name'] ? ' ('.$item['variant_name'].')' : '').
+                        ' - Tsh '.number_format($unitPrice, 0);
 
-                    if (!empty($item['notes'])) {
-                        $foodItemNote .= ' [Note: ' . $item['notes'] . ']';
+                    if (! empty($item['notes'])) {
+                        $foodItemNote .= ' [Note: '.$item['notes'].']';
                     }
 
                     $foodItemsNotes[] = $foodItemNote;
+
                     continue;
                 }
 
                 // Handle regular product variants (drinks)
-                if (!isset($item['variant_id']) || !$item['variant_id']) {
+                if (! isset($item['variant_id']) || ! $item['variant_id']) {
                     continue;
                 }
 
@@ -1347,11 +1402,11 @@ class WaiterController extends Controller
                     'product',
                     'stockLocations' => function ($query) use ($ownerId) {
                         $query->where('user_id', $ownerId)->where('location', 'counter');
-                    }
+                    },
                 ])->findOrFail($item['variant_id']);
 
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
-                if (!$counterStock) {
+                if (! $counterStock) {
                     throw new \Exception("Counter stock not found for {$variant->product->name}");
                 }
 
@@ -1392,14 +1447,14 @@ class WaiterController extends Controller
 
             // Update order total and notes
             $order->total_amount += $totalAdditional;
-            if (!empty($foodItemsNotes)) {
-                $additionalNotes = ' ADDED ITEMS: ' . implode(', ', $foodItemsNotes);
-                $order->notes = ($order->notes ? $order->notes . ' | ' : '') . $additionalNotes;
+            if (! empty($foodItemsNotes)) {
+                $additionalNotes = ' ADDED ITEMS: '.implode(', ', $foodItemsNotes);
+                $order->notes = ($order->notes ? $order->notes.' | ' : '').$additionalNotes;
             }
             $order->save();
 
             // Create order items (drinks)
-            $transferSaleService = new \App\Services\TransferSaleService();
+            $transferSaleService = new \App\Services\TransferSaleService;
             foreach ($orderItems as $item) {
                 $orderItem = OrderItem::create([
                     'order_id' => $order->id,
@@ -1437,9 +1492,11 @@ class WaiterController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json(['success' => false, 'error' => $e->getMessage()], 400);
         }
     }
+
     /**
      * Print Kitchen Docket (Food only)
      */
@@ -1452,11 +1509,15 @@ class WaiterController extends Controller
 
         $order->load(['kitchenOrderItems.foodItem', 'table', 'waiter']);
 
-        if ($order->kitchenOrderItems->count() === 0) {
-            return "No food items found in this order.";
+        $docketKitchenItems = $order->kitchenOrderItems
+            ->filter(fn (\App\Models\KitchenOrderItem $i) => $i->appearsOnKitchenDocket())
+            ->values();
+
+        if ($docketKitchenItems->isEmpty()) {
+            return 'No kitchen (food) items on this ticket — drinks are not printed on the kitchen docket.';
         }
 
-        return view('bar.waiter.docket', compact('order'));
+        return view('bar.waiter.docket', compact('order', 'docketKitchenItems'));
     }
 
     /**
@@ -1468,12 +1529,12 @@ class WaiterController extends Controller
         $staff = $this->getCurrentStaff();
         $kioskWaiterId = session('kiosk_waiter_id');
 
-        if (!$staff && !$kioskWaiterId) {
+        if (! $staff && ! $kioskWaiterId) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         $order = $item->order;
-        if (!$order) {
+        if (! $order) {
             return response()->json(['error' => 'Order not found'], 404);
         }
 
@@ -1498,25 +1559,25 @@ class WaiterController extends Controller
 
         // Only allow cancel if not already completed/being prepared (optional, but safer)
         // User wants waiter to be able to cancel food.
-        
+
         DB::beginTransaction();
         try {
             // Log cancellation reason
             $reason = $request->input('reason', 'Waiter cancellation');
-            
-            // Subtract item price from order total
-            $order->total_amount -= $item->total_price;
-            
+
+            // Subtract item price from order total (keep non-negative)
+            $order->total_amount = max(0, (float) $order->total_amount - (float) $item->total_price);
+
             // Log reason in order notes
             $cancelNote = "FOOD CANCELLED: {$item->quantity}x {$item->food_item_name} (Reason: {$reason})";
-            $order->notes = ($order->notes ? $order->notes . ' | ' : '') . $cancelNote;
-            
+            $order->notes = ($order->notes ? $order->notes.' | ' : '').$cancelNote;
+
             $order->save();
 
             // Mark item as cancelled
             $item->update([
                 'status' => 'cancelled',
-                'special_instructions' => ($item->special_instructions ? $item->special_instructions . ' | ' : '') . 'ITEM CANCELLED: ' . $reason
+                'special_instructions' => ($item->special_instructions ? $item->special_instructions.' | ' : '').'ITEM CANCELLED: '.$reason,
             ]);
 
             DB::commit();
@@ -1524,11 +1585,12 @@ class WaiterController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Food item cancelled successfully. Order total updated.',
-                'order_total' => $order->total_amount
+                'order_total' => $order->total_amount,
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => 'Cancellation failed: ' . $e->getMessage()], 500);
+
+            return response()->json(['error' => 'Cancellation failed: '.$e->getMessage()], 500);
         }
     }
 }

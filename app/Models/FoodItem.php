@@ -75,8 +75,30 @@ class FoodItem extends Model
     public function getFullNameAttribute()
     {
         if ($this->variant_name) {
-            return $this->name . ' (' . $this->variant_name . ')';
+            return $this->name.' ('.$this->variant_name.')';
         }
+
         return $this->name;
+    }
+
+    /**
+     * True when this menu category is treated as a drink/beverage (excluded from kitchen docket).
+     */
+    public static function categoryLooksLikeBeverage(?string $category): bool
+    {
+        if ($category === null || trim($category) === '') {
+            return false;
+        }
+
+        $c = strtolower($category);
+        $keywords = ['beverage', 'drink', 'alcohol', 'beer', 'wine', 'spirit', 'liquor', 'vodka', 'whiskey', 'whisky', 'gin', 'rum', 'soda', 'water', 'juice', 'cocktail', 'coffee', 'tea', 'smoothie'];
+
+        foreach ($keywords as $kw) {
+            if (str_contains($c, $kw)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
