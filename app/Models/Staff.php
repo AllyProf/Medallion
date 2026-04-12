@@ -33,6 +33,7 @@ class Staff extends Model
         'last_login_at',
         'api_token',
         'api_token_expires_at',
+        'profile_image',
     ];
 
     protected $hidden = [

@@ -18,6 +18,12 @@ use App\Http\Controllers\NotificationController;
 // Global Notifications & Search (all authenticated users)
 Route::get('/api/notifications', [NotificationController::class, 'index'])->name('notifications.index');
 Route::get('/api/search', [NotificationController::class, 'search'])->name('global.search');
+Route::post('/api/notifications/clear', [NotificationController::class, 'clearAll'])->name('notifications.clear');
+
+// Profile management
+Route::get('/profile', [\App\Http\Controllers\ProfileController::class, 'index'])->name('profile.index');
+Route::post('/profile/update', [\App\Http\Controllers\ProfileController::class, 'update'])->name('profile.update');
+Route::post('/profile/password', [\App\Http\Controllers\ProfileController::class, 'updatePassword'])->name('profile.update-password');
 // Default entry: open login page directly (no redirect)
 Route::get('/', [\App\Http\Controllers\Auth\LoginController::class, 'showLoginForm'])->name('home');
 
@@ -41,6 +47,13 @@ Route::get('/order', [\App\Http\Controllers\CustomerOrderController::class, 'ind
 Route::get('/cart', [\App\Http\Controllers\CustomerOrderController::class, 'cart'])->name('customer.cart');
 Route::post('/order', [\App\Http\Controllers\CustomerOrderController::class, 'store'])->name('customer.order.store');
 Route::get('/order/success/{order}', [\App\Http\Controllers\CustomerOrderController::class, 'success'])->name('customer.order.success');
+
+// Public Restaurant Portal Pages (via QR)
+Route::prefix('medallion')->group(function () {
+    Route::get('/menus/{ownerId?}', [\App\Http\Controllers\PublicRestaurantController::class, 'showMenu'])->name('public.restaurant.menu');
+    Route::get('/customer-feedback/{ownerId?}', [\App\Http\Controllers\PublicRestaurantController::class, 'showFeedbackForm'])->name('public.restaurant.feedback');
+    Route::post('/customer-feedback/{ownerId?}', [\App\Http\Controllers\PublicRestaurantController::class, 'submitFeedback'])->name('public.restaurant.feedback.submit');
+});
 
 // Plans & Pricing
 Route::get('/plans', [PlansController::class, 'index'])->name('plans.index');
@@ -247,6 +260,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::put('counter-settings', [\App\Http\Controllers\Bar\CounterSettingsController::class, 'update'])->name('counter-settings.update');
         Route::get('counter/waiter-orders', [\App\Http\Controllers\Bar\CounterController::class, 'waiterOrders'])->name('counter.waiter-orders');
         Route::get('counter/customer-orders', [\App\Http\Controllers\Bar\CounterController::class, 'customerOrders'])->name('counter.customer-orders');
+        Route::post('counter/update-threshold', [\App\Http\Controllers\Bar\CounterController::class, 'updateThreshold'])->name('counter.update-threshold');
         Route::get('counter/warehouse-stock', [\App\Http\Controllers\Bar\CounterController::class, 'warehouseStock'])->name('counter.warehouse-stock');
         Route::get('counter/stock-sheet/{location?}', [\App\Http\Controllers\Bar\CounterController::class, 'stockSheet'])->name('stock-sheet');
         Route::get('counter/counter-stock', [\App\Http\Controllers\Bar\CounterController::class, 'counterStock'])->name('counter.counter-stock');
@@ -261,6 +275,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::post('counter/reconciliation/{reconciliation}/reset', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'resetReconciliation'])->name('counter.reset-reconciliation');
         Route::post('counter/handover', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'storeHandover'])->name('counter.handover');
         Route::post('counter/reset-handover', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'resetHandover'])->name('counter.reset-handover');
+        Route::get('counter/shift-report/{shift}', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'shiftReport'])->name('counter.shift-report');
 
         Route::post('counter/save-voice-clip', [\App\Http\Controllers\Bar\CounterController::class, 'saveVoiceClip'])->name('counter.save-voice-clip');
         Route::put('counter/voice-clips/{id}', [\App\Http\Controllers\Bar\CounterController::class, 'updateVoiceClip'])->name('counter.update-voice-clip');
@@ -353,6 +368,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('counter-reconciliation', [\App\Http\Controllers\Accountant\AccountantController::class, 'counterReconciliation'])->name('counter.reconciliation');
         Route::post('counter/reconciliation/{reconciliation}/verify', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'verifyReconciliation'])->name('counter.verify-reconciliation');
         Route::post('counter/reconciliation/settle-shortage', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'settleShortage'])->name('counter.settle-shortage');
+        Route::post('counter/reconciliation/undo-settle-shortage', [\App\Http\Controllers\Bar\CounterReconciliationController::class, 'undoSettleShortage'])->name('counter.undo-settle-shortage');
         Route::post('counter/handover/{id}/verify', [\App\Http\Controllers\Accountant\AccountantController::class, 'verifyHandover'])->name('counter.handover.verify');
         Route::post('counter/handover/{id}/undo-verify', [\App\Http\Controllers\Accountant\AccountantController::class, 'undoVerifyHandover'])->name('counter.handover.undo-verify');
         Route::post('financial/reconciliation/{id}/verify', [\App\Http\Controllers\Accountant\AccountantController::class, 'verifyFinancialReconciliation'])->name('financial.verify');
@@ -420,6 +436,10 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('targets', [\App\Http\Controllers\Manager\TargetController::class, 'index'])->name('targets.index');
         Route::post('targets/monthly', [\App\Http\Controllers\Manager\TargetController::class, 'storeMonthly'])->name('targets.monthly.store');
         Route::post('targets/staff', [\App\Http\Controllers\Manager\TargetController::class, 'storeStaff'])->name('staff-targets.store');
+
+        // QR & Feedback Portal
+        Route::get('qr-codes', [\App\Http\Controllers\Manager\QrMenuController::class, 'index'])->name('qr-codes.index');
+        Route::get('feedback', [\App\Http\Controllers\Manager\QrMenuController::class, 'feedbackInbox'])->name('feedback.index');
     });
 
     // Marketing Routes (Require Payment & Configuration)
@@ -476,7 +496,19 @@ Route::middleware('allow.staff')->group(function () {
 
         // Analytics
         Route::get('/analytics', [\App\Http\Controllers\Admin\AnalyticsController::class, 'index'])->name('analytics.index');
+
+        // Security & Admin Tools
+        Route::prefix('security')->name('security.')->group(function () {
+            Route::get('/sessions', [\App\Http\Controllers\Admin\SecurityController::class, 'activeSessions'])->name('sessions');
+            Route::delete('/sessions/{sessionId}', [\App\Http\Controllers\Admin\SecurityController::class, 'revokeSession'])->name('sessions.revoke');
+            Route::get('/logs', [\App\Http\Controllers\Admin\SecurityController::class, 'logs'])->name('logs');
+            Route::get('/accounts', [\App\Http\Controllers\Admin\SecurityController::class, 'userAccounts'])->name('accounts');
+            Route::post('/accounts/users/{user}/reset-password', [\App\Http\Controllers\Admin\SecurityController::class, 'resetUserPassword'])->name('accounts.users.reset-password');
+            Route::post('/accounts/staff/{staff}/reset-password', [\App\Http\Controllers\Admin\SecurityController::class, 'resetStaffPassword'])->name('accounts.staff.reset-password');
+            Route::post('/accounts/users/{user}/force-logout', [\App\Http\Controllers\Admin\SecurityController::class, 'forceLogoutUser'])->name('accounts.users.force-logout');
+        });
     });
+
 
     // Purchase Requests Workflow
     Route::prefix('purchase-requests')->name('purchase-requests.')->group(function () {

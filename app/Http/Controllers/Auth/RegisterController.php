@@ -114,7 +114,7 @@ class RegisterController extends Controller
         ]);
 
         // Send OTP via SMS
-        $message = "HABARI! Your MauzoLink verification code is: " . $otpCode . ". This code expires in 10 minutes.";
+        $message = "HABARI! Your MEDALLION verification code is: " . $otpCode . ". This code expires in 10 minutes.";
         $smsResult = $this->smsService->sendSms($phoneNumber, $message);
 
         // Store user ID in session for OTP verification

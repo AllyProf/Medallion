@@ -134,7 +134,8 @@ class StockTransferController extends Controller
                 return $variant->warehouseStock && $variant->warehouseStock->quantity > 0;
             })->map(function($variant) use ($product) {
                 $warehouseStock = $variant->warehouseStock;
-                $warehousePackages = floor($warehouseStock->quantity / $variant->items_per_package);
+                $ipp = ($variant->items_per_package > 0) ? $variant->items_per_package : 1;
+                $warehousePackages = floor($warehouseStock->quantity / $ipp);
                 
                 // Cleaner product name (Remove brand from product title if redundant)
                 $cleanTitle = $variant->name;
@@ -156,7 +157,7 @@ class StockTransferController extends Controller
                     'image' => $product->image,
                     'measurement' => $variant->measurement,
                     'packaging' => $variant->packaging,
-                    'unit' => $variant->unit,
+                    'unit' => $variant->inventory_unit,
                     'items_per_package' => $variant->items_per_package,
                     'warehouse_quantity' => $warehouseStock->quantity,
                     'warehouse_packages' => $warehousePackages,
@@ -261,12 +262,13 @@ class StockTransferController extends Controller
                     $warehouseStock = $variant->warehouseStock()->where('user_id', $ownerId)->first();
                     return [
                         'id' => $variant->id,
+                        'unit' => $variant->inventory_unit,
                         'product_id' => $product->id,
                         'measurement' => $variant->measurement,
                         'packaging' => $variant->packaging,
                         'items_per_package' => $variant->items_per_package,
                         'warehouse_quantity' => $warehouseStock ? $warehouseStock->quantity : 0,
-                        'warehouse_packages' => $warehouseStock ? floor($warehouseStock->quantity / $variant->items_per_package) : 0,
+                        'warehouse_packages' => $warehouseStock ? (($variant->items_per_package > 0) ? floor($warehouseStock->quantity / $variant->items_per_package) : floor($warehouseStock->quantity)) : 0,
                     ];
                 })->filter(function($variant) {
                     return $variant['warehouse_quantity'] > 0;
@@ -480,7 +482,8 @@ class StockTransferController extends Controller
 
                 if (!$warehouseStock || $warehouseStock->quantity < $totalUnits) {
                     $availableQty = $warehouseStock ? $warehouseStock->quantity : 0;
-                    $availablePkgs = floor($availableQty / ($variant->items_per_package ?: 1));
+                    $ipp = ($variant->items_per_package > 0) ? $variant->items_per_package : 1;
+                    $availablePkgs = floor($availableQty / $ipp);
                     
                     throw new \Exception("Insufficient stock for {$variant->name}. Requested: {$itemData['quantity_requested']} packages ({$totalUnits} units), but only {$availablePkgs} packages ({$availableQty} units) are available in warehouse.");
                 }
@@ -985,6 +988,9 @@ class StockTransferController extends Controller
 
                 // Update transfer status
                 $item->update(['status' => 'completed']);
+
+                // Trigger stock alert check (this will re-arm the alert if stock is now above threshold)
+                app(\App\Services\StockAlertService::class)->checkCounterStock($item->product_variant_id, $ownerId);
 
                 // Record stock movement
                 StockMovement::create([

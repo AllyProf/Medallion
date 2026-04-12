@@ -232,14 +232,12 @@
           },
           success: function(response) {
             if (response.success) {
-              Swal.fire({
-                icon: 'success',
-                title: 'Updated!',
-                text: 'Order status updated successfully',
-                confirmButtonColor: '#940000'
-              }).then(() => {
+              if (typeof showToast === 'function') {
+                  showToast('success', 'Order status updated successfully', 'Updated!');
+              }
+              setTimeout(() => {
                 location.reload();
-              });
+              }, 1200);
             }
           },
           error: function(xhr) {

@@ -154,6 +154,80 @@
   @endif
 </div>
 
+{{-- Recent Settlement History --}}
+<div class="row mt-5">
+    <div class="col-md-12">
+        <div class="tile shadow-sm" style="border-radius:15px;">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h4 class="font-weight-bold mb-0">
+                    <i class="fa fa-history text-info mr-2"></i> Recent Settlement History (30 Days)
+                </h4>
+                <span class="badge badge-info p-2 px-3">{{ count($settlementHistory) }} Entries</span>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="table table-hover table-sm">
+                    <thead class="bg-light text-muted" style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px;">
+                        <tr>
+                            <th class="pl-3 py-2">Settlement Date</th>
+                            <th>Staff Member</th>
+                            <th class="text-center">Shift Info</th>
+                            <th>Method</th>
+                            <th class="text-right">Amount Paid</th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($settlementHistory as $history)
+                            <tr class="align-middle">
+                                <td class="pl-3 py-2">
+                                    <span class="font-weight-bold">{{ \Carbon\Carbon::parse($history['date'])->format('d M, H:i') }}</span>
+                                </td>
+                                <td>
+                                    <div class="font-weight-bold text-dark">{{ $history['waiter_name'] }}</div>
+                                    <small class="text-muted">Recorded by {{ $history['recorded_by'] }}</small>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge badge-light border">{{ $history['dept'] }}</span>
+                                    <div class="small text-muted mt-1">{{ $history['shift_date'] }}</div>
+                                </td>
+                                <td>
+                                    @php
+                                        $channel = $history['channel'] ?? 'cash';
+                                        $label = strtoupper(str_replace('_', ' ', $channel));
+                                        $class = 'badge-light border';
+                                        if($channel === 'salary_deduction') $class = 'badge-warning';
+                                        elseif($channel === 'cash') $class = 'badge-success text-white';
+                                    @endphp
+                                    <span class="badge {{ $class }} px-2" style="font-size: 0.65rem;">{{ $label }}</span>
+                                </td>
+                                <td class="text-right font-weight-bold text-success">
+                                    TSh {{ number_format($history['amount']) }}
+                                </td>
+                                <td class="text-center">
+                                    <button class="btn btn-sm btn-outline-danger undo-settle-btn px-2 p-1" 
+                                            data-id="{{ $history['id'] }}" 
+                                            data-reconciliation="{{ $history['reconciliation_id'] }}"
+                                            title="Undo settlement">
+                                        <i class="fa fa-undo"></i> Undo
+                                    </button>
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="6" class="text-center py-5 text-muted">
+                                    <i class="fa fa-history fa-2x mb-2 opacity-50"></i>
+                                    <p>No recent settlements found in the last 30 days.</p>
+                                </td>
+                            </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
 {{-- Settlement Modal --}}
 <div class="modal fade" id="settleModal" tabindex="-1" role="dialog">
   <div class="modal-dialog modal-dialog-centered" role="document">
@@ -183,6 +257,16 @@
           <label class="font-weight-bold">Amount Received (TSh)</label>
           <input type="number" id="modal-amount" class="form-control" style="font-size:1.1rem; font-weight:700;">
           <small class="text-muted">Outstanding: <span class="text-danger font-weight-bold" id="modal-max-amount"></span></small>
+        </div>
+        <div class="mb-3">
+          <label class="font-weight-bold">Payment channel</label>
+          <select id="modal-channel" class="form-control">
+            <option value="cash">Cash (Vault)</option>
+            <option value="mobile_money">Mobile Money</option>
+            <option value="bank_transfer">Bank Transfer</option>
+            <option value="pos_card">POS / Card</option>
+            <option value="salary_deduction">Deduct from Salary</option>
+          </select>
         </div>
         <div class="mb-2">
           <label class="font-weight-bold">Notes <small class="text-muted font-weight-normal">(optional)</small></label>
@@ -240,7 +324,8 @@ $(document).ready(function() {
         _token: '{{ csrf_token() }}',
         reconciliation_id: recId,
         amount: amount,
-        notes: notes
+        notes: notes,
+        channel: $('#modal-channel').val()
       },
       success: function(resp) {
         if (resp.success) {
@@ -268,6 +353,42 @@ $(document).ready(function() {
         const err = xhr.responseJSON?.error || 'A server error occurred.';
         Swal.fire('Error', err, 'error');
         btn.prop('disabled', false).html('<i class="fa fa-check mr-1"></i> Confirm Payment');
+      }
+    });
+  });
+
+  // Undo Settlement logic
+  $(document).on('click', '.undo-settle-btn', function() {
+    const settlementId = $(this).data('id');
+    const reconciliationId = $(this).data('reconciliation');
+    const $btn = $(this);
+    
+    Swal.fire({
+      title: 'Reverse this settlement?',
+      text: "The payment will be removed and the staff debt will be restored.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc3545',
+      confirmButtonText: 'Yes, Reverse It'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        $btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i>');
+        
+        $.post("{{ route('accountant.counter.undo-settle-shortage') }}", {
+          _token: "{{ csrf_token() }}",
+          reconciliation_id: reconciliationId,
+          settlement_id: settlementId
+        }, function(resp) {
+          if (resp.success) {
+            Swal.fire('Reversed!', resp.message, 'success').then(() => location.reload());
+          } else {
+            Swal.fire('Error', resp.error || 'Undo failed', 'error');
+            $btn.prop('disabled', false).html('<i class="fa fa-undo"></i> Undo');
+          }
+        }).fail(function() {
+          Swal.fire('Error', 'Server communication error', 'error');
+          $btn.prop('disabled', false).html('<i class="fa fa-undo"></i> Undo');
+        });
       }
     });
   });

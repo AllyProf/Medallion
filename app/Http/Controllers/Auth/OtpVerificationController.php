@@ -145,7 +145,7 @@ class OtpVerificationController extends Controller
         ]);
 
         // Send OTP via SMS
-        $message = "HABARI! Your MauzoLink verification code is: " . $otpCode . ". This code expires in 10 minutes.";
+        $message = "HABARI! Your MEDALLION verification code is: " . $otpCode . ". This code expires in 10 minutes.";
         $smsResult = $this->smsService->sendSms($user->phone, $message);
 
         if ($smsResult['success']) {
@@ -169,7 +169,7 @@ class OtpVerificationController extends Controller
         $businessType = $user->business_type ?? 'N/A';
         $city = $user->city ?? 'N/A';
         
-        $message = "HABARI! Karibu MauzoLink!\n\n";
+        $message = "HABARI! Karibu MEDALLION!\n\n";
         $message .= "Akaunti yako imeundwa kwa mafanikio.\n\n";
         $message .= "TAARIFA ZA AKAUNTI:\n";
         $message .= "Jina: " . $user->name . "\n";
@@ -184,7 +184,7 @@ class OtpVerificationController extends Controller
         $message .= "Email: " . $user->email . "\n";
         $message .= "Password: (uliyoichagua wakati wa kujiandikisha)\n\n";
         $message .= "Tafadhali login kwa kutumia credentials hapo juu.\n\n";
-        $message .= "Asante kwa kuchagua MauzoLink!";
+        $message .= "Asante kwa kuchagua MEDALLION!";
         
         $this->smsService->sendSms($user->phone, $message);
     }

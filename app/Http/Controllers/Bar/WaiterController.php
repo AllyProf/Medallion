@@ -7,9 +7,11 @@ use App\Http\Controllers\Traits\HandlesStaffPermissions;
 use App\Models\BarOrder;
 use App\Models\FoodItem;
 use App\Models\KitchenOrderItem;
+use App\Models\OpenBottle;
 use App\Models\OrderItem;
 use App\Models\ProductVariant;
 use App\Models\StockLocation;
+use App\Models\StockMovement;
 use App\Models\StockTransfer;
 use App\Models\TransferSale;
 use Illuminate\Http\Request;
@@ -114,7 +116,7 @@ class WaiterController extends Controller
                     'items_per_package' => $variant->items_per_package ?? 1,
                     'measurement' => $variant->measurement,
                     'packaging_type' => $variant->packaging ?? 'pkg',
-                    'unit' => (in_array(strtolower($variant->unit), ['ml', 'l', 'g', 'kg', 'mls'])) ? 'btl' : ($variant->unit ?? 'btl'),
+                    'unit' => $variant->inventory_unit,
                     'portion_label' => $portionLabel,
                     'category' => $category,
                     'is_alcoholic' => $isAlcoholic,
@@ -483,7 +485,7 @@ class WaiterController extends Controller
                 // Payment method will be set later when payment is recorded
             ]);
 
-            // Create order items (drinks)
+            // Create order items (drinks) and deduct stock immediately
             $transferSaleService = new \App\Services\TransferSaleService;
 
             foreach ($orderItems as $item) {
@@ -495,6 +497,7 @@ class WaiterController extends Controller
                     'unit_price' => $item['unit_price'],
                     'total_price' => $item['total_price'],
                 ]);
+
 
                 // Attribute sale to transfers using FIFO
                 $transferSaleService->attributeSaleToTransfer($orderItem, $ownerId);
@@ -621,8 +624,9 @@ class WaiterController extends Controller
         try {
             $order->load(['items']);
 
-            // Pending kiosk/waiter orders do not decrement counter stock until the counter marks
-            // the order served — so cancelling must not add bottles back unless already served.
+            // We no longer restore stock here since stock is only decremented when marked as "served".
+            // Since unpaid/cancelled orders cannot be served, there is no stock to return.
+
             $itemIds = $order->items->pluck('id');
             $affectedTransferIds = TransferSale::whereIn('order_item_id', $itemIds)
                 ->pluck('stock_transfer_id')
@@ -630,26 +634,6 @@ class WaiterController extends Controller
                 ->filter();
 
             $transferSaleService = new \App\Services\TransferSaleService;
-
-            foreach ($order->items as $item) {
-                if (! $item->product_variant_id || ! $item->is_served) {
-                    continue;
-                }
-
-                $counterStock = StockLocation::where('user_id', $order->user_id)
-                    ->where('product_variant_id', $item->product_variant_id)
-                    ->where('location', 'counter')
-                    ->first();
-
-                if (! $counterStock) {
-                    continue;
-                }
-
-                if (($item->sell_type ?? 'unit') === 'unit') {
-                    $counterStock->increment('quantity', $item->quantity);
-                }
-                // Tot/shot sales: stock was adjusted in serve flow (open bottles); mirror reversal would go here.
-            }
 
             TransferSale::whereIn('order_item_id', $itemIds)->delete();
             foreach ($affectedTransferIds as $transferId) {
@@ -795,7 +779,7 @@ class WaiterController extends Controller
         }
         // Kiosk: no staff session — just load the order (it's valid if it exists via route model binding)
 
-        $order->load(['items.productVariant.product', 'kitchenOrderItems', 'table', 'waiter']);
+        $order->load(['items.productVariant.product', 'kitchenOrderItems', 'table', 'waiter', 'orderPayments']);
 
         return view('bar.waiter.receipt', compact('order'));
     }
@@ -835,6 +819,10 @@ class WaiterController extends Controller
             }
         }
 
+        $openBottles = \App\Models\OpenBottle::where('user_id', $ownerId)
+            ->get()
+            ->groupBy('product_variant_id');
+
         $variants = ProductVariant::whereHas('product', function ($query) use ($ownerId) {
             $query->where('user_id', $ownerId)
                 ->where(function ($q) {
@@ -857,12 +845,14 @@ class WaiterController extends Controller
                 },
             ])
             ->get()
-            ->filter(function ($variant) {
+            ->filter(function ($variant) use ($openBottles) {
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+                $hasSealed = $counterStock && $counterStock->quantity > 0;
+                $hasOpen = $openBottles->has($variant->id) && $openBottles->get($variant->id)->sum('tots_remaining') > 0;
 
-                return $counterStock && $counterStock->quantity > 0;
+                return $hasSealed || $hasOpen;
             })
-            ->map(function ($variant) {
+            ->map(function ($variant) use ($openBottles) {
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
                 $category = $variant->product->category ?? '';
                 $isAlcoholic = stripos($category, 'alcoholic') !== false;
@@ -890,7 +880,60 @@ class WaiterController extends Controller
                 }
 
                 $variantStr = trim($m.($pkg ? ' - '.$pkg : ''));
-                $product_name = $variant->display_name ?: $variant->product->name;
+                $cleanM = $m;
+
+                // ── NAME RESOLUTION PRIORITY ──────────────────────────────────────────
+                // 1. Use variant->name if it is a real product name (e.g. "Fanta Orange")
+                // 2. Fall back to product->name with smart category-prefix extraction
+                //    for generic names like "Soft Drinks (Bonite)" → "Bonite"
+                // 3. Keep full product name for specific names like "Dodoma Red (Dry)"
+                // ─────────────────────────────────────────────────────────────────────
+                $variantSpecificName = trim($variant->name ?? '');
+
+                // Strip measurement numbers and packaging words to find the "real" identity
+                $strippedV = preg_replace('/\b\d+(\.\d+)?\s*(ml|l|g|kg|pcs|btl)?\b/i', '', $variantSpecificName);
+                $strippedV = preg_replace('/\b(piece|pieces|pcs|crate|carton|box|bottle|btl|unit|pkg|package|ctn)\b/i', '', $strippedV);
+                $strippedV = trim(preg_replace('/[-\s]+/', ' ', $strippedV), ' -');
+
+                // Single-word generic qualifiers (wine/spirit type words) are NOT useful alone
+                $genericDescriptors = ['dry', 'sweet', 'red', 'white', 'rose', 'light', 'dark',
+                                       'extra', 'premium', 'classic', 'original', 'regular', 'special',
+                                       'medium', 'semi', 'brut', 'demi', 'sec'];
+                $strippedWords = str_word_count($strippedV);
+                $isGenericSingle = ($strippedWords === 1 &&
+                                    in_array(strtolower($strippedV), $genericDescriptors));
+
+                // Variant name is usable if: non-empty AND (2+ words OR long single word not generic)
+                $useVariantName = !empty($strippedV) &&
+                                  ($strippedWords >= 2 || (strlen($strippedV) > 5 && !$isGenericSingle));
+
+                if ($useVariantName) {
+                    // Use the variant's specific name as core (e.g., "Fanta Orange")
+                    $productNameBase = $variantSpecificName;
+                } else {
+                    // Fall back to product name with smart category-prefix stripping
+                    $productNameBase = $variant->product->name;
+                    if (preg_match('/^(.+?)\s*\((.+?)\)(.*)$/u', $productNameBase, $nm)) {
+                        $beforeBracket = trim($nm[1]);
+                        $inBracket     = trim($nm[2]);
+                        $afterBracket  = trim($nm[3]);
+                        $genericCatWords = ['drink', 'beverage', 'beer', 'wine', 'spirit', 'soda',
+                                            'water', 'juice', 'alcohol', 'liquor', 'soft'];
+                        foreach ($genericCatWords as $gw) {
+                            if (stripos($beforeBracket, $gw) !== false) {
+                                $productNameBase = $inBracket . ($afterBracket ? ' '.$afterBracket : '');
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Append measurement if not already present in the name
+                if ($cleanM && stripos($productNameBase, $cleanM) === false) {
+                    $product_name = $productNameBase . ' (' . $cleanM . ')';
+                } else {
+                    $product_name = $productNameBase;
+                }
 
                 // Hide variant string if it's completely redundant with the display name
                 if ($variantStr && stripos($product_name, $variantStr) !== false) {
@@ -908,10 +951,11 @@ class WaiterController extends Controller
                     'selling_price_per_tot' => $counterStock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0,
                     'can_sell_in_tots' => $variant->can_sell_in_tots,
                     'total_tots' => $variant->total_tots,
+                    'open_tots' => $openBottles->has($variant->id) ? $openBottles->get($variant->id)->sum('tots_remaining') : 0,
                     'items_per_package' => $variant->items_per_package ?? 1,
                     'measurement' => $variant->measurement,
                     'packaging_type' => $variant->packaging ?? 'pkg',
-                    'unit' => (in_array(strtolower($variant->unit), ['ml', 'l', 'g', 'kg', 'mls'])) ? 'btl' : ($variant->unit ?? 'btl'),
+                    'unit' => $variant->inventory_unit,
                     'portion_label' => $portionLabel,
                     'category' => $category,
                     'is_alcoholic' => $isAlcoholic,
@@ -995,6 +1039,10 @@ class WaiterController extends Controller
      */
     protected function getKioskData($ownerId)
     {
+        $openBottles = \App\Models\OpenBottle::where('user_id', $ownerId)
+            ->get()
+            ->groupBy('product_variant_id');
+
         $variants = ProductVariant::whereHas('product', function ($query) use ($ownerId) {
             $query->where('user_id', $ownerId)
                 ->where(function ($q) {
@@ -1017,12 +1065,14 @@ class WaiterController extends Controller
                 },
             ])
             ->get()
-            ->filter(function ($variant) {
+            ->filter(function ($variant) use ($openBottles) {
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+                $hasSealed = $counterStock && $counterStock->quantity > 0;
+                $hasOpen = $openBottles->has($variant->id) && $openBottles->get($variant->id)->sum('tots_remaining') > 0;
 
-                return $counterStock && $counterStock->quantity > 0;
+                return $hasSealed || $hasOpen;
             })
-            ->map(function ($variant) {
+            ->map(function ($variant) use ($openBottles) {
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
                 $category = $variant->product->category ?? '';
                 $isAlcoholic = stripos($category, 'alcoholic') !== false;
@@ -1050,7 +1100,47 @@ class WaiterController extends Controller
                 }
 
                 $variantStr = trim($m.($pkg ? ' - '.$pkg : ''));
-                $product_name = $variant->display_name ?: $variant->product->name;
+                $cleanM = $m;
+
+                // ── NAME RESOLUTION (same logic as kiosk()) ───────────────────────────
+                $variantSpecificName = trim($variant->name ?? '');
+                $strippedV = preg_replace('/\b\d+(\.\d+)?\s*(ml|l|g|kg|pcs|btl)?\b/i', '', $variantSpecificName);
+                $strippedV = preg_replace('/\b(piece|pieces|pcs|crate|carton|box|bottle|btl|unit|pkg|package|ctn)\b/i', '', $strippedV);
+                $strippedV = trim(preg_replace('/[-\s]+/', ' ', $strippedV), ' -');
+                $genericDescriptors = ['dry', 'sweet', 'red', 'white', 'rose', 'light', 'dark',
+                                       'extra', 'premium', 'classic', 'original', 'regular', 'special',
+                                       'medium', 'semi', 'brut', 'demi', 'sec'];
+                $strippedWords = str_word_count($strippedV);
+                $isGenericSingle = ($strippedWords === 1 &&
+                                    in_array(strtolower($strippedV), $genericDescriptors));
+                $useVariantName = !empty($strippedV) &&
+                                  ($strippedWords >= 2 || (strlen($strippedV) > 5 && !$isGenericSingle));
+
+                if ($useVariantName) {
+                    $productNameBase = $variantSpecificName;
+                } else {
+                    $productNameBase = $variant->product->name;
+                    if (preg_match('/^(.+?)\s*\((.+?)\)(.*)$/u', $productNameBase, $nm)) {
+                        $beforeBracket = trim($nm[1]);
+                        $inBracket     = trim($nm[2]);
+                        $afterBracket  = trim($nm[3]);
+                        $genericCatWords = ['drink', 'beverage', 'beer', 'wine', 'spirit', 'soda',
+                                            'water', 'juice', 'alcohol', 'liquor', 'soft'];
+                        foreach ($genericCatWords as $gw) {
+                            if (stripos($beforeBracket, $gw) !== false) {
+                                $productNameBase = $inBracket . ($afterBracket ? ' '.$afterBracket : '');
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if ($cleanM && stripos($productNameBase, $cleanM) === false) {
+                    $product_name = $productNameBase . ' (' . $cleanM . ')';
+                } else {
+                    $product_name = $productNameBase;
+                }
+
 
                 // Hide variant string if it's completely redundant with the display name
                 if ($variantStr && stripos($product_name, $variantStr) !== false) {
@@ -1068,10 +1158,11 @@ class WaiterController extends Controller
                     'selling_price_per_tot' => $counterStock->selling_price_per_tot ?? $variant->selling_price_per_tot ?? 0,
                     'can_sell_in_tots' => $variant->can_sell_in_tots,
                     'total_tots' => $variant->total_tots,
+                    'open_tots' => $openBottles->has($variant->id) ? $openBottles->get($variant->id)->sum('tots_remaining') : 0,
                     'items_per_package' => $variant->items_per_package ?? 1,
                     'measurement' => $variant->measurement,
                     'packaging_type' => $variant->packaging ?? 'pkg',
-                    'unit' => (in_array(strtolower($variant->unit), ['ml', 'l', 'g', 'kg', 'mls'])) ? 'btl' : ($variant->unit ?? 'btl'),
+                    'unit' => $variant->inventory_unit,
                     'portion_label' => $portionLabel,
                     'category' => $category,
                     'is_alcoholic' => $isAlcoholic,
@@ -1451,11 +1542,94 @@ class WaiterController extends Controller
                 $additionalNotes = ' ADDED ITEMS: '.implode(', ', $foodItemsNotes);
                 $order->notes = ($order->notes ? $order->notes.' | ' : '').$additionalNotes;
             }
+
+            // Check if new items should be automatically served
+            $autoServeNewItems = ($order->status === 'served');
+
+            if ($order->status === 'completed') {
+                $order->status = 'pending';
+            }
             $order->save();
 
             // Create order items (drinks)
             $transferSaleService = new \App\Services\TransferSaleService;
             foreach ($orderItems as $item) {
+
+                if ($autoServeNewItems) {
+                    $variantId = $item['product_variant_id'];
+                    $counterStock = StockLocation::where('user_id', $ownerId)
+                        ->where('product_variant_id', $variantId)
+                        ->where('location', 'counter')
+                        ->first();
+
+                    if ($counterStock) {
+                        if ($item['sell_type'] === 'tot') {
+                            $variant = ProductVariant::find($variantId);
+                            $totsPerBottle = $variant->total_tots ?: 1;
+                            $totsNeeded = $item['quantity'];
+
+                            $openBottle = \App\Models\OpenBottle::where('user_id', $ownerId)
+                                ->where('product_variant_id', $variantId)
+                                ->first();
+
+                            if ($openBottle) {
+                                if ($openBottle->tots_remaining >= $totsNeeded) {
+                                    $openBottle->decrement('tots_remaining', $totsNeeded);
+                                    if ($openBottle->tots_remaining <= 0) $openBottle->delete();
+                                    $totsNeeded = 0;
+                                } else {
+                                    $totsNeeded -= $openBottle->tots_remaining;
+                                    $openBottle->delete();
+                                }
+                            }
+
+                            while ($totsNeeded > 0) {
+                                if ($counterStock->quantity >= 1) {
+                                    $counterStock->decrement('quantity', 1);
+                                    if ($totsNeeded >= $totsPerBottle) {
+                                        $totsNeeded -= $totsPerBottle;
+                                    } else {
+                                        \App\Models\OpenBottle::create([
+                                            'user_id' => $ownerId,
+                                            'product_variant_id' => $variantId,
+                                            'tots_remaining' => $totsPerBottle - $totsNeeded,
+                                        ]);
+                                        $totsNeeded = 0;
+                                    }
+                                    \App\Models\StockMovement::create([
+                                        'user_id' => $ownerId,
+                                        'product_variant_id' => $variantId,
+                                        'movement_type' => 'usage',
+                                        'from_location' => 'counter',
+                                        'to_location' => null,
+                                        'quantity' => 1,
+                                        'unit_price' => $item['unit_price'],
+                                        'reference_type' => BarOrder::class,
+                                        'reference_id' => $order->id,
+                                        'created_by' => $ownerId,
+                                        'notes' => 'Bottle opened (Kiosk Auto-Serve): ' . $order->order_number,
+                                    ]);
+                                } else $totsNeeded = 0;
+                            }
+                        } else {
+                            $counterStock->decrement('quantity', $item['quantity']);
+                            \App\Models\StockMovement::create([
+                                'user_id' => $ownerId,
+                                'product_variant_id' => $variantId,
+                                'movement_type' => 'sale',
+                                'from_location' => 'counter',
+                                'to_location' => null,
+                                'quantity' => $item['quantity'],
+                                'unit_price' => $item['unit_price'],
+                                'reference_type' => BarOrder::class,
+                                'reference_id' => $order->id,
+                                'created_by' => $ownerId,
+                                'notes' => 'Kiosk Auto-Serve: ' . $order->order_number,
+                            ]);
+                        }
+                    }
+                }
+
                 $orderItem = OrderItem::create([
                     'order_id' => $order->id,
                     'product_variant_id' => $item['product_variant_id'],
@@ -1463,8 +1637,10 @@ class WaiterController extends Controller
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
                     'total_price' => $item['total_price'],
+                    'is_served' => $autoServeNewItems, // Auto-serve if order is already served
                 ]);
                 $transferSaleService->attributeSaleToTransfer($orderItem, $ownerId);
+
             }
 
             // Create kitchen order items (food)
@@ -1487,7 +1663,7 @@ class WaiterController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Items added successfully',
-                'order' => $order->load(['items.productVariant.product', 'table']),
+                'order' => $order->load(['items.productVariant.product', 'kitchenOrderItems', 'table']),
             ]);
 
         } catch (\Exception $e) {

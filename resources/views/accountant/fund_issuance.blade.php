@@ -154,10 +154,13 @@
             <div class="col-md-6">
               <div class="form-group">
                 <label class="font-weight-bold"><i class="fa fa-bank"></i> Fund Source</label>
-                <select name="fund_source" class="form-control" required>
+                <select name="fund_source" id="issue_fund_source" class="form-control" required>
                   <option value="circulation">Money in Circulation (Capital)</option>
                   <option value="profit">Today's Profit (Earnings)</option>
                 </select>
+                <div id="profit_source_warning" class="text-danger small mt-1 d-none">
+                    <i class="fa fa-warning"></i> Profit for this date was already submitted to the Boss and cannot be used.
+                </div>
               </div>
             </div>
             <div class="col-md-6">
@@ -253,12 +256,54 @@
 @section('scripts')
 <script>
 $(document).ready(function() {
-    // Department change listener: If Food, force source to Profit
+    // Data from Backend
+    const recentLedgers = @json($recentLedgers);
+    const recentFoodHandovers = @json($recentFoodHandovers);
+
+    function checkProfitAvailability() {
+        const date = $('input[name="issue_date"]').val();
+        const dept = $('select[name="department"]').val();
+        const sourceSelect = $('#issue_fund_source');
+        const profitOption = sourceSelect.find('option[value="profit"]');
+        const warning = $('#profit_source_warning');
+        
+        let isSubmitted = false;
+
+        if (dept === 'food') {
+            // Check if Kitchen Profit for this date has been submitted to boss
+            isSubmitted = recentFoodHandovers[date] && recentFoodHandovers[date].id;
+        } else {
+            // Check if Bar Profit for this date has been submitted to boss via Daily Master Sheet
+            isSubmitted = recentLedgers[date] && recentLedgers[date].profit_submitted_to_boss > 0;
+        }
+        
+        if (isSubmitted) {
+            profitOption.prop('disabled', true);
+            if (sourceSelect.val() === 'profit') {
+                sourceSelect.val('circulation');
+            }
+            warning.removeClass('d-none');
+        } else {
+            profitOption.prop('disabled', false);
+            warning.addClass('d-none');
+        }
+    }
+
+    // Initial check
+    checkProfitAvailability();
+
+    // Listeners
+    $('input[name="issue_date"]').change(checkProfitAvailability);
+    $('select[name="department"]').change(checkProfitAvailability);
+
+    // Department change listener: If Food, force source to Profit (if available)
     $('select[name="department"]').change(function() {
-        const sourceSelect = $('select[name="fund_source"]');
+        const sourceSelect = $('#issue_fund_source');
         if ($(this).val() === 'food') {
-            sourceSelect.val('profit').prop('disabled', false); // Keep enabled but pre-selected
-            // Optionally we can show an info note
+            const profitOption = sourceSelect.find('option[value="profit"]');
+            if (!profitOption.prop('disabled')) {
+                sourceSelect.val('profit');
+            }
         }
     });
 

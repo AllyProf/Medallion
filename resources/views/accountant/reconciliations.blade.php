@@ -851,6 +851,7 @@
                         <option value="mobile_money">Mobile Money</option>
                         <option value="bank_transfer">Bank Transfer</option>
                         <option value="pos_card">POS / Card</option>
+                        <option value="salary_deduction">Deduct from Salary</option>
                     </select>
                 </div>
               </div>
@@ -1240,32 +1241,82 @@ $(document).ready(function() {
               // Get data from the row buttons where it was pre-calculated
               const btnSource = $(`button.view-dept-orders-btn[data-date="${date}"][data-type="${type}"]`).first();
               const shortageTotal = btnSource.closest('tr').find('.pay-shortage-btn').data('shortage') || 0;
-              
-              // We'll use the notes field for history (it's in the row)
-              let notesText = btnSource.closest('tr').find('td').eq(6).text(); // column index 6 is the status column or before?
-              // Actually let's just get it from the response if we can.
-              
-              let shortageHtml = `
-                  <div class="alert alert-info border-0 shadow-sm">
-                      <h6 class="font-weight-bold"><i class="fa fa-info-circle"></i> Shortage Status</h6>
-                      <p class="mb-0 small">Audit detects if the <strong>Submitted Amount</strong> matches the <strong>System Sales</strong>.</p>
-                  </div>
-              `;
-              
-              // Use class selectors to find values in the same row
               const row = btnSource.closest('tr');
               const shortageAmountText = row.find('.badge-danger').text() || 'None';
               
-              shortageHtml += `
-                  <div class="card border-0 bg-light mb-3">
-                      <div class="card-body p-3 text-center">
-                          <p class="text-muted mb-1 small">Current Outstanding Shortage</p>
-                          <h4 class="font-weight-bold ${shortageTotal > 0 ? 'text-danger' : 'text-success'}">${shortageAmountText.replace('Shortage:', '') || 'TSh 0'}</h4>
-                      </div>
-                  </div>
-              `;
+               let shortageHtml = `
+                   <div class="alert alert-info border-0 shadow-sm mb-3">
+                       <h6 class="font-weight-bold"><i class="fa fa-info-circle"></i> Shortage Tracking</h6>
+                       <p class="mb-0 small">Audit detects if the <strong>Submitted Amount</strong> matches the <strong>System Sales</strong>.</p>
+                   </div>
+                   
+                   <div class="card border-0 bg-light mb-4">
+                       <div class="card-body p-3 text-center">
+                           <p class="text-muted mb-1 small">Current Outstanding Shortage</p>
+                           <h4 class="font-weight-bold ${shortageTotal > 0 ? 'text-danger' : 'text-success'}">${shortageAmountText.replace('Shortage:', '') || 'TSh 0'}</h4>
+                       </div>
+                   </div>
+               `;
+               
+               if (response.settlements && response.settlements.length > 0) {
+                   shortageHtml += `
+                       <h6 class="font-weight-bold mb-2">Payment History</h6>
+                       <div class="table-responsive">
+                           <table class="table table-sm table-bordered bg-white mb-0 small">
+                               <thead class="bg-light">
+                                   <tr>
+                                       <th class="p-2">Date/Time</th>
+                                       <th class="p-2">Staff</th>
+                                       <th class="p-2 text-center">Method</th>
+                                       <th class="p-2 text-right">Amount</th>
+                                       <th class="p-2 text-center">Undo</th>
+                                   </tr>
+                               </thead>
+                               <tbody>
+                   `;
+                   
+                   response.settlements.forEach(s => {
+                       const formattedAmt = new Intl.NumberFormat().format(s.amount);
+                       const channelLabel = s.channel.replace(/_/g, ' ').toUpperCase();
+                       let channelClass = 'badge-light border';
+                       if (s.channel === 'salary_deduction') channelClass = 'badge-warning';
+                       else if (s.channel === 'cash') channelClass = 'badge-success text-white';
 
-              $('#dept_shortage_body').html(shortageHtml);
+                       shortageHtml += `
+                           <tr>
+                               <td class="p-2 align-middle">${s.date}</td>
+                               <td class="p-2 align-middle font-weight-bold">${s.waiter_name}</td>
+                               <td class="p-2 align-middle text-center">
+                                   <span class="badge ${channelClass}" style="font-size: 10px;">${channelLabel}</span>
+                               </td>
+                               <td class="p-2 align-middle text-right font-weight-bold">TSh ${formattedAmt}</td>
+                               <td class="p-2 align-middle text-center">
+                                   <button class="btn btn-xs btn-outline-danger undo-settle-btn p-1" 
+                                           data-id="${s.id}" 
+                                           data-reconciliation="${s.reconciliation_id}"
+                                           title="Undo this payment">
+                                       <i class="fa fa-undo"></i>
+                                   </button>
+                               </td>
+                           </tr>
+                       `;
+                   });
+                   
+                   shortageHtml += `
+                               </tbody>
+                           </table>
+                       </div>
+                   `;
+               } else {
+                   shortageHtml += `
+                       <div class="text-center py-4 bg-white border rounded">
+                           <i class="fa fa-history fa-2x text-muted mb-2"></i>
+                           <p class="text-muted mb-0">No payment history found for this shift.</p>
+                       </div>
+                   `;
+               }
+
+               $('#dept_shortage_body').html(shortageHtml);
           } else {
               Swal.fire('Error', response.error || 'Failed to load details', 'error');
               $('#viewDeptOrdersModal').modal('hide');
@@ -1391,6 +1442,38 @@ $(document).ready(function() {
     const id = $(this).data('transfer-id');
     $('#transferDetailsModal').modal('show');
     // ... AJAX call logic ...
+  });
+  });
+
+  $(document).on('click', '.undo-settle-btn', function() {
+      const settlementId = $(this).data('id');
+      const reconciliationId = $(this).data('reconciliation');
+      
+      Swal.fire({
+          title: 'Are you sure?',
+          text: "This will reverse this payment and restore the staff member's debt. This action is recorded.",
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#d33',
+          cancelButtonColor: '#3085d6',
+          confirmButtonText: 'Yes, Undo it!'
+      }).then((result) => {
+          if (result.isConfirmed) {
+              $.post("{{ route('accountant.counter.undo-settle-shortage') }}", {
+                  _token: "{{ csrf_token() }}",
+                  reconciliation_id: reconciliationId,
+                  settlement_id: settlementId
+              }, function(response) {
+                  if (response.success) {
+                      Swal.fire('Reversed!', response.message, 'success').then(() => {
+                          location.reload();
+                      });
+                  } else {
+                      Swal.fire('Error', response.error || 'Failed to undo', 'error');
+                  }
+              });
+          }
+      });
   });
 });
 </script>

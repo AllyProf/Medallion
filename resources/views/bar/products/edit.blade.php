@@ -155,6 +155,36 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="row mt-3 border-top pt-3">
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label class="control-label">Buying Price (Cost) <span class="text-muted small">(per Unit)</span></label>
+                                <div class="input-group">
+                                    <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
+                                    <input type="number" class="form-control" name="variants[{{ $index }}][buying_price_per_unit]" value="{{ $variant->buying_price_per_unit }}" min="0" step="0.01">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label class="control-label font-weight-bold text-success">Selling Price (Bottle)</label>
+                                <div class="input-group font-weight-bold">
+                                    <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
+                                    <input type="number" class="form-control border-success text-success" name="variants[{{ $index }}][selling_price_per_unit]" value="{{ $variant->selling_price_per_unit }}" min="0">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 servings-container {{ in_array($variant->selling_type, ['glass', 'mixed']) ? '' : 'd-none' }}">
+                            <div class="form-group">
+                                <label class="control-label font-weight-bold text-info">Selling Price (Glass/Tot)</label>
+                                <div class="input-group">
+                                    <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
+                                    <input type="number" class="form-control border-info text-info" name="variants[{{ $index }}][selling_price_per_tot]" value="{{ $variant->selling_price_per_tot }}" min="0">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                   </div>
 
                   <div class="col-md-4 border-left">
@@ -323,6 +353,11 @@
                 <div class="col-md-4 items-per-package-container d-none"><div class="form-group"><label class="control-label">Items *</label><input type="number" class="form-control" name="variants[${newIndex}][items_per_package]" value="1"></div></div>
                 <div class="col-md-4"><div class="form-group"><label class="control-label">Format *</label><select class="form-control selling-type-select" name="variants[${newIndex}][selling_type]"><option value="bottle">Bottle</option><option value="glass">Glass</option><option value="mixed">Mixed</option></select></div></div>
                 <div class="col-md-4 servings-container d-none"><div class="form-group"><label class="control-label">Shots *</label><input type="number" class="form-control" name="variants[${newIndex}][total_tots]" placeholder="e.g. 30"></div></div>
+            </div>
+            <div class="row mt-3 border-top pt-3">
+                <div class="col-md-4"><div class="form-group"><label class="control-label small">Buying Price</label><div class="input-group"><div class="input-group-prepend"><span class="input-group-text">TSh</span></div><input type="number" class="form-control" name="variants[${newIndex}][buying_price_per_unit]" value="0"></div></div></div>
+                <div class="col-md-4"><div class="form-group"><label class="control-label font-weight-bold text-success small">Selling (Bottle)</label><div class="input-group"><div class="input-group-prepend"><span class="input-group-text">TSh</span></div><input type="number" class="form-control border-success text-success" name="variants[${newIndex}][selling_price_per_unit]" value="0"></div></div></div>
+                <div class="col-md-4 servings-container d-none"><div class="form-group"><label class="control-label font-weight-bold text-info small">Selling (Glass)</label><div class="input-group"><div class="input-group-prepend"><span class="input-group-text">TSh</span></div><input type="number" class="form-control border-info text-info" name="variants[${newIndex}][selling_price_per_tot]" value="0"></div></div></div>
             </div>
           </div>
           <div class="col-md-4 border-left">

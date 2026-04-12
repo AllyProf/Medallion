@@ -261,6 +261,7 @@ class OrderController extends Controller
 
             // Create order items and deduct stock
             $transferSaleService = new \App\Services\TransferSaleService();
+            $stockAlertService = app(\App\Services\StockAlertService::class);
             
             foreach ($orderItems as $itemData) {
                 // Create order item
@@ -275,6 +276,9 @@ class OrderController extends Controller
 
                 // Deduct from counter stock
                 $itemData['counter_stock']->decrement('quantity', $itemData['quantity']);
+
+                // Trigger stock alert check
+                $stockAlertService->checkCounterStock($itemData['product_variant']->id, $ownerId);
 
                 // Record stock movement
                 StockMovement::create([
@@ -540,35 +544,55 @@ class OrderController extends Controller
      */
     private function parseFoodItems($notes)
     {
-        $foodItems = [];
-        if (strpos($notes, 'FOOD ITEMS:') !== false) {
-            $notesParts = explode(' | ', $notes);
-            foreach ($notesParts as $part) {
-                if (strpos($part, 'FOOD ITEMS:') !== false) {
-                    $itemsText = str_replace('FOOD ITEMS: ', '', $part);
-                    $itemParts = explode(', ', $itemsText);
-                    foreach ($itemParts as $itemPart) {
-                        // Parse format: "Qtyx Name (variant) - Tsh price"
-                        if (preg_match('/(\d+)x\s+(.+?)\s+\(([^)]+)\)\s+-\s+Tsh\s+([\d,]+)/', $itemPart, $matches)) {
-                            $foodItems[] = [
-                                'quantity' => (int)$matches[1],
-                                'name' => trim($matches[2]),
-                                'variant' => trim($matches[3]),
-                                'price' => (float)str_replace(',', '', $matches[4])
-                            ];
-                        } elseif (preg_match('/(\d+)x\s+(.+?)\s+-\s+Tsh\s+([\d,]+)/', $itemPart, $matches)) {
-                            $foodItems[] = [
-                                'quantity' => (int)$matches[1],
-                                'name' => trim($matches[2]),
-                                'variant' => '',
-                                'price' => (float)str_replace(',', '', $matches[3])
-                            ];
-                        }
+        $foodItemsMap = [];
+        $notesParts = explode(' | ', $notes ?? '');
+        foreach ($notesParts as $part) {
+            $isFoodItems = strpos($part, 'FOOD ITEMS:') !== false;
+            $isAddedItems = strpos($part, 'ADDED ITEMS:') !== false;
+            
+            if ($isFoodItems || $isAddedItems) {
+                $itemsText = str_replace(['FOOD ITEMS: ', 'ADDED ITEMS: '], '', trim($part));
+                $itemParts = explode(', ', $itemsText);
+                foreach ($itemParts as $itemPart) {
+                    $itemPart = trim($itemPart);
+                    if (empty($itemPart)) continue;
+                    
+                    // Parse format: "Qtyx Name (variant) - Tsh price"
+                    if (preg_match('/(\d+)x\s+(.+?)\s+\(([^)]+)\)\s+-\s+Tsh\s+([\d,]+)/', $itemPart, $matches)) {
+                        $qty = (int)$matches[1];
+                        $name = trim($matches[2]);
+                        $variant = trim($matches[3]);
+                        $price = (float)str_replace(',', '', $matches[4]);
+                    } elseif (preg_match('/(\d+)x\s+(.+?)\s+-\s+Tsh\s+([\d,]+)/', $itemPart, $matches)) {
+                        $qty = (int)$matches[1];
+                        $name = trim($matches[2]);
+                        $variant = '';
+                        $price = (float)str_replace(',', '', $matches[3]);
+                    } else {
+                        continue;
+                    }
+                    
+                    $key = $name . '|' . $variant . '|' . $price;
+                    if (isset($foodItemsMap[$key])) {
+                        $foodItemsMap[$key]['quantity'] += $qty;
+                    } else {
+                        $foodItemsMap[$key] = [
+                            'quantity' => $qty,
+                            'name' => $name,
+                            'variant' => $variant,
+                            'price' => $price
+                        ];
                     }
                 }
             }
         }
-        return $foodItems;
+        
+        // Add total_price to support the frontend mapping
+        $results = array_values($foodItemsMap);
+        foreach ($results as &$res) {
+            $res['total_price'] = $res['quantity'] * $res['price'];
+        }
+        return $results;
     }
 
     /**

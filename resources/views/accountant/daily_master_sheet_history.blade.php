@@ -80,7 +80,7 @@
               <th rowspan="2" class="text-center">STATUS</th>
               <th rowspan="2" class="text-right">OPENING CASH</th>
               <th colspan="3" class="text-center">DAILY COLLECTIONS</th>
-              <th class="text-right">EXPECTED</th>
+
               <th class="text-right text-success">STOCK PROFIT</th>
               <th class="text-right text-info">DISTRIBUTION</th>
               <th class="text-right text-info">ROLLOVER CYCLE</th>
@@ -92,7 +92,7 @@
               <th class="text-right">TOTAL</th>
               <th class="text-right bg-secondary text-white">ASSETS</th>
               <th class="text-right">EXPENSES</th>
-              <th class="text-right">EXPECTED</th>
+
               <th class="text-right text-success">STOCK PROFIT</th>
               <th class="text-right text-info">DISTRIBUTION</th>
               <th class="text-right text-info">ROLLOVER CYCLE</th>
@@ -102,14 +102,23 @@
             @if($ledgers->count() > 0)
               @foreach($ledgers as $index => $ledger)
                 @php
-                    // Use bar-specific handover values (stops kitchen settlements from mixing here)
                     $cashCollected   = $ledger->handoverCash ?? 0;
                     $digitalCollected = $ledger->handoverDigital ?? 0;
-                    $subTotal        = $cashCollected + $digitalCollected;
+                    $shortageCollected = $ledger->shortageCollected ?? 0;
+                    $subTotal        = $cashCollected + $digitalCollected; 
                     $totalAssets     = $ledger->opening_cash + $subTotal;
                     $totalPhysicalCash = $totalAssets;
                     $isClosed        = $ledger->status === 'closed';
                     $rowClass        = $ledger->isManagerReceived ? 'manager-received' : '';
+
+                    // PRE-CALCULATE SMART VALUES
+                    $netProfit = $ledger->profit_generated - ($ledger->total_profit_outflow ?? $ledger->total_expenses_from_profit);
+                    $actualPayout = $ledger->profit_submitted_to_boss ?? 0;
+                    $payoutDiff = $actualPayout - $netProfit;
+                    
+                    // PROTECTED ROLLOVER (Target Float)
+                    // Rollover = Opening + Collections - Expenses - Gross Profit
+                    $rollover = $ledger->opening_cash + $subTotal - ($ledger->total_circulation_outflow ?? $ledger->total_expenses_from_circulation) - ($ledger->profit_generated ?? 0);
                 @endphp
                 {{-- MAIN ROW: Click to Collapse --}}
                 <tr class="main-row {{ $rowClass }}" data-toggle="collapse" data-target="#details-{{ $ledger->id }}">
@@ -126,7 +135,7 @@
                   <td class="money-column font-weight-bold">{{ number_format($subTotal) }}</td>
                   <td class="money-column font-weight-bold bg-light">{{ number_format($totalAssets) }}</td>
                   <td class="money-column text-danger">({{ number_format($ledger->combined_expenses ?? $ledger->total_expenses) }})</td>
-                  <td class="money-column font-weight-bold text-info">{{ number_format($totalAssets - ($ledger->combined_expenses ?? $ledger->total_expenses)) }}</td>
+
                   <td class="money-column text-success font-weight-bold">
                      {{ number_format($ledger->profit_generated) }}
                      @if($ledger->total_profit_outflow > 0)
@@ -134,9 +143,14 @@
                      @endif
                   </td>
                   <td class="money-column text-info font-weight-bold">
-                     {{ number_format($ledger->profit_submitted_to_boss ?? 0) }}
-                     @if($ledger->total_profit_outflow > 0)
-                        <br><small class="text-muted" style="font-weight:normal;">(After {{ number_format($ledger->total_profit_outflow) }} exp)</small>
+                     {{ number_format($netProfit) }}
+                     @if($ledger->isManagerReceived && abs($payoutDiff) > 0)
+                        <br><small class="{{ $payoutDiff > 0 ? 'text-danger' : 'text-success' }}" style="font-weight:normal;">
+                           <i class="fa fa-{{ $payoutDiff > 0 ? 'arrow-up' : 'arrow-down' }}"></i> 
+                           Boss took {{ number_format(abs($payoutDiff)) }} {{ $payoutDiff > 0 ? 'too much' : 'too little' }}
+                        </small>
+                     @elseif(!$ledger->isManagerReceived)
+                        <br><span class="badge badge-light text-muted border" style="font-size:0.6rem; font-weight:normal;">AVAILABLE</span>
                      @endif
                      
                      @if($ledger->isManagerReceived)
@@ -145,19 +159,40 @@
                         <br><span class='status-badge text-warning mt-1 d-inline-block' style="border-color: #ffc107;">Pending</span>
                      @endif
                   </td>
-                  <td class="money-column text-info font-weight-bold" title="Physical Cash Rollover">{{ number_format(max(0, $totalAssets - ($ledger->total_circulation_outflow ?? 0) - ($ledger->profit_submitted_to_boss ?? 0))) }}</td>
-                  <td class="text-center d-print-none py-1" style="white-space:nowrap;">
-                      <a href="{{ route('accountant.counter.reconciliation', ['date' => \Carbon\Carbon::parse($ledger->ledger_date)->format('Y-m-d')]) }}" class="btn btn-outline-info btn-sm px-2 pt-0 pb-0 shadow-sm" title="Full Shift View">
-                        <i class="fa fa-eye"></i> View
-                      </a>
-                      <a href="{{ route('accountant.daily-master-sheet', ['date' => \Carbon\Carbon::parse($ledger->ledger_date)->format('Y-m-d'), 'print' => 1]) }}" target="_blank" class="btn btn-outline-dark btn-sm px-2 pt-0 pb-0 shadow-sm ml-1" title="Instant Print">
-                        <i class="fa fa-print"></i>
-                      </a>
+                  <td class="money-column text-info font-weight-bold" title="Target Rollover Float">{{ number_format(max(0, $rollover)) }}</td>
+                  <td class="text-center d-print-none" style="white-space:nowrap; vertical-align: middle;">
+                      <div class="btn-group btn-group-sm mb-1">
+                          <a href="{{ route('accountant.counter.reconciliation', ['date' => \Carbon\Carbon::parse($ledger->ledger_date)->format('Y-m-d')]) }}" class="btn btn-primary shadow-sm" title="Full Shift View">
+                            <i class="fa fa-eye"></i> View
+                          </a>
+                          <a href="{{ route('accountant.daily-master-sheet', ['date' => \Carbon\Carbon::parse($ledger->ledger_date)->format('Y-m-d')]) }}" target="_blank" class="btn btn-dark shadow-sm" title="Print Report">
+                            <i class="fa fa-print"></i> Print
+                          </a>
+                      </div>
+
+                      {{-- Inline Quick Submit --}}
+                      @php 
+                         $hasPendingDiff = ($ledger->managerReceiptStatus === 'pending' && abs($payoutDiff) > 0);
+                      @endphp
+                      
+                      @if($ledger->status === 'closed' && !$ledger->isManagerReceived)
+                          <div class="">
+                              @if($ledger->managerReceiptStatus === 'none')
+                                  <button data-id="{{ $ledger->id }}" data-amount="{{ $netProfit }}" class="btn btn-success btn-sm btn-block shadow-sm submit-to-boss-btn" style="font-size: 11px; border-radius: 4px;">
+                                      <i class="fa fa-send"></i> Submit Payout
+                                  </button>
+                              @elseif($ledger->managerReceiptStatus === 'pending')
+                                  <button data-id="{{ $ledger->id }}" data-amount="{{ $netProfit }}" data-mode="update" class="btn btn-warning btn-sm btn-block shadow-sm submit-to-boss-btn" style="font-size: 11px; border-radius: 4px; color: #000;">
+                                      <i class="fa fa-refresh"></i> Update Payout
+                                  </button>
+                              @endif
+                          </div>
+                      @endif
                   </td>
                 </tr>
                 {{-- COLLAPSIBLE DETAIL ROW --}}
                 <tr id="details-{{ $ledger->id }}" class="collapse detail-row">
-                  <td colspan="13">
+                  <td colspan="12">
                     <div class="detail-container">
                       <div class="row">
                          {{-- EXPENSE BREAKDOWN --}}
@@ -234,9 +269,15 @@
                                   <span>Gross Revenue (Total Assets):</span>
                                   <span class="font-weight-bold">TSh {{ number_format($totalAssets) }}</span>
                                </p>
+                               @if($shortageCollected > 0)
+                               <p class="mb-1 d-flex justify-content-between text-success" style="font-size: 0.85em;">
+                                  <span><i class="fa fa-level-up fa-rotate-90"></i> Staff Shortages Recovered (CASH):</span>
+                                  <span class="font-weight-bold">TSh {{ number_format($shortageCollected) }}</span>
+                               </p>
+                               @endif
                                <p class="mb-1 d-flex justify-content-between border-bottom pb-1">
                                   <span>Total Expenses Paid:</span>
-                                  <span class="text-danger">(-) TSh {{ number_format($ledger->total_expenses + ($ledger->pettyCashList->sum('amount') ?? 0)) }}</span>
+                                  <span class="text-danger">(-) TSh {{ number_format($ledger->combined_expenses ?? $ledger->total_expenses) }}</span>
                                </p>
                                <p class="mb-3 d-flex justify-content-between h6">
                                   <span>Available Cash in Box:</span>
@@ -245,18 +286,36 @@
                                
                                <div class="alert alert-info py-2" style="font-size:0.85rem; border-left: 5px solid #17a2b8;">
                                   <strong>Live Settlement Summary:</strong><br>
-                                  Today's raw stock performance is <strong>TSh {{ number_format($ledger->profit_generated) }}</strong>. 
-                                  @if($ledger->profit_submitted_to_boss > 0)
-                                     You gave the boss <strong>TSh {{ number_format($ledger->profit_submitted_to_boss) }}</strong> in distribution payout.
-                                     @if($ledger->managerReceiptStatus === 'none')
-                                        <button data-id="{{ $ledger->id }}" data-amount="{{ $ledger->profit_submitted_to_boss }}" class="btn btn-sm btn-primary ml-2 submit-to-boss-btn">
-                                           <i class="fa fa-handshake-o"></i> Submit Profit Now
-                                        </button>
-                                     @endif
+                                   Today's raw stock performance is <strong>TSh {{ number_format($ledger->profit_generated) }}</strong>. 
+                                   @if($netProfit > 0)
+                                      The currently available net profit to be handed over is <strong>TSh {{ number_format($netProfit) }}</strong>.
+                                      
+                                      @if($ledger->isManagerReceived)
+                                         @if(abs($payoutDiff) > 0)
+                                            <br><span class="text-danger small"><i class="fa fa-warning"></i> NOTE: You actually handed over TSh {{ number_format($actualPayout) }} (Variance of TSh {{ number_format(abs($payoutDiff)) }}).</span>
+                                         @else
+                                            <br><span class="text-success small"><i class="fa fa-check"></i> Handover confirmed: TSh {{ number_format($actualPayout) }}.</span>
+                                         @endif
+                                      @else
+                                         <div class="mt-3 p-3 bg-white rounded border border-light shadow-sm">
+                                            @if($ledger->managerReceiptStatus === 'pending')
+                                               <div class="d-flex justify-content-between align-items-center">
+                                                  <span class="text-warning font-weight-bold"><i class="fa fa-hourglass-half"></i> Handover of TSh {{ number_format($actualPayout) }} is PENDING</span>
+                                                  <button data-id="{{ $ledger->id }}" data-amount="{{ $netProfit }}" data-mode="update" class="btn btn-sm btn-warning shadow-sm submit-to-boss-btn">
+                                                     <i class="fa fa-refresh"></i> Update Payout
+                                                  </button>
+                                               </div>
+                                            @else
+                                               <button data-id="{{ $ledger->id }}" data-amount="{{ $netProfit }}" class="btn btn-block btn-primary shadow-sm submit-to-boss-btn py-2">
+                                                  <i class="fa fa-handshake-o"></i> Submit This Profit to Boss (TSh {{ number_format($netProfit) }})
+                                               </button>
+                                            @endif
+                                         </div>
+                                      @endif
                                   @else
                                      Because performance was not positive, the boss payout is <strong>TSh 0</strong>. 
                                   @endif
-                                  The currently calculated physical rollover for tomorrow is <strong>TSh {{ number_format($totalPhysicalCash - ($ledger->combined_expenses ?? $ledger->total_expenses) - ($ledger->profit_submitted_to_boss ?? 0)) }}</strong>.
+                                  The currently calculated physical rollover for tomorrow is <strong>TSh {{ number_format(max(0, $rollover)) }}</strong>.
                                </div>
                                
                                <div class="text-right">
@@ -272,7 +331,7 @@
                 </tr>
               @endforeach
             @else
-              <tr><td colspan="13" class="text-center py-5 text-muted">No historical data available.</td></tr>
+              <tr><td colspan="12" class="text-center py-5 text-muted">No historical data available.</td></tr>
             @endif
           </tbody>
         </table>
@@ -292,18 +351,16 @@ $(document).on('click', '.submit-to-boss-btn', function() {
     const btn = $(this);
     const ledgerId = btn.data('id');
     const amount = btn.data('amount');
+    const isUpdate = btn.data('mode') === 'update';
+    const title = isUpdate ? 'Update Profit Handover?' : 'Submit Profit?';
+    const confirmBtnText = isUpdate ? 'Yes, Update Payout' : 'Yes, Send to Boss!';
+    const successTitle = isUpdate ? 'Updated!' : 'Sent!';
 
-    Swal.fire({
-        title: 'Submit Profit?',
-        text: "Submit TSh " + parseInt(amount).toLocaleString() + " profit to the Boss now?",
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonColor: '#007bff',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'Yes, Send to Boss!'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Submitting...');
+    showConfirm(
+        (isUpdate ? "Update existing payout to " : "Submit ") + "TSh " + parseInt(amount).toLocaleString() + " profit to the Boss now?",
+        title,
+        function() {
+            btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Processing...');
             
             $.ajax({
                 url: "{{ route('accountant.daily-master-sheet.profit-handover.submit') }}",
@@ -315,20 +372,22 @@ $(document).on('click', '.submit-to-boss-btn', function() {
                 },
                 success: function(response) {
                     if (response.success) {
-                        Swal.fire('Sent!', response.message, 'success');
+                        showAlert('success', response.message, successTitle);
                         setTimeout(() => { location.reload(); }, 1500);
                     } else {
-                        Swal.fire('Error', response.error || "Submission failed", 'error');
-                        btn.prop('disabled', false).html('<i class="fa fa-handshake-o"></i> Submit Profit Now');
+                        showAlert('error', response.error || "Operation failed", 'Error');
+                        btn.prop('disabled', false).html(isUpdate ? '<i class="fa fa-refresh"></i> Update Payout' : '<i class="fa fa-send"></i> Submit Payout');
                     }
                 },
                 error: function() {
-                    Swal.fire('Failed', "Submission failed. Network or server error.", 'error');
-                    btn.prop('disabled', false).html('<i class="fa fa-handshake-o"></i> Submit Profit Now');
+                    showAlert('error', "Operation failed. Network or server error.", 'Failed');
+                    btn.prop('disabled', false).html(isUpdate ? '<i class="fa fa-refresh"></i> Update Payout' : '<i class="fa fa-send"></i> Submit Payout');
                 }
             });
-        }
-    });
+        },
+        null,
+        { confirmButtonText: confirmBtnText }
+    );
 });
 </script>
 @endsection

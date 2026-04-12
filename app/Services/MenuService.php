@@ -93,7 +93,7 @@ class MenuService
                     ->whereNotIn('menu_items.id', $allCommonMenuIds->toArray())
                     ->orderBy('business_type_menu_items.sort_order')
                     ->get()
-                    ->filter(function($menu) use ($businessTypeNames, $businessTypeSlugs, $isCounter) {
+                    ->filter(function($menu) use ($businessTypeNames, $businessTypeSlugs, $isCounter, $staffRole) {
                         // Filter out menu items with business type names or slugs
                         if (in_array($menu->name, $businessTypeNames) || in_array($menu->slug ?? '', $businessTypeSlugs)) {
                             return false;
@@ -104,6 +104,12 @@ class MenuService
                             return false;
                         }
 
+                        // For Manager role, hide specific business menus
+                        $isManager = in_array(strtolower($staffRole->name ?? ''), ['manager', 'general manager', 'administrator']) || in_array(strtolower($staffRole->slug ?? ''), ['manager', 'admin']);
+                        if ($isManager && in_array($menu->slug, ['restaurant-management', 'manager-master-sheet-root'])) {
+                            return false;
+                        }
+
                         return true;
                     });
 
@@ -111,13 +117,16 @@ class MenuService
                     // Fetch children for this menu
                     $menu->children = $this->getMenuChildrenForStaff($menu, $businessType, $staffRole);
                     
-                    if (($menu->children && $menu->children->count() > 0) || ($menu->route && $this->canAccessMenuForStaff($staffRole, $menu))) {
+                    // Super Admin sees all menus regardless of permission; others need access check
+                    $isSuperAdmin = !empty($staffRole->is_super_admin_virtual);
+                    if ($isSuperAdmin || ($menu->children && $menu->children->count() > 0) || ($menu->route && $this->canAccessMenuForStaff($staffRole, $menu))) {
                         $menu->business_type_name = $businessType->name;
                         $menu->business_type_icon = $businessType->icon ?? 'fa-building';
                         $menu->business_type_id = $businessType->id;
                         $businessSpecificMenusByType[$businessType->id]['menus']->push($menu);
                     }
                 }
+
             }
             
             // Add menus and placeholders
@@ -234,6 +243,22 @@ class MenuService
                 if ($menu->slug === 'dashboard') {
                     return true;
                 }
+
+                // Super Admin virtual role: show all manager-relevant common menus
+                if (!empty($staffRole->is_super_admin_virtual)) {
+                    // Hide generic/non-operational menus not relevant to admin daily operations
+                    $adminHiddenSlugs = [
+                        'sales',
+                        'products',
+                        'customers',
+                        'settings',
+                        'restaurant-management',
+                        'daily-master-sheet',
+                    ];
+                    if (in_array($menu->slug, $adminHiddenSlugs)) return false;
+                    return true;
+                }
+
                 
                 // Show Counter Reconciliation for Counter and Accountant
                 if ($menu->slug === 'counter-reconciliation') {
@@ -266,7 +291,7 @@ class MenuService
                 }
                 
                 // Managers always see Stock Audit
-                $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']);
+                $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']) || ($staffRole->user_id && \App\Models\User::find($staffRole->user_id)?->role === 'admin');
                 if ($isManager && $menu->slug === 'stock-audit') {
                     return true;
                 }
@@ -277,6 +302,15 @@ class MenuService
                     return false;
                 }
                 
+                // For Manager role, hide specific menus - BUT allow them for Super Admin if specifically requested
+                if ($isManager && empty($staffRole->is_super_admin_virtual)) {
+                    if (in_array(strtolower($menu->name), ['sales', 'products', 'customers', 'restaurant management', 'daily master sheet']) || 
+                        in_array($menu->slug, ['sales', 'products', 'customers', 'restaurant-management', 'bar-food-menu', 'daily-master-sheet'])) {
+                        return false;
+                    }
+                }
+
+
                 // If menu has children, only show if at least one child is accessible
                 if ($menu->children && $menu->children->count() > 0) {
                     return true; // Show parent if it has accessible children (children are already filtered)
@@ -285,6 +319,7 @@ class MenuService
                 // If menu has no children, check if staff role has permission for the menu itself
                 return $this->canAccessMenuForStaff($staffRole, $menu);
             })
+
             ->values();
             
         return $menus;
@@ -299,19 +334,49 @@ class MenuService
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->get()
+            ->map(function($child) {
+                if ($child->slug === 'daily-master-sheet-history' || $child->name === 'Master Sheet History') {
+                    $child->name = 'Bar Master History';
+                }
+                return $child;
+            })
             ->filter(function($child) use ($staffRole, $parentMenu) {
                 // Role detection for child filtering
                 $roleName = strtolower($staffRole->name ?? '');
                 $roleSlug = strtolower($staffRole->slug ?? '');
                 $isAccountant = in_array($roleName, ['accountant', 'finance manager', 'finance']) || in_array($roleSlug, ['accountant']);
+                $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']);
+
+                // Super Admin virtual role: apply manager-level filtering
+                if (!empty($staffRole->is_super_admin_virtual)) {
+                    // Hide Verify Reconciliations and Daily Master Sheet (same as manager)
+                    if (in_array(strtolower($child->name), ['verify reconciliations', 'verify reconciliation', 'daily master sheet']) ||
+                        in_array($child->slug, ['verify-reconciliations', 'verify-reconciliation', 'daily-master-sheet'])) {
+                        return false;
+                    }
+                    return true;
+                }
 
                 // HIDE redundant master sheet links for accountants
                 if ($isAccountant && in_array($child->slug, ['daily-master-sheet', 'daily-master-sheet-history'])) {
                     return false;
                 }
 
+                // Hide Verify Reconciliations and Daily Master Sheet for Manager
+                if ($isManager && (
+                    strtolower($child->name) === 'verify reconciliations' || 
+                    strtolower($child->name) === 'verify reconciliation' || 
+                    strtolower($child->name) === 'daily master sheet' ||
+                    $child->slug === 'verify-reconciliations' || 
+                    $child->slug === 'verify-reconciliation' ||
+                    $child->slug === 'daily-master-sheet'
+                )) {
+                    return false;
+                }
+
                 return $this->canAccessMenuForStaff($staffRole, $child);
             })
+
             ->values();
             
         // Inject Food-related items for Accountants/Managers under the accountant-parent menu
@@ -331,6 +396,22 @@ class MenuService
                 'is_placeholder' => false,
             ];
             $children->push($foodHistoryChild);
+            
+            $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array(strtolower($staffRole->slug ?? ''), ['manager', 'admin']);
+            if ($isManager) {
+                $receiveProfitsChild = (object)[
+                    'id' => 'mock_receive_profits_child',
+                    'name' => 'Receive Profits',
+                    'slug' => 'receive-profits',
+                    'icon' => 'fa-money',
+                    'route' => 'manager.master-sheet.collections',
+                    'parent_id' => $parentMenu->id,
+                    'children' => collect(),
+                    'full_url' => route('manager.master-sheet.collections'),
+                    'is_placeholder' => false,
+                ];
+                $children->push($receiveProfitsChild);
+            }
         }
 
         return $children;
@@ -353,7 +434,12 @@ class MenuService
             if ($child->slug === 'bar-stock-levels') {
                 return false;
             }
-            
+
+            // Super Admin virtual role: show all children
+            if (!empty($staffRole->is_super_admin_virtual)) {
+                return true;
+            }
+
             // If child has a route, check permission
             if ($child->route) {
                 return $this->canAccessMenuForStaff($staffRole, $child);
@@ -380,6 +466,13 @@ class MenuService
      */
     private function canAccessMenuForStaff($staffRole, MenuItem $menu)
     {
+        // Super Admin virtual role: bypass all permission checks
+        if (!empty($staffRole->is_super_admin_virtual)) {
+            // Only filter out a few truly hidden items
+            if ($menu->slug === 'bar-stock-levels') return false;
+            return true;
+        }
+
         // Dashboard is always accessible
         if ($menu->slug === 'dashboard' || $menu->route === 'dashboard') {
             return true;
@@ -476,6 +569,10 @@ class MenuService
      */
     public function getUserMenus(User $user)
     {
+        if ($user->role === 'admin') {
+            return $this->getAdminUnifiedView($user);
+        }
+
         $menus = collect();
         $commonMenuIds = collect();
 
@@ -673,6 +770,104 @@ class MenuService
     }
 
     /**
+     * Get a unified view for Super Admin (Manager view + Admin Controls)
+     */
+    private function getAdminUnifiedView(User $user)
+    {
+        // 1. Find the manager role for this user
+        $managerRole = Role::where('user_id', $user->id)
+            ->where(function($q) {
+                $q->where('slug', 'manager')->orWhere('slug', 'admin');
+            })
+            ->first();
+
+        // If no specifically named manager role, find any role that's not a basic staff role
+        if (!$managerRole) {
+            $managerRole = Role::where('user_id', $user->id)
+                ->where('is_active', true)
+                ->first();
+        }
+
+        // 2. If STILL no role, create a "Virtual" Manager Role to trigger the business-centric view
+        if (!$managerRole) {
+            $managerRole = new Role([
+                'name' => 'General Manager',
+                'slug' => 'manager',
+                'user_id' => $user->id,
+                'is_active' => true
+            ]);
+            // Mock the permissions relation locally so it doesn't try to load from DB
+            $managerRole->setRelation('permissions', collect());
+        }
+
+        // Mark this role as super admin virtual so permission checks are bypassed
+        $managerRole->is_super_admin_virtual = true;
+
+
+        // 3. Get the operational business menus only
+        $menus = $this->getStaffMenus($managerRole, $user);
+
+        // 4. Create a single "Super Admin" section with children
+        $superAdminMenu = (object)[
+            'id'          => 'super_admin_parent',
+            'name'        => 'Super Admin',
+            'slug'        => 'super-admin-parent',
+            'icon'        => 'fa-shield',
+            'route'       => null,
+            'parent_id'   => null,
+            'is_placeholder' => false,
+            'sort_order'  => 2000,
+            'children'    => collect([
+                (object)[
+                    'id'        => 'admin_accounts',
+                    'name'      => 'Account Management',
+                    'slug'      => 'admin-accounts',
+                    'icon'      => 'fa-key',
+                    'route'     => 'admin.security.accounts',
+                    'full_url'  => route('admin.security.accounts'),
+                    'parent_id' => 'super_admin_parent',
+                ],
+                (object)[
+                    'id'        => 'admin_logs',
+                    'name'      => 'Activity Logs',
+                    'slug'      => 'admin-logs',
+                    'icon'      => 'fa-list-alt',
+                    'route'     => 'admin.security.logs',
+                    'full_url'  => route('admin.security.logs'),
+                    'parent_id' => 'super_admin_parent',
+                ],
+                (object)[
+                    'id'        => 'admin_sessions',
+                    'name'      => 'Active Sessions',
+                    'slug'      => 'admin-sessions',
+                    'icon'      => 'fa-users',
+                    'route'     => 'admin.security.sessions',
+                    'full_url'  => route('admin.security.sessions'),
+                    'parent_id' => 'super_admin_parent',
+                ],
+            ]),
+        ];
+
+        // 5. Add a separator before the Super Admin section
+        $separator = (object)[
+            'id'          => 'admin_controls_separator',
+            'name'        => 'SYSTEM CONTROLS',
+            'slug'        => 'super-admin-controls-sep',
+            'icon'        => 'fa-cogs',
+            'is_placeholder' => true,
+            'sort_order'  => 1999,
+        ];
+
+        $menus->push($separator);
+        $menus->push($superAdminMenu);
+
+        return $this->removeDisabledMenus($menus);
+
+
+
+    }
+
+    /**
      * Get menu children
      */
     private function getMenuChildren($parentMenu, BusinessType $businessType, User $user)
@@ -725,6 +920,12 @@ class MenuService
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->get()
+            ->map(function($child) {
+                if ($child->slug === 'daily-master-sheet-history' || $child->name === 'Master Sheet History') {
+                    $child->name = 'Bar Master History';
+                }
+                return $child;
+            })
             ->filter(function($child) use ($user) {
                 return $this->canAccessMenu($user, $child);
             })
@@ -1004,8 +1205,9 @@ class MenuService
         $html = '';
 
         foreach ($menus as $menu) {
-            if ($menu->children && $menu->children->count() > 0) {
-                // Parent menu with children
+            if ($menu->is_placeholder ?? false) {
+                $html .= $this->renderSeparator($menu);
+            } elseif ($menu->children && $menu->children->count() > 0) {
                 $html .= $this->renderParentMenu($menu);
             } else {
                 // Single menu item
@@ -1064,6 +1266,20 @@ class MenuService
         $html .= '</li>';
 
         return $html;
+    }
+
+    /**
+     * Render separator/placeholder
+     */
+    private function renderSeparator($menu)
+    {
+        return '
+        <li class="menu-separator">
+            <div class="menu-separator-content">
+                <i class="' . ($menu->icon ?? 'fa fa-ellipsis-h') . ' mr-2"></i>
+                ' . e($menu->name) . '
+            </div>
+        </li>';
     }
 }
 

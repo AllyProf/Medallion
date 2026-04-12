@@ -30,6 +30,7 @@ class User extends Authenticatable
         'city',
         'country',
         'is_configured',
+        'profile_image',
     ];
 
     /**
@@ -235,5 +236,13 @@ class User extends Authenticatable
     public function scopeNonAdmins($query)
     {
         return $query->where('role', '!=', 'admin');
+    }
+
+    /**
+     * Get the user's full name (for compatibility with Staff model in views)
+     */
+    public function getFullNameAttribute()
+    {
+        return $this->name;
     }
 }

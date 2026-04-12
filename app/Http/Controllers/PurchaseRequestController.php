@@ -107,7 +107,7 @@ class PurchaseRequestController extends Controller
                 ->where('is_active', true)
                 ->get();
 
-            $businessName = DB::table('users')->where('id', $ownerId)->value('business_name') ?? 'MauzoLink';
+            $businessName = DB::table('users')->where('id', $ownerId)->value('business_name') ?? 'MEDALLION';
             $message = "New Purchase Request {$purchaseRequest->request_number} from {$staff->full_name} for {$businessName}. Amount: TSh " . number_format($purchaseRequest->estimated_amount);
 
             foreach ($accountants as $accountant) {

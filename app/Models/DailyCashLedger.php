@@ -6,6 +6,14 @@ use Illuminate\Database\Eloquent\Model;
 
 class DailyCashLedger extends Model
 {
+    protected static function booted()
+    {
+        static::saving(function ($ledger) {
+            // Automatically re-calculate derived totals whenever the ledger is updated
+            $ledger->syncTotals();
+        });
+    }
+
     protected $fillable = [
         'user_id',
         'accountant_id',
@@ -45,4 +53,37 @@ class DailyCashLedger extends Model
     {
         return $this->hasMany(DailyExpense::class);
     }
+
+    /**
+     * Synchronize all expenses (DailyExpense + PettyCashIssue) for this ledger day.
+     */
+    public function syncTotals()
+    {
+        // 1. Daily Expenses (Directly linked)
+        $this->loadMissing('expenses');
+        $dailyExpenses = $this->expenses;
+        
+        // 2. Petty Cash Issues (Linked via Date + Owner)
+        $pettyCash = \App\Models\PettyCashIssue::where('user_id', $this->user_id)
+            ->whereDate('issue_date', $this->ledger_date)
+            ->where('status', 'issued')
+            ->where('purpose', 'NOT LIKE', '[FOOD]%') // Only Bar petty cash
+            ->get();
+
+        $circExp = $dailyExpenses->where('fund_source', 'circulation')->sum('amount') + 
+                  (float)$pettyCash->where('fund_source', 'circulation')->sum('amount');
+
+        $profExp = $dailyExpenses->where('fund_source', 'profit')->sum('amount') + 
+                  (float)$pettyCash->where('fund_source', 'profit')->sum('amount');
+
+        $this->total_expenses_from_circulation = $circExp;
+        $this->total_expenses_from_profit = $profExp;
+        $this->total_expenses = $circExp + $profExp;
+
+        // Re-calculate expected closing cash based on physical outflows
+        $this->expected_closing_cash = $this->opening_cash + $this->total_cash_received + $this->total_digital_received - $this->total_expenses;
+        
+        return $this;
+    }
+
 }

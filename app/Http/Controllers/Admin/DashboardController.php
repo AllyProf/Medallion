@@ -18,6 +18,9 @@ class DashboardController extends Controller
      */
     public function index()
     {
+        // Force redirect to the operational business dashboard instead of showing the SaaS platform stats
+        return redirect()->route('dashboard');
+
         // Total Users (Customers only, excluding admins)
         $totalUsers = User::customers()->count();
         $newUsersThisMonth = User::customers()

@@ -42,9 +42,9 @@ class StaffController extends Controller
                 ->with('error', 'You do not have permission to register staff members.');
         }
         
-        // For staff members, skip plan check - they should have access regardless
-        // Only check plan for regular users (owners)
-        if (!session('is_staff')) {
+        // For staff members or Super Admin, skip plan check
+        // Only check plan for regular users (owners) who are not platform admins
+        if (!session('is_staff') && auth()->user()->role !== 'admin') {
             // Check if user's plan allows staff registration (Free or Pro only)
             $plan = $user->currentPlan();
             if (!$plan || !in_array($plan->slug, ['free', 'pro'])) {
@@ -84,9 +84,9 @@ class StaffController extends Controller
                 ->with('error', 'You do not have permission to register staff members.');
         }
         
-        // For staff members, skip plan check - they should have access regardless
-        // Only check plan for regular users (owners)
-        if (!session('is_staff')) {
+        // For staff members or Super Admin, skip plan check
+        // Only check plan for regular users (owners) who are not platform admins
+        if (!session('is_staff') && auth()->user()->role !== 'admin') {
             // Check if user's plan allows staff registration
             $plan = $user->currentPlan();
             if (!$plan || !in_array($plan->slug, ['free', 'pro'])) {
@@ -117,12 +117,13 @@ class StaffController extends Controller
             'nida_attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120', // 5MB max
             'voter_id_attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
             'professional_certificate_attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+            'pin' => 'nullable|string|size:4|regex:/^[0-9]+$/',
         ]);
 
-        // Verify role belongs to the owner
+        // Verify role belongs to the owner (Super Admins can use any role)
         $role = Role::findOrFail($validated['role_id']);
         $ownerId = $this->getOwnerId();
-        if ($role->user_id !== $ownerId) {
+        if (auth()->user()->role !== 'admin' && $role->user_id !== $ownerId) {
             return back()->with('error', 'Invalid role selected.');
         }
 
@@ -133,8 +134,11 @@ class StaffController extends Controller
         $password = Staff::generatePasswordFromLastName($validated['full_name']);
         $hashedPassword = Hash::make($password);
         
-        // Generate Kiosk PIN
-        $pin = Staff::generatePin();
+        // Process Kiosk PIN
+        $pin = $request->input('pin');
+        if (empty($pin)) {
+            $pin = Staff::generatePin();
+        }
 
         // Handle file uploads
         $nidaAttachment = null;
@@ -189,6 +193,11 @@ class StaffController extends Controller
      */
     public function index()
     {
+        if (auth()->check() && auth()->user()->role === 'admin') {
+            // dd(\App\Models\Staff::count()); // Temporary check removed to keep app running, but noted.
+            // Using Log instead to not crash the user's UI
+            \Log::info('DEBUG: Staff count seen by Admin:', ['count' => \App\Models\Staff::count()]);
+        }
         $user = $this->getCurrentUser();
         
         if (!$user) {
@@ -209,9 +218,18 @@ class StaffController extends Controller
         // Get owner ID (for staff, get their owner's ID)
         $ownerId = $this->getOwnerId();
         
-        // For staff members, skip plan check - they should have access regardless
-        // Only check plan for regular users (owners)
-        if (!session('is_staff')) {
+        \Log::info('Staff Page Debug', [
+            'user_id' => auth()->id(),
+            'user_role' => auth()->user()?->role ?? 'none',
+            'is_admin_check' => auth()->check() && auth()->user()->isAdmin(),
+            'owner_id' => $ownerId,
+            'session_is_staff' => session('is_staff')
+        ]);
+        
+        // For staff members or Super Admin, skip plan check
+        // Only check plan for regular users (owners) who are not platform admins
+        $isAdmin = auth()->check() && auth()->user()->isAdmin();
+        if (!session('is_staff') && !$isAdmin) {
             // Check if user's plan allows staff registration
             $plan = $user->currentPlan();
             if (!$plan || !in_array($plan->slug, ['free', 'pro'])) {
@@ -220,15 +238,19 @@ class StaffController extends Controller
             }
         }
 
-        $staffQuery = Staff::where('user_id', $ownerId)
-            ->with(['role', 'businessType']);
-            
-        // Filter by active location if context is set
-        if (session('active_location')) {
-            $staffQuery->where('location_branch', session('active_location'));
+        // Super Admin sees ALL staff across ALL locations
+        if (auth()->check() && auth()->user()->isAdmin()) {
+            $staff = Staff::with(['role', 'businessType'])->orderBy('created_at', 'desc')->get();
+        } else {
+            $staffQuery = Staff::where('user_id', $ownerId)
+                ->with(['role', 'businessType']);
+                
+            // Filter by active location if context is set
+            if (session('active_location')) {
+                $staffQuery->where('location_branch', session('active_location'));
+            }
+            $staff = $staffQuery->orderBy('created_at', 'desc')->get();
         }
-
-        $staff = $staffQuery->orderBy('created_at', 'desc')->get();
 
         // Calculate statistics
         $stats = [
@@ -380,9 +402,11 @@ class StaffController extends Controller
         }
         
         $ownerId = $this->getOwnerId();
-        $staff = Staff::where('user_id', $ownerId)
-            ->with(['role', 'businessType'])
-            ->findOrFail($id);
+        $staffQuery = Staff::query()->with(['role', 'businessType']);
+        if (auth()->user()->role !== 'admin') {
+            $staffQuery->where('user_id', $ownerId);
+        }
+        $staff = $staffQuery->findOrFail($id);
 
         return view('staff.show', compact('staff'));
     }
@@ -405,7 +429,11 @@ class StaffController extends Controller
         }
         
         $ownerId = $this->getOwnerId();
-        $staff = Staff::where('user_id', $ownerId)->findOrFail($id);
+        $staffQuery = Staff::where('user_id', $ownerId);
+        if ($user->role === 'admin') {
+            $staffQuery = Staff::query();
+        }
+        $staff = $staffQuery->findOrFail($id);
         
         // Get user's enabled business types
         $businessTypes = $user->enabledBusinessTypes()->get();
@@ -434,7 +462,11 @@ class StaffController extends Controller
         }
         
         $ownerId = $this->getOwnerId();
-        $staff = Staff::where('user_id', $ownerId)->findOrFail($id);
+        $staffQuery = Staff::where('user_id', $ownerId);
+        if ($user->role === 'admin') {
+            $staffQuery = Staff::query();
+        }
+        $staff = $staffQuery->findOrFail($id);
 
         // Validate request
         $validated = $request->validate([
@@ -462,10 +494,10 @@ class StaffController extends Controller
             'professional_certificate_attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
         ]);
 
-        // Verify role belongs to the owner
+        // Verify role belongs to the owner (Super Admin can use any role)
         $role = Role::findOrFail($validated['role_id']);
         $ownerId = $this->getOwnerId();
-        if ($role->user_id !== $ownerId) {
+        if (auth()->user()->role !== 'admin' && $role->user_id !== $ownerId) {
             return back()->with('error', 'Invalid role selected.');
         }
 
@@ -533,7 +565,11 @@ class StaffController extends Controller
         }
         
         $ownerId = $this->getOwnerId();
-        $staff = Staff::where('user_id', $ownerId)->findOrFail($id);
+        $staffQuery = Staff::where('user_id', $ownerId);
+        if ($user->role === 'admin') {
+            $staffQuery = Staff::query();
+        }
+        $staff = $staffQuery->findOrFail($id);
 
         // Delete associated files
         if ($staff->nida_attachment) {
@@ -560,16 +596,24 @@ class StaffController extends Controller
         $businessName = "MEDALLION RESTAURANT";
         $roleName = $staff->role ? $staff->role->name : 'N/A';
         
-        $message = "HABARI! Karibu MauzoLink!\n\n";
+        $message = "HABARI! Karibu MEDALLION!\n\n";
         $message .= "Umeandikishwa kama mfanyakazi wa " . $businessName . ".\n\n";
         $message .= "TAARIFA ZA AKAUNTI YAKO:\n";
         $message .= "Jina: " . $staff->full_name . "\n";
         $message .= "Staff ID: " . $staff->staff_id . "\n";
         $message .= "Jukumu: " . $roleName . "\n";
-        $message .= "Email: " . $staff->email . "\n";
-        $message .= "Password: " . $password . "\n";
-        $message .= "Kiosk PIN: " . $pin . "\n\n";
-        $message .= "Tafadhali login kwa kutumia credentials hapo juu.\n\n";
+        
+        // Waiters do not get Dashboard Login (Email/Password), only Kiosk PIN
+        if (strpos(strtolower($roleName), 'waiter') !== false) {
+            $message .= "Kiosk PIN: " . $pin . "\n\n";
+            $message .= "Tafadhali tumia PIN yako kuingia kwenye POS (Kiosk) kwa ajili ya kuchukua Oda.\n\n";
+        } else {
+            $message .= "Email: " . $staff->email . "\n";
+            $message .= "Password: " . $password . "\n";
+            $message .= "Kiosk PIN: " . $pin . "\n\n";
+            $message .= "Tafadhali login kwa kutumia credentials hapo juu.\n\n";
+        }
+
         $message .= "Asante!";
         
         $this->smsService->sendSms($staff->phone_number, $message);

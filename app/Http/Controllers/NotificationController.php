@@ -151,67 +151,101 @@ class NotificationController extends Controller
         ]);
     }
 
+    public function clearAll()
+    {
+        $staffId = session('staff_id');
+        $ownerId = $this->getOwnerId();
+
+        if ($staffId) {
+            WaiterNotification::where('waiter_id', $staffId)
+                ->where('is_read', false)
+                ->update(['is_read' => true]);
+        } elseif ($ownerId) {
+            // If owner, mark any owner-specific persistent notifications if we have them
+            // Currently WaiterNotification is staff-only, but logic is here for future
+        }
+
+        return response()->json(['success' => true]);
+    }
+
     /**
      * Global search across orders, staff, products.
      */
     public function search(Request $request)
     {
-        $q = trim($request->input('q', ''));
-        $ownerId = $this->getOwnerId();
+        try {
+            $q = trim($request->input('q', ''));
+            $ownerId = $this->getOwnerId();
 
-        if (!$ownerId || strlen($q) < 2) {
-            return response()->json(['results' => []]);
+            if (!$ownerId || strlen($q) < 2) {
+                return response()->json(['results' => []]);
+            }
+
+            $results = collect();
+
+            // 1. Orders Search
+            $orders = BarOrder::where('user_id', $ownerId)
+                ->where(function ($query) use ($q) {
+                    $query->where('order_number', 'like', "%{$q}%")
+                          ->orWhere('customer_name', 'like', "%{$q}%");
+                })
+                ->latest()->take(5)->get();
+            
+            foreach ($orders as $order) {
+                $results->push([
+                    'type'     => 'Order',
+                    'icon'     => 'fa-shopping-cart',
+                    'label'    => "#{$order->order_number} — " . ($order->customer_name ?? 'Walk-in'),
+                    'sub'      => 'TSh ' . number_format((float)$order->total_amount) . ' · ' . ucfirst($order->payment_status),
+                    'link'     => route('bar.orders.show', $order->id),
+                ]);
+            }
+
+            // 2. Staff Search
+            $staff = Staff::where('user_id', $ownerId)
+                ->where('full_name', 'like', "%{$q}%")
+                ->with('role')
+                ->take(4)->get();
+            
+            foreach ($staff as $s) {
+                $results->push([
+                    'type'  => 'Staff',
+                    'icon'  => 'fa-user',
+                    'label' => $s->full_name,
+                    'sub'   => $s->staff_id . ' · ' . ($s->role->name ?? 'Staff Member'),
+                    'link'  => route('staff.show', $s->id),
+                ]);
+            }
+
+            // 3. Products Search
+            // Search in variants name or measurement
+            $products = ProductVariant::whereHas('product', fn($pq) => $pq->where('user_id', $ownerId))
+                ->where(function($query) use ($q) {
+                    $query->where('name', 'like', "%{$q}%")
+                          ->orWhere('measurement', 'like', "%{$q}%")
+                          ->orWhereHas('product', function($pq) use ($q) {
+                              $pq->where('name', 'like', "%{$q}%");
+                          });
+                })
+                ->with('product')
+                ->take(4)->get();
+                
+            foreach ($products as $pv) {
+                $results->push([
+                    'type'  => 'Product',
+                    'icon'  => 'fa-cube',
+                    'label' => ($pv->product->name ?? 'Product') . ' — ' . ($pv->name ?? $pv->measurement),
+                    'sub'   => 'Price: TSh ' . number_format((float)$pv->selling_price_per_unit) . ' · ' . ($pv->measurement ?? ''),
+                    'link'  => route('products.inventory'),
+                ]);
+            }
+
+            return response()->json(['results' => $results->take(12)->values()]);
+        } catch (\Exception $e) {
+            // Log error but don't crash the header
+            \Log::error('Global Search Error: ' . $e->getMessage());
+            return response()->json(['results' => [], 'error' => true]);
         }
-
-        $results = collect();
-
-        // Orders
-        $orders = BarOrder::where('user_id', $ownerId)
-            ->where(function ($query) use ($q) {
-                $query->where('order_number', 'like', "%{$q}%")
-                      ->orWhere('customer_name', 'like', "%{$q}%");
-            })
-            ->latest()->take(5)->get();
-        foreach ($orders as $order) {
-            $results->push([
-                'type'     => 'Order',
-                'icon'     => 'fa-shopping-cart',
-                'label'    => "#{$order->order_number} — " . ($order->customer_name ?? 'Walk-in'),
-                'sub'      => 'TSh ' . number_format($order->total_amount) . ' · ' . ucfirst($order->payment_status),
-                'link'     => '#',
-            ]);
-        }
-
-        // Staff
-        $staff = Staff::where('user_id', $ownerId)
-            ->where('full_name', 'like', "%{$q}%")
-            ->take(4)->get();
-        foreach ($staff as $s) {
-            $results->push([
-                'type'  => 'Staff',
-                'icon'  => 'fa-user',
-                'label' => $s->full_name,
-                'sub'   => $s->staff_id . ' · ' . ($s->role->name ?? 'No Role'),
-                'link'  => '#',
-            ]);
-        }
-
-        // Products
-        $products = ProductVariant::whereHas('product', fn($pq) => $pq->where('user_id', $ownerId))
-            ->where('variant_name', 'like', "%{$q}%")
-            ->with('product')
-            ->take(4)->get();
-        foreach ($products as $pv) {
-            $results->push([
-                'type'  => 'Product',
-                'icon'  => 'fa-cube',
-                'label' => $pv->product->name . ' — ' . $pv->variant_name,
-                'sub'   => 'Stock: ' . number_format($pv->stock_quantity),
-                'link'  => '#',
-            ]);
-        }
-
-        return response()->json(['results' => $results->take(12)->values()]);
     }
 
     private function getOwnerId(): ?int

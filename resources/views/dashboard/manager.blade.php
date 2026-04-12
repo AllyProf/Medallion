@@ -13,9 +13,39 @@
   .product-bar-track { height: 10px; background: #eaecf4; border-radius: 10px; }
   .product-bar-fill  { height: 10px; background: #009688; border-radius: 10px; transition: width 1s ease; }
 
-  /* ── Empty states ── */
-  .empty-state { text-align: center; padding: 30px 0; color: #90a4ae; }
-  .empty-state i { font-size: 36px; display: block; margin-bottom: 8px; }
+  /* ── KPI Widgets ── */
+  .widget-small {
+    height: 100px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  }
+  .widget-small .icon {
+    width: 65px;
+    line-height: 100px;
+    font-size: 35px;
+  }
+  .widget-small .info {
+    padding: 10px 15px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .widget-small .info h4 {
+    text-transform: uppercase;
+    font-size: 13px;
+    margin-bottom: 5px;
+    font-weight: 600;
+  }
+  .widget-small .info p {
+    margin-bottom: 1px;
+    font-size: 18px;
+  }
+  .widget-small .info small {
+    display: block;
+    margin-top: 2px;
+  }
 </style>
 @endpush
 
@@ -235,37 +265,47 @@
       <h3 class="tile-title"><i class="fa fa-bolt"></i> Quick Links</h3>
       <div class="tile-body">
         <div class="row">
-          <div class="col-md-2 mb-3">
+          <div class="col-md-3 mb-3">
             <a href="{{ route('bar.stock-transfers.index') }}" class="btn btn-outline-primary btn-block p-3 text-center">
-              <i class="fa fa-exchange fa-2x mb-2"></i><br>STOCK TRANSFERS
+              <i class="fa fa-truck fa-2x mb-2"></i><br>TRANSFERS
               @if($pendingTransfers > 0)
                 <span class="badge badge-primary ml-1">{{ $pendingTransfers }}</span>
               @endif
             </a>
           </div>
-          <div class="col-md-2 mb-3">
+          <div class="col-md-3 mb-3">
             <a href="{{ route('bar.stock-receipts.index') }}" class="btn btn-outline-success btn-block p-3 text-center">
-              <i class="fa fa-inbox fa-2x mb-2"></i><br>STOCK RECEIPTS
+              <i class="fa fa-inbox fa-3x mb-2"></i><br>STOCK RECEIPTS
             </a>
           </div>
-          <div class="col-md-2 mb-3">
+          <div class="col-md-3 mb-3">
             <a href="{{ route('bar.beverage-inventory.warehouse-stock') }}" class="btn btn-outline-info btn-block p-3 text-center">
               <i class="fa fa-archive fa-2x mb-2"></i><br>WAREHOUSE
             </a>
           </div>
-          <div class="col-md-2 mb-3">
+          <div class="col-md-3 mb-3">
+            <a href="{{ route('bar.counter.counter-stock') }}" class="btn btn-outline-info btn-block p-3 text-center" style="border-color: #009688; color: #009688;">
+              <i class="fa fa-glass fa-2x mb-2"></i><br>COUNTER STOCK
+            </a>
+          </div>
+          <div class="col-md-3 mb-3">
+            <a href="{{ route('reports.stock-transfers') }}" class="btn btn-outline-secondary btn-block p-3 text-center">
+              <i class="fa fa-file-text-o fa-2x mb-2"></i><br>TRANSFER REPORT
+            </a>
+          </div>
+          <div class="col-md-3 mb-3">
+            <a href="{{ route('accountant.reconciliations') }}" class="btn btn-outline-dark btn-block p-3 text-center">
+              <i class="fa fa-money fa-2x mb-2"></i><br>RECONCILIATIONS
+            </a>
+          </div>
+          <div class="col-md-3 mb-3">
             <a href="{{ route('reports.waiter-trends') }}" class="btn btn-outline-warning btn-block p-3 text-center">
               <i class="fa fa-users fa-2x mb-2"></i><br>WAITER TRENDS
             </a>
           </div>
-          <div class="col-md-2 mb-3">
-            <a href="{{ route('reports.business-trends') }}" class="btn btn-outline-danger btn-block p-3 text-center">
-              <i class="fa fa-line-chart fa-2x mb-2"></i><br>BUSINESS TRENDS
-            </a>
-          </div>
-          <div class="col-md-2 mb-3">
-            <a href="{{ route('accountant.reconciliations') }}" class="btn btn-outline-dark btn-block p-3 text-center">
-              <i class="fa fa-money fa-2x mb-2"></i><br>RECONCILIATIONS
+          <div class="col-md-3 mb-3">
+            <a href="{{ route('manager.qr-codes.index') }}" class="btn btn-outline-primary btn-block p-3 text-center" style="border-color: #940000; color: #940000;">
+              <i class="fa fa-qrcode fa-2x mb-2"></i><br>QR PORTAL
             </a>
           </div>
         </div>

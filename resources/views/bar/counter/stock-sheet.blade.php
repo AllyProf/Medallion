@@ -204,10 +204,10 @@
     <div class="mt-5 pt-5 row">
         <div class="col-md-6 border-top pt-2">
             <small class="font-weight-bold text-uppercase" style="letter-spacing:1px;">
-                {{ $location == 'warehouse' ? 'Warehouse Keeper' : 'Counter Staff' }} Name & Signature
+                {{ $location == 'warehouse' ? 'Stock Keeper' : 'Counter Staff' }} Name & Signature
             </small>
             <div class="mt-2 font-weight-bold" style="font-size:1.1rem; color: #d35400;">
-                {{ $location == 'warehouse' ? $stockKeeper : $stockKeeper }}
+                {{ $stockKeeper }}
             </div>
             <div class="mt-2 text-muted">_______________________________________</div>
         </div>
@@ -226,9 +226,6 @@
 
 <div class="d-print-none mt-4 text-center pb-5">
     <button onclick="clearTicks()" class="btn btn-sm btn-outline-danger mr-2"><i class="fa fa-undo"></i> Reset All Audit Ticks</button>
-    <a href="{{ route('bar.stock-sheet', ['location' => $location, 'export' => 'csv']) }}" class="btn btn-sm btn-outline-dark">
-        <i class="fa fa-file-excel-o"></i> CSV Export
-    </a>
 </div>
 
 <script>

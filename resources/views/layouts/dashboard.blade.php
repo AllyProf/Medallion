@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta name="description" content="MauzoLink - Point of Sale System for Business">
-    <title>@yield('title', 'Dashboard') - MauzoLink</title>
+    <meta name="description" content="MEDALLION - Point of Sale System for Business">
+    <title>@yield('title', 'Dashboard') - MEDALLION</title>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -25,10 +25,17 @@
       :root {
         --primary: #940000;
         --secondary: #000000;
-        --font-family: "Century Gothic", sans-serif;
+        --font-family: "Century Gothic", "Apple Gothic", "ITC Century Gothic", sans-serif;
       }
-      body {
-        font-family: var(--font-family);
+      body, h1, h2, h3, h4, h5, h6, p, div, span, a, li, input, button, label, td, th {
+        font-family: var(--font-family) !important;
+      }
+      .fa, .fas, .far, .fab, .icon, [class^="fa-"], [class*=" fa-"], i, .app-sidebar__toggle {
+        font-family: FontAwesome !important;
+      }
+      .app-header__logo {
+        font-family: var(--font-family) !important;
+        font-weight: 700;
       }
       .menu-separator {
         padding: 8px 20px;
@@ -96,7 +103,8 @@
         color: #fff;
       }
       .app-sidebar__user {
-        background: linear-gradient(135deg, #940000 0%, #7a0000 100%);
+        background: #222d32; /* Neutral dark background */
+        border-bottom: 1px solid rgba(255,255,255,0.05);
       }
     </style>
     @stack('styles')
@@ -115,7 +123,7 @@
     @endphp
     <!-- Navbar-->
     <header class="app-header">
-      <a class="app-header__logo" href="{{ $dashboardUrl }}">MauzoLink</a>
+      <a class="app-header__logo" href="{{ $dashboardUrl }}">MEDALLION</a>
       <!-- Sidebar toggle button-->
       <a class="app-sidebar__toggle" href="#" data-toggle="sidebar" aria-label="Hide Sidebar"></a>
       <!-- Navbar Right Menu-->
@@ -156,7 +164,7 @@
             $activeLocation = session('active_location', 'all');
         @endphp
         
-        @if($userLocations->count() > 0)
+        @if($userLocations->count() > 1)
         <!-- Branch Context Switcher -->
         <li class="dropdown">
           <a class="app-nav__item" href="#" data-toggle="dropdown" aria-label="Switch Branch" style="background-color: rgba(255,255,255,0.1); border-radius: 4px; padding: 5px 15px; margin: 8px 10px; font-size: 13px;">
@@ -192,7 +200,10 @@
             <span class="badge badge-danger" id="notification-badge" style="position:absolute; top:10px; right:10px; font-size:10px; padding: 2px 4px; display:none;">0</span>
           </a>
           <ul class="app-notification dropdown-menu dropdown-menu-right">
-            <li class="app-notification__title" id="notification-count-text">Loading notifications...</li>
+            <li class="app-notification__title d-flex justify-content-between align-items-center">
+              <span id="notification-count-text">Loading notifications...</span>
+              <a href="javascript:void(0)" id="btn-clear-notifications" class="small text-primary" style="display:none; text-decoration:none;">Mark all as read</a>
+            </li>
             <div class="app-notification__content" id="notification-list" style="max-height: 350px; overflow-y: auto;">
               <!-- Dynamic notifications will load here -->
               <div class="text-center p-3 text-muted" id="notification-empty" style="display:none;">
@@ -206,11 +217,24 @@
         <!-- User Menu-->
         <li class="dropdown">
           <a class="app-nav__item" href="#" data-toggle="dropdown" aria-label="Open Profile Menu">
-            <i class="fa fa-user fa-lg"></i>
+            @php
+              $isStaff = session('is_staff');
+              $profileImg = null;
+              if ($isStaff) {
+                $staffObj = \App\Models\Staff::find(session('staff_id'));
+                $profileImg = $staffObj ? $staffObj->profile_image : null;
+              } else {
+                $profileImg = auth()->user()->profile_image ?? null;
+              }
+            @endphp
+            @if($profileImg)
+              <img src="{{ asset('storage/' . $profileImg) }}" class="rounded-circle" style="width: 25px; height: 25px; object-fit: cover; margin-top: -5px;">
+            @else
+              <i class="fa fa-user fa-lg"></i>
+            @endif
           </a>
           <ul class="dropdown-menu settings-menu dropdown-menu-right">
-            <li><a class="dropdown-item" href="{{ route('settings.index') }}"><i class="fa fa-cog fa-lg"></i> Settings</a></li>
-            <li><a class="dropdown-item" href="#"><i class="fa fa-user fa-lg"></i> Profile</a></li>
+            <li><a class="dropdown-item" href="{{ route('profile.index') }}"><i class="fa fa-user fa-lg"></i> Profile</a></li>
             <li>
               <form method="POST" action="{{ route('logout') }}">
                 @csrf
@@ -227,8 +251,23 @@
     <div class="app-sidebar__overlay" data-toggle="sidebar"></div>
     <aside class="app-sidebar">
       <div class="app-sidebar__user">
-        @if(session('is_staff'))
-          <img class="app-sidebar__user-avatar" src="https://ui-avatars.com/api/?name={{ urlencode(session('staff_name')) }}&background=940000&color=fff" alt="Staff Image">
+        @php
+          $isStaff = session('is_staff');
+          $sidebarProfileImg = null;
+          if ($isStaff) {
+            $staffObj = \App\Models\Staff::find(session('staff_id'));
+            $sidebarProfileImg = $staffObj ? $staffObj->profile_image : null;
+          } else {
+            $sidebarProfileImg = auth()->user()->profile_image ?? null;
+          }
+        @endphp
+
+        @if($isStaff)
+          @if($sidebarProfileImg)
+            <img class="app-sidebar__user-avatar" src="{{ asset('storage/' . $sidebarProfileImg) }}?v={{ time() }}" alt="Staff Image" style="width: 48px; height: 48px; object-fit: cover;">
+          @else
+            <img class="app-sidebar__user-avatar" src="https://ui-avatars.com/api/?name={{ urlencode(session('staff_name')) }}&background=940000&color=fff" alt="Staff Image">
+          @endif
           <div>
             <p class="app-sidebar__user-name">{{ session('staff_name') }}</p>
             <p class="app-sidebar__user-designation">
@@ -239,7 +278,11 @@
             </p>
           </div>
         @elseif(Auth::check())
-          <img class="app-sidebar__user-avatar" src="https://ui-avatars.com/api/?name={{ urlencode(Auth::user()->name) }}&background=940000&color=fff" alt="User Image">
+          @if($sidebarProfileImg)
+            <img class="app-sidebar__user-avatar" src="{{ asset('storage/' . $sidebarProfileImg) }}?v={{ time() }}" alt="User Image" style="width: 48px; height: 48px; object-fit: cover;">
+          @else
+            <img class="app-sidebar__user-avatar" src="https://ui-avatars.com/api/?name={{ urlencode(Auth::user()->name) }}&background=940000&color=fff" alt="User Image">
+          @endif
           <div>
             <p class="app-sidebar__user-name">{{ Auth::user()->name }}</p>
             <p class="app-sidebar__user-designation">
@@ -381,13 +424,6 @@
               </a>
             </li>
           @endif
-        @elseif(Auth::check() && Auth::user()->isAdmin())
-        <li>
-          <a class="app-menu__item {{ request()->routeIs('admin.dashboard.*') ? 'active' : '' }}" href="{{ route('admin.dashboard.index') }}">
-            <i class="app-menu__icon fa fa-dashboard"></i>
-            <span class="app-menu__label">Admin Dashboard</span>
-          </a>
-        </li>
         @elseif(Auth::check())
         {{-- Show only Dashboard menu during configuration --}}
         @if(request()->routeIs('business-configuration.*'))
@@ -468,9 +504,15 @@
 
               {{-- Business Type Separator (Removed) --}}
               
-              {{-- Skip placeholder menus (they're just for separators) --}}
+              {{-- Render placeholder: styled header for Super Admin section, silent skip for business type separators --}}
               @if($isPlaceholder)
-                {{-- Placeholder menu - separator already shown above --}}
+                @if(isset($menu->slug) && $menu->slug === 'super-admin-controls-sep')
+                  <li style="margin: 12px 15px 4px; padding: 6px 10px; border-top: 1px solid rgba(255,255,255,0.15); font-size: 10px; font-weight: 700; letter-spacing: 1.5px; color: rgba(255,255,255,0.5); text-transform: uppercase;">
+                    <i class="fa {{ $menu->icon ?? 'fa-shield' }}" style="margin-right:5px;"></i> {{ $menu->name }}
+                  </li>
+                @endif
+                {{-- Other placeholders are silent business-type separators --}}
+
               @elseif($hasChildren)
                 <li class="treeview {{ request()->routeIs($menu->route ?? '') || ($menu->children && $menu->children->contains(function($child) { return request()->routeIs($child->route ?? ''); })) ? 'is-expanded' : '' }}">
                   <a class="app-menu__item" href="javascript:void(0);" data-toggle="treeview">
@@ -556,31 +598,100 @@
           @endphp
           @if($showStockSheet)
           <li style="border-bottom: 1px solid rgba(255,255,255,0.1); margin: 2px 15px;"></li>
-          <li class="treeview {{ request()->routeIs('bar.stock-sheet') ? 'is-expanded' : '' }}">
+          
+          @if(in_array($sidebarRole, ['counter', 'bar counter']))
+            {{-- Simplified Counter View --}}
+            <li>
+              <a class="app-menu__item {{ request()->routeIs('bar.counter.waiter-orders') ? 'active' : '' }}" href="{{ route('bar.counter.waiter-orders') }}">
+                <i class="app-menu__icon fa fa-shopping-basket"></i>
+                <span class="app-menu__label">My Orders</span>
+              </a>
+            </li>
+            <li style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin: 2px 15px;"></li>
+            <li>
+              <a class="app-menu__item {{ request()->routeIs('bar.stock-sheet') && request()->route('location') == 'counter' ? 'active' : '' }}" href="{{ route('bar.stock-sheet', 'counter') }}">
+                <i class="app-menu__icon fa fa-cubes"></i>
+                <span class="app-menu__label">My Stock</span>
+              </a>
+            </li>
+            <li style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin: 2px 15px;"></li>
+            <li>
+              <a class="app-menu__item {{ request()->routeIs('bar.counter.reconciliation') ? 'active' : '' }}" href="{{ route('bar.counter.reconciliation', ['date' => now()->toDateString()]) }}">
+                <i class="app-menu__icon fa fa-times-circle"></i>
+                <span class="app-menu__label">Close Shift</span>
+              </a>
+            </li>
+            <li style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin: 2px 15px;"></li>
+            <li>
+              <a class="app-menu__item {{ request()->routeIs('profile.index') ? 'active' : '' }}" href="{{ route('profile.index') }}">
+                <i class="app-menu__icon fa fa-user-circle"></i>
+                <span class="app-menu__label">Profile</span>
+              </a>
+            </li>
+          @else
+            {{-- Standard Stock Sheet View --}}
+            <li class="treeview {{ request()->routeIs('bar.stock-sheet') ? 'is-expanded' : '' }}">
+              <a class="app-menu__item" href="#" data-toggle="treeview">
+                <i class="app-menu__icon fa fa-clipboard"></i>
+                <span class="app-menu__label">Stock Sheet</span>
+                <i class="treeview-indicator fa fa-angle-right"></i>
+              </a>
+              <ul class="treeview-menu">
+                <li>
+                  <a class="treeview-item {{ request()->routeIs('bar.stock-sheet') && (request()->route('location') == 'warehouse' || !request()->route('location')) ? 'active' : '' }}" 
+                     href="{{ route('bar.stock-sheet', 'warehouse') }}">
+                    <i class="icon fa fa-angle-right"></i> Warehouse
+                  </a>
+                </li>
+                <li>
+                  <a class="treeview-item {{ request()->routeIs('bar.stock-sheet') && request()->route('location') == 'counter' ? 'active' : '' }}" 
+                     href="{{ route('bar.stock-sheet', 'counter') }}">
+                    <i class="icon fa fa-angle-right"></i> Counter
+                  </a>
+                </li>
+              </ul>
+            </li>
+          @endif
+          @endif
+        @endif
+        {{-- QR & Feedback Portal --}}
+        @php
+            $isOwnerForSidebar = Auth::check() && !session('is_staff');
+            $isManagerForSidebar = false;
+            if (session('is_staff')) {
+                $sidebarStaffObj = \App\Models\Staff::with('role')->find(session('staff_id'));
+                if ($sidebarStaffObj && $sidebarStaffObj->role) {
+                    $sidebarRoleName = strtolower(trim($sidebarStaffObj->role->name ?? ''));
+                    if (in_array($sidebarRoleName, ['manager', 'admin'])) {
+                        $isManagerForSidebar = true;
+                    }
+                }
+            }
+        @endphp
+
+        @if($isOwnerForSidebar || $isManagerForSidebar)
+          <li style="border-bottom: 1px solid rgba(255,255,255,0.1); margin: 2px 15px;"></li>
+          <li class="treeview {{ request()->routeIs('manager.qr-codes.index') || request()->routeIs('manager.feedback.index') ? 'is-expanded' : '' }}">
             <a class="app-menu__item" href="#" data-toggle="treeview">
-              <i class="app-menu__icon fa fa-clipboard"></i>
-              <span class="app-menu__label">Stock Sheet</span>
+              <i class="app-menu__icon fa fa-qrcode"></i>
+              <span class="app-menu__label">Customer Portals</span>
               <i class="treeview-indicator fa fa-angle-right"></i>
             </a>
             <ul class="treeview-menu">
-              @if(!in_array($sidebarRole, ['counter', 'bar counter']))
               <li>
-                <a class="treeview-item {{ request()->routeIs('bar.stock-sheet') && (request()->route('location') == 'warehouse' || !request()->route('location')) ? 'active' : '' }}" 
-                   href="{{ route('bar.stock-sheet', 'warehouse') }}">
-                  <i class="icon fa fa-angle-right"></i> Warehouse
+                <a class="treeview-item {{ request()->routeIs('manager.qr-codes.index') ? 'active' : '' }}" href="{{ route('manager.qr-codes.index') }}">
+                  <i class="icon fa fa-qrcode"></i> QR Management
                 </a>
               </li>
-              @endif
               <li>
-                <a class="treeview-item {{ request()->routeIs('bar.stock-sheet') && request()->route('location') == 'counter' ? 'active' : '' }}" 
-                   href="{{ route('bar.stock-sheet', 'counter') }}">
-                  <i class="icon fa fa-angle-right"></i> Counter
+                <a class="treeview-item {{ request()->routeIs('manager.feedback.index') ? 'active' : '' }}" href="{{ route('manager.feedback.index') }}">
+                  <i class="icon fa fa-comments"></i> Customer Feedback
                 </a>
               </li>
             </ul>
           </li>
-          @endif
         @endif
+
         {{-- Only show Payments & Invoices if NOT on configuration page and NOT staff --}}
         @if(Auth::check() && !Auth::user()->isAdmin() && !request()->routeIs('business-configuration.*') && !session('is_staff'))
         <li>
@@ -590,38 +701,8 @@
           </a>
         </li>
         @endif
-        @if(Auth::check() && Auth::user()->isAdmin())
-        <li>
-          <a class="app-menu__item {{ request()->routeIs('admin.users.*') ? 'active' : '' }}" href="{{ route('admin.users.index') }}">
-            <i class="app-menu__icon fa fa-users"></i>
-            <span class="app-menu__label">Users</span>
-          </a>
-        </li>
-        <li>
-          <a class="app-menu__item {{ request()->routeIs('admin.subscriptions.*') ? 'active' : '' }}" href="{{ route('admin.subscriptions.index') }}">
-            <i class="app-menu__icon fa fa-list"></i>
-            <span class="app-menu__label">Subscriptions</span>
-          </a>
-        </li>
-        <li>
-          <a class="app-menu__item {{ request()->routeIs('admin.plans.*') ? 'active' : '' }}" href="{{ route('admin.plans.index') }}">
-            <i class="app-menu__icon fa fa-credit-card"></i>
-            <span class="app-menu__label">Plans</span>
-          </a>
-        </li>
-        <li>
-          <a class="app-menu__item {{ request()->routeIs('admin.payments.*') ? 'active' : '' }}" href="{{ route('admin.payments.index') }}">
-            <i class="app-menu__icon fa fa-money"></i>
-            <span class="app-menu__label">Payments</span>
-          </a>
-        </li>
-        <li>
-          <a class="app-menu__item {{ request()->routeIs('admin.analytics.*') ? 'active' : '' }}" href="{{ route('admin.analytics.index') }}">
-            <i class="app-menu__icon fa fa-bar-chart"></i>
-            <span class="app-menu__label">Analytics</span>
-          </a>
-        </li>
-        @endif
+        {{-- SaaS Platform Menus removed for Super Admin - now managed via Admin Panel only --}}
+
         
         {{-- Food & Kitchen Management --}}
         @php
@@ -676,7 +757,7 @@
       
       // 1. TOAST NOTIFICATIONS (Non-intrusive, auto-dismiss)
       // ────────────────────────────────────────────────────────────────────────────
-      const Toast = Swal.mixin({
+      const Toast = typeof Swal !== 'undefined' ? Swal.mixin({
         toast: true,
         position: 'top-end',
         showConfirmButton: false,
@@ -686,29 +767,28 @@
           toast.addEventListener('mouseenter', Swal.stopTimer);
           toast.addEventListener('mouseleave', Swal.resumeTimer);
         }
-      });
+      }) : null;
 
       /**
-       * Show a non-intrusive toast notification
-       * @param {string} type - 'success', 'error', 'warning', 'info'
-       * @param {string} message - The notification message
-       * @param {string|null} title - Optional title
-       * @param {number} duration - Duration in milliseconds (default: 3000)
+       * Show a non-intrusive toast notification with fallback
        */
       function showToast(type, message, title = null, duration = 3000) {
-        const toastConfig = {
-          icon: type,
-          title: title || message,
-          timer: duration
-        };
-        
-        // If both title and message are provided, show message as text
-        if (title && message && title !== message) {
-          toastConfig.title = title;
-          toastConfig.text = message;
+        if (typeof Swal !== 'undefined' && Toast) {
+          const toastConfig = {
+            icon: type,
+            title: title || message,
+            timer: duration
+          };
+          if (title && message && title !== message) {
+            toastConfig.title = title;
+            toastConfig.text = message;
+          }
+          Toast.fire(toastConfig);
+        } else {
+          // Fallback to standard alert if Swal fails
+          console.warn('SweetAlert2 not loaded. Falling back to standard alert.');
+          alert((title ? title + ': ' : '') + message);
         }
-        
-        Toast.fire(toastConfig);
       }
 
       // 2. SWEETALERT MODAL POPUPS (Attention-grabbing, requires user action)
@@ -722,15 +802,18 @@
        * @param {object} options - Additional SweetAlert options
        */
       function showAlert(type, message, title = null, options = {}) {
-        const defaultOptions = {
-          icon: type,
-          title: title || (type.charAt(0).toUpperCase() + type.slice(1)),
-          text: message,
-          confirmButtonColor: '#940000',
-          cancelButtonColor: '#6c757d'
-        };
-        
-        Swal.fire({...defaultOptions, ...options});
+        if (typeof Swal !== 'undefined') {
+          const defaultOptions = {
+            icon: type,
+            title: title || (type.charAt(0).toUpperCase() + type.slice(1)),
+            text: message,
+            confirmButtonColor: '#940000',
+            cancelButtonColor: '#6c757d'
+          };
+          Swal.fire({...defaultOptions, ...options});
+        } else {
+          alert((title ? title + ': ' : '') + message);
+        }
       }
 
       /**
@@ -741,22 +824,30 @@
        * @param {function} onCancel - Optional callback when cancelled
        */
       function showConfirm(message, title = 'Are you sure?', onConfirm, onCancel = null) {
-        Swal.fire({
-          title: title,
-          text: message,
-          icon: 'warning',
-          showCancelButton: true,
-          confirmButtonColor: '#940000',
-          cancelButtonColor: '#6c757d',
-          confirmButtonText: 'Yes',
-          cancelButtonText: 'No'
-        }).then((result) => {
-          if (result.isConfirmed && onConfirm) {
-            onConfirm();
-          } else if (result.isDismissed && onCancel) {
-            onCancel();
+        if (typeof Swal !== 'undefined') {
+          Swal.fire({
+            title: title,
+            text: message,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#940000',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Yes',
+            cancelButtonText: 'No'
+          }).then((result) => {
+            if (result.isConfirmed && onConfirm) {
+              onConfirm();
+            } else if (result.isDismissed && onCancel) {
+              onCancel();
+            }
+          });
+        } else {
+          if (confirm(title + "\n\n" + message)) {
+            if (onConfirm) onConfirm();
+          } else {
+            if (onCancel) onCancel();
           }
-        });
+        }
       }
 
       // 3. SESSION MESSAGE INTEGRATION
@@ -884,12 +975,17 @@
                   const countText = document.getElementById('notification-count-text');
                   const list = document.getElementById('notification-list');
                   const empty = document.getElementById('notification-empty');
+                  const clearLink = document.getElementById('btn-clear-notifications');
                   
+                  // Safety check: Ensure all required elements exist
+                  if (!badge || !countText || !list || !empty) return;
+
                   if (data.count > 0) {
                       badge.innerText = data.count;
                       badge.style.display = 'inline-block';
                       countText.innerText = `You have ${data.count} new notifications`;
                       empty.style.display = 'none';
+                      if (clearLink) clearLink.style.display = 'inline';
                       
                       let html = '';
                       data.notifications.forEach(n => {
@@ -917,9 +1013,24 @@
                       list.innerHTML = '';
                       empty.style.display = 'block';
                       list.appendChild(empty);
+                      if (clearLink) clearLink.style.display = 'none';
                   }
-              });
+              })
+              .catch(err => console.debug('Notifications sync paused...'));
       }
+
+      // Handle clear all
+      document.getElementById('btn-clear-notifications')?.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          fetch('/api/notifications/clear', {
+              method: 'POST',
+              headers: {
+                  'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                  'Accept': 'application/json'
+              }
+          }).then(() => updateNotifications());
+      });
 
       // Initial load and periodic update
       updateNotifications();

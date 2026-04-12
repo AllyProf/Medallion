@@ -303,9 +303,13 @@
                   $digitalTotal += ($chefHandover->payment_breakdown[$p] ?? 0);
               }
               $expenseTotal = 0;
-              // Assuming expenses are handled separately or we need to sum them from a list
-              // For the sake of the summary, we can show total digital and cash.
+              if (isset($chefHandover->payment_breakdown['attributed_expenses'])) {
+                  foreach($chefHandover->payment_breakdown['attributed_expenses'] as $exp) {
+                      $expenseTotal += $exp['amount'];
+                  }
+              }
               $cashReceived = $chefHandover->payment_breakdown['cash'] ?? 0;
+              $netCollection = ($cashReceived + $digitalTotal) - $expenseTotal;
             @endphp
             
             @foreach($digitalPlatforms as $platform)
@@ -317,14 +321,19 @@
               @endif
             @endforeach
 
-            <div class="d-flex justify-content-between border-top font-weight-bold pt-1 mt-1 text-primary">
-              <span>Final Net Cash:</span>
-              <span>TSh {{ number_format($cashReceived) }}</span>
+            <div class="d-flex justify-content-between small text-muted mt-2 border-top pt-1">
+              <span>Gross Cash + Digital:</span>
+              <span>TSh {{ number_format($cashReceived + $digitalTotal) }}</span>
             </div>
 
-            <div class="d-flex justify-content-between small text-muted">
-              <span>Digital Total:</span>
-              <span>TSh {{ number_format($digitalTotal) }}</span>
+            <div class="d-flex justify-content-between small text-danger">
+              <span>Kitchen Expenses:</span>
+              <span>(-) TSh {{ number_format($expenseTotal) }}</span>
+            </div>
+
+            <div class="d-flex justify-content-between border-top font-weight-bold pt-1 mt-1 text-success" style="font-size: 1rem;">
+              <span>Net Collection:</span>
+              <span>TSh {{ number_format($netCollection) }}</span>
             </div>
 
             {{-- MULTI-WAITER SHORTAGE SUMMARY --}}
@@ -416,7 +425,8 @@ $(document).ready(function() {
           let foodTotal = 0;
           let itemsHtml = '<div class="small">';
           order.kitchen_order_items.forEach(item => {
-            foodTotal += parseFloat(item.total_price);
+            const lineTotal = (parseFloat(item.unit_price || 0) * parseInt(item.quantity || 0)) || parseFloat(item.total_price || 0);
+            foodTotal += lineTotal;
             itemsHtml += `<div class="mb-1"><strong>${item.food_item_name}</strong> <span class="text-muted">x${item.quantity}</span></div>`;
           });
           itemsHtml += '</div>';

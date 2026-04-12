@@ -476,7 +476,7 @@
                         <tbody>
                             @foreach($lowStockItemsList as $item)
                             <tr>
-                                <td>{{ $item['product_name'] }} ({{ $item['variant'] }})</td>
+                                <td>{{ $item['product_name'] }}</td>
                                 <td class="text-danger font-weight-bold">{{ $item['counter_qty'] }} {{ strtolower($item['unit'] ?? 'btl') }}</td>
                                 <td>{{ $item['warehouse_qty'] }} {{ strtolower($item['unit'] ?? 'btl') }}</td>
                             </tr>
@@ -529,12 +529,9 @@
                 <span class="badge badge-primary p-2 category-pill active" data-category="all" style="background: #222; border: 1px solid #444;">All Items</span>
                 @php 
                     $uniqueCats = collect($variants)->pluck('category')->unique()->filter()->values(); 
-                    $uniqueFoodCats = collect($foodItems)->pluck('category')->unique()->filter()->values();
                     
                     $colors = ['#ffb822', '#17a2b8', '#6f42c1', '#28a745', '#fd7e14', '#007bff'];
-                    $foodColors = ['#dc3545', '#e74c3c', '#d35400', '#c0392b', '#ff4757', '#e84118'];
                     $icons = ['fa-glass', 'fa-coffee', 'fa-lemon-o', 'fa-beer', 'fa-flask', 'fa-tint'];
-                    $foodIcons = ['fa-cutlery', 'fa-fire', 'fa-birthday-cake', 'fa-leaf', 'fa-heart', 'fa-apple'];
 
                     $catStyleMap = [];
                     foreach($uniqueCats as $i => $cat) {
@@ -543,23 +540,12 @@
                             'icon' => $icons[$i % count($icons)]
                         ];
                     }
-                    foreach($uniqueFoodCats as $i => $cat) {
-                        $catStyleMap[$cat] = [
-                            'color' => $foodColors[$i % count($foodColors)],
-                            'icon' => $foodIcons[$i % count($foodIcons)]
-                        ];
-                    }
                 @endphp
                 @foreach($uniqueCats as $cat)
                     <span class="badge badge-secondary p-2 category-pill" data-category="cat-{{ \Illuminate\Support\Str::slug($cat) }}">
                         {{ $cat }}
                     </span>
                 @endforeach
-                @if(count($foodItems) > 0)
-                    <span class="badge badge-secondary p-2 category-pill" data-category="cat-food" style="border-left: 3px solid #dc3545;">
-                        <i class="fa fa-fire mr-1" style="color: #dc3545;"></i> Kitchen
-                    </span>
-                @endif
             </div>
           </div>
         </div>
@@ -582,6 +568,7 @@
                  data-quantity="{{ $v['quantity'] }}"
                  data-unit="{{ $v['unit'] ?: 'btl' }}"
                  data-total-tots="{{ $v['total_tots'] }}"
+                 data-open-tots="{{ $v['open_tots'] }}"
                  data-type="drink">
                 <div class="card product-card shadow-sm {{ $isLow ? 'low-stock-border' : '' }}">
                     @if($isLow)
@@ -608,7 +595,12 @@
                         
                         <div class="d-flex justify-content-between mb-1">
                             <span class="text-muted" style="font-size: 0.75rem;">Available:</span>
-                            <strong class="text-dark" style="font-size: 0.75rem;">{{ number_format($v['quantity']) }} {{ $v['unit'] ?: 'btl' }}s</strong>
+                            <strong class="text-dark" style="font-size: 0.75rem;">
+                                {{ number_format($v['quantity']) }} {{ $v['unit'] ?: 'btl' }}s
+                                @if(($v['open_tots'] ?? 0) > 0)
+                                    <span class="text-primary">+ {{ $v['open_tots'] }} {{ $v['portion_label'] }}s</span>
+                                @endif
+                            </strong>
                         </div>
                         
                         <div class="d-flex justify-content-between mb-2">
@@ -624,52 +616,8 @@
                     </div>
                 </div>
             </div>
-            @endforeach
-
-            <!-- Food Items -->
-            @foreach($foodItems as $f)
-            <div class="col-md-4 col-sm-6 mb-4 pos-item cat-food" 
-                 data-id="{{ $f->id }}" 
-                 data-name="{{ $f->name }}" 
-                 data-variant="{{ $f->variant_name }}"
-                 data-price="{{ $f->price }}"
-                 data-quantity="READY"
-                 data-unit=""
-                 data-type="food">
-                <div class="card product-card shadow-sm">
-                    <div class="img-header">
-                         @if($f->image)
-                            <img src="{{ asset('storage/' . $f->image) }}" style="height: 40px; object-fit: contain;">
-                         @else
-                            <i class="fa fa-fire fa-2x opacity-25" style="color: #666;"></i>
-                         @endif
-                    </div>
-                    <div class="card-body p-2 d-flex flex-column">
-                        <div class="font-weight-bold text-dark mb-0" style="font-size: 0.95rem; line-height: 1.1; height: 1.1rem; overflow: hidden;">
-                            {{ $f->name }}
-                        </div>
-                        <div class="small text-muted mb-2" style="font-size: 0.75rem;">
-                            @if($f->variant_name) ({{ $f->variant_name }}) @else &nbsp; @endif
-                        </div>
-                        
-                        <div class="d-flex justify-content-between mb-1">
-                            <span class="text-muted" style="font-size: 0.75rem;">Status:</span>
-                            <strong class="text-success" style="font-size: 0.75rem;">READY</strong>
-                        </div>
-                        <div class="d-flex justify-content-between mb-2">
-                            <span class="text-muted" style="font-size: 0.75rem;">Price:</span>
-                            <strong style="color: #940000; font-size: 0.85rem;">TSh {{ number_format($f->price) }}</strong>
-                        </div>
-
-                        <div class="mt-auto">
-                            <a href="javascript:void(0)" class="add-to-order-btn btn-add-default">
-                                <i class="fa fa-plus-circle"></i> Add to Order
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            @endforeach
+            @endforeach            <!-- Food items removed from counter dashboard -->
+h
         </div>
       </div>
     </div>
@@ -773,6 +721,7 @@
         <input type="hidden" id="modal-item-variant">
         <input type="hidden" id="modal-portion-label">
         <input type="hidden" id="modal-item-qty-total">
+        <input type="hidden" id="modal-item-open-tots">
         <input type="hidden" id="modal-item-unit-label">
 
         <div class="text-center mb-1">
@@ -1073,6 +1022,7 @@ $(document).ready(function() {
         $('#modal-item-variant').val(item.variant || '');
         $('#modal-portion-label').val(item.portionLabel || 'Tot');
         $('#modal-item-qty-total').val(item.quantity);
+        $('#modal-item-open-tots').val(item.openTots || 0);
         $('#modal-item-unit-label').val(item.unit || 'btl');
         $('#addItemModal').data('total-tots', item.totalTots || 1);
         
@@ -1080,7 +1030,12 @@ $(document).ready(function() {
             $('#modal-display-stock').html('<i class="fa fa-fire"></i> Status: <span class="text-success">READY</span>');
             $('#modal-display-price').html('TSh ' + parseInt(item.price).toLocaleString());
         } else {
-            $('#modal-display-stock').html('<i class="fa fa-database"></i> ' + item.quantity + ' ' + (item.unit || 'btl') + 's currently in stock');
+            let stockMsg = '<i class="fa fa-database"></i> ' + item.quantity + ' ' + (item.unit || 'btl') + 's';
+            if ((item.openTots || 0) > 0) {
+                stockMsg += ' + ' + item.openTots + ' ' + (item.portionLabel || 'Tot') + 's';
+            }
+            stockMsg += ' currently in stock';
+            $('#modal-display-stock').html(stockMsg);
             
             // Dynamic icons for portions
             const portionLabel = item.portionLabel || 'Tot';
@@ -1153,13 +1108,19 @@ $(document).ready(function() {
         const portion = $('#modal-portion-label').val();
         const baseUnit = $('#modal-item-unit-label').val() === 'btl' ? 'Bottle' : 'Piece';
         const qtyBottles = parseFloat($('#modal-item-qty-total').val()) || 0;
-        const totalTots = parseFloat($('#addItemModal').data('total-tots')) || 1;
+        const openTots = parseFloat($('#modal-item-open-tots').val()) || 0;
+        const totalTotsPerBottle = parseFloat($('#addItemModal').data('total-tots')) || 1;
         
         if (isTot) {
-            const availTots = Math.floor(qtyBottles * totalTots);
+            const availTots = Math.floor(qtyBottles * totalTotsPerBottle) + openTots;
             $('#modal-display-stock').html('<i class="fa fa-glass"></i> ' + availTots.toLocaleString() + ' ' + portion + 's available in stock');
         } else {
-            $('#modal-display-stock').html('<i class="fa fa-database"></i> ' + qtyBottles.toLocaleString() + ' ' + baseUnit + 's currently in stock');
+            let stockMsg = '<i class="fa fa-database"></i> ' + qtyBottles.toLocaleString() + ' ' + baseUnit + 's';
+            if (openTots > 0) {
+                stockMsg += ' + ' + openTots + ' ' + portion + 's';
+            }
+            stockMsg += ' currently in stock';
+            $('#modal-display-stock').html(stockMsg);
         }
         
         const label = isTot ? 'a ' + portion : 'per ' + baseUnit;
@@ -1502,8 +1463,10 @@ $(document).ready(function() {
                     method: 'POST',
                     data: { _token: '{{ csrf_token() }}', status: 'served' },
                     success: function(response) {
-                        showToast('success', response.message, 'Updated');
-                        location.reload();
+                        showToast('success', response.message || 'Order status updated successfully.', 'Updated');
+                        setTimeout(function() {
+                            location.reload();
+                        }, 1200);
                     },
                     error: function(xhr) {
                         showAlert('error', xhr.responseJSON.error || "Failed to update status", 'Error');
@@ -1592,31 +1555,30 @@ $(document).ready(function() {
                 const order = response.order;
                 let itemsHtml = '';
                 
-                // Regular Items (Drinks)
+                // Counter staff only sees Drinks/Beverages — food goes to kitchen
                 if (order.items && order.items.length > 0) {
-                    itemsHtml += `<h6 class="text-primary font-weight-bold"><i class="fa fa-glass"></i> Drinks/Beverages</h6>
+                    itemsHtml += `<h6 class="text-primary font-weight-bold"><i class="fa fa-glass"></i> Drinks / Beverages</h6>
                                   <table class="table table-sm table-striped">
                                     <thead class="bg-light"><tr><th>Item</th><th class="text-center">Qty</th><th class="text-right">Total</th></tr></thead><tbody>`;
                     order.items.forEach(item => {
                         itemsHtml += `<tr><td>${item.product_name} <small class="text-muted">(${item.variant})</small></td><td class="text-center">${item.quantity}</td><td class="text-right">TSh ${parseInt(item.total_price).toLocaleString()}</td></tr>`;
                     });
                     itemsHtml += '</tbody></table>';
+                } else {
+                    itemsHtml = `<div class="alert alert-info"><i class="fa fa-info-circle"></i> No drink items for this order.</div>`;
                 }
 
-                // Food Items (Kitchen Items)
-                const foodItems = order.kitchen_order_items || order.food_items || [];
-                if (foodItems.length > 0) {
-                    itemsHtml += `<h6 class="mt-3 text-info font-weight-bold"><i class="fa fa-cutlery"></i> Food Items</h6>
-                                  <table class="table table-sm table-striped">
-                                    <thead class="bg-light"><tr><th>Item</th><th class="text-center">Qty</th><th class="text-right">Total</th></tr></thead><tbody>`;
-                    foodItems.forEach(item => {
-                        const name = item.food_item_name || item.name || 'Food Item';
-                        const variant = item.variant_name || item.variant || '';
-                        const quantity = item.quantity;
-                        const price = item.total_price || (item.price * quantity);
-                        itemsHtml += `<tr><td>${name} <small class="text-muted">${variant ? '('+variant+')' : ''}</small></td><td class="text-center">${quantity}</td><td class="text-right">TSh ${parseInt(price).toLocaleString()}</td></tr>`;
-                    });
-                    itemsHtml += '</tbody></table>';
+                // Show drinks-only total (sum of order.items)
+                const drinksTotal = order.items ? order.items.reduce((sum, i) => sum + parseFloat(i.total_price || 0), 0) : 0;
+
+                // Strip food/added item notes — counter doesn't need that detail
+                let cleanNotes = '';
+                if (order.notes) {
+                    cleanNotes = order.notes
+                        .split(' | ')
+                        .filter(p => !p.trim().startsWith('FOOD ITEMS:') && !p.trim().startsWith('ADDED ITEMS:'))
+                        .join(' | ')
+                        .trim();
                 }
 
                 const content = `
@@ -1632,7 +1594,7 @@ $(document).ready(function() {
                                 </div>
                             </div>
                             <div class="col-6 text-right">
-                                <span class="d-block small text-muted text-uppercase">Status & Contact</span>
+                                <span class="d-block small text-muted text-uppercase">Status &amp; Contact</span>
                                 <p class="mb-1 font-weight-bold small">${order.created_at}</p>
                                 <div class="mb-1">
                                     <span class="badge badge-${order.status === 'served' ? 'success' : 'warning'} px-2">${order.status.toUpperCase()}</span>
@@ -1645,12 +1607,12 @@ $(document).ready(function() {
                         ${itemsHtml}
                         
                         <div class="mt-4 p-3 bg-light rounded text-right border">
-                            <span class="d-block small text-muted text-uppercase">Total Amount Due</span>
-                            <h3 class="text-primary font-weight-bold mb-0">TSh ${parseInt(order.total_amount).toLocaleString()}</h3>
+                            <span class="d-block small text-muted text-uppercase">Drinks Total</span>
+                            <h3 class="text-primary font-weight-bold mb-0">TSh ${parseInt(drinksTotal).toLocaleString()}</h3>
                         </div>
                         
-                        ${order.notes ? `<div class="mt-3 p-3 bg-light border border-info rounded-sm small shadow-sm">
-                            <strong class="text-info"><i class="fa fa-sticky-note"></i> Order Notes:</strong><br>${order.notes.replace(/\|/g, '<br>')}
+                        ${cleanNotes ? `<div class="mt-3 p-3 bg-light border border-info rounded-sm small shadow-sm">
+                            <strong class="text-info"><i class="fa fa-sticky-note"></i> Notes:</strong><br>${cleanNotes.replace(/\|/g, '<br>')}
                         </div>` : ''}
                     </div>
                 `;

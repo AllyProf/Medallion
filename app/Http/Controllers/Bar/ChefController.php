@@ -1685,8 +1685,9 @@ class ChefController extends Controller
                             ]
                         );
                         
-                        if (!$reconciliation->total_sales) {
-                            $reconciliation->difference = -$shortageAmount;
+                        if (empty(floatval($reconciliation->total_sales))) {
+                            $reconciliation->expected_amount += $shortageAmount;
+                            $reconciliation->difference = $reconciliation->submitted_amount - $reconciliation->expected_amount;
                             $reconciliation->status = 'partial';
                             $reconciliation->save();
                         } else {
@@ -1838,14 +1839,32 @@ class ChefController extends Controller
             $date = $dateObj->toDateString();
             $breakdown = $h->payment_breakdown ?? [];
 
-            // 1. Expected sales sum (improved date matching)
-            $h->expected_sales = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
+            // 1. Expected sales sum (improved dynamic calculation)
+            $reconSum = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
                 ->where('reconciliation_type', 'food')
-                ->where(function($q) use ($date, $dateObj) {
-                    $q->whereDate('reconciliation_date', $date)
-                      ->orWhereDate('reconciliation_date', $dateObj->format('Y-m-d'));
-                })
+                ->whereDate('reconciliation_date', $date)
                 ->sum('expected_amount');
+
+            if ($reconSum > 0) {
+                $h->expected_sales = $reconSum;
+            } else {
+                // Fallback: Dynamic calculation from orders if reconciliations are pending/unfinalized
+                $h->expected_sales = \App\Models\BarOrder::where('user_id', $ownerId)
+                    ->whereDate('created_at', $date)
+                    ->where('status', '!=', 'cancelled')
+                    ->whereHas('kitchenOrderItems', function($sq) {
+                        $sq->where('status', '!=', 'cancelled');
+                    })
+                    ->get()
+                    ->sum(function($order) {
+                        return $order->kitchenOrderItems()
+                            ->where('status', '!=', 'cancelled')
+                            ->get()
+                            ->sum(function($item) {
+                                return ((float)($item->unit_price ?? 0)) * ((int)($item->quantity ?? 0));
+                            });
+                    });
+            }
 
             // 2. Digital Totals
             $digital = 0;
@@ -1874,8 +1893,8 @@ class ChefController extends Controller
             $h->expenses_total = $manualExpensesTotal + $h->food_petty_total;
             
             // 5. Final Calculations
-            $h->total_collection = $h->amount + $digital; // Gross in
-            $h->net_to_safe = $h->amount - $h->expenses_total; // Physical cash left (minus manual exp and petty cash)
+            $h->total_collection = $h->amount; // h->amount already includes digital from storeHandover
+            $h->net_to_safe = $h->amount - $h->expenses_total; // Total Net Collection (Cash + Digital - Expenses)
             
             // 6. Check for Boss/Manager Submission Status
             $bossHandover = \App\Models\FinancialHandover::where('user_id', $ownerId)
@@ -1918,7 +1937,7 @@ class ChefController extends Controller
             return response()->json(['success' => false, 'error' => 'Profit handover already exists for this day.']);
         }
 
-        \App\Models\FinancialHandover::create([
+        $newHandover = \App\Models\FinancialHandover::create([
             'user_id' => $ownerId,
             'accountant_id' => \Auth::user()->staff->id ?? null,
             'handover_date' => $handover->handover_date,
@@ -1929,6 +1948,13 @@ class ChefController extends Controller
             'payment_method' => 'cash',
             'notes' => 'Food profit submission from history archive'
         ]);
+
+        try {
+            $smsService = new \App\Services\HandoverSmsService();
+            $smsService->sendProfitSubmissionToBossSms($newHandover);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send manager profit submission SMS: ' . $e->getMessage());
+        }
 
         return response()->json(['success' => true, 'message' => 'Kitchen profit submitted to Boss safely.']);
     }

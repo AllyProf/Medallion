@@ -90,9 +90,15 @@
                                         @endif
                                     </td>
                                     <td class="text-center">
-                                        <a href="{{ route('bar.counter.reconciliation', ['date' => $shift->opened_at->format('Y-m-d')]) }}" class="btn btn-sm btn-info shadow-sm" title="View Reconciliation">
-                                            <i class="fa fa-balance-scale mr-1"></i> VIEW MORE
-                                        </a>
+                                        @if($shift->status === 'closed')
+                                            <a href="{{ route('bar.counter.shift-report', ['shift' => $shift->id]) }}" class="btn btn-sm btn-dark shadow-sm" title="View Shift Report">
+                                                <i class="fa fa-file-text-o mr-1"></i> VIEW REPORT
+                                            </a>
+                                        @else
+                                            <a href="{{ route('bar.counter.reconciliation', ['date' => $shift->opened_at->format('Y-m-d')]) }}" class="btn btn-sm btn-info shadow-sm" title="View Reconciliation">
+                                                <i class="fa fa-balance-scale mr-1"></i> VIEW MORE
+                                            </a>
+                                        @endif
                                     </td>
                                 </tr>
                             @endforeach

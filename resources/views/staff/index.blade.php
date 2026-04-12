@@ -21,6 +21,12 @@
 <div class="app-title">
   <div>
     <h1><i class="fa fa-users"></i> Staff Management</h1>
+    <!-- DEBUG INFO -->
+    @if(auth()->user()?->role === 'admin')
+      <div class="alert alert-info py-1 px-3" style="font-size: 0.85rem;">
+        <i class="fa fa-info-circle"></i> [Admin Debug] Total Staff in DB: <strong>{{ \App\Models\Staff::count() }}</strong> | Variable Count: <strong>{{ count($staff) }}</strong>
+      </div>
+    @endif
     <p>
       @if(session('active_location'))
         Viewing staff for branch: <strong>{{ session('active_location') }}</strong>

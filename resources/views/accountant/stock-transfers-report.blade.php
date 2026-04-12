@@ -128,9 +128,9 @@
                       @endif
                   </td>
                   </td>
-                  <td class="text-center font-weight-bold">{{ $transfer->total_units }} <span class="small text-muted">bottles</span></td>
-                  <td class="text-center text-primary">{{ $transfer->sold_quantity + 0 }}</td>
-                  <td class="text-center text-danger font-weight-bold">{{ $transfer->remaining_quantity + 0 }}</td>
+                  <td class="text-center font-weight-bold">{{ $transfer->formatted_stock_in }}</td>
+                  <td class="text-center text-primary">{{ $transfer->formatted_sold }}</td>
+                  <td class="text-center text-danger font-weight-bold">{{ $transfer->formatted_remaining }}</td>
                   <td class="text-center">
                     <i class="fa fa-check-circle-o text-success"></i>
                   </td>
@@ -139,17 +139,26 @@
                       <div class="small font-weight-bold text-dark mb-1"><i class="fa fa-flask text-muted"></i> By Bottle: TSh {{ number_format($transfer->expected_bottle_revenue) }}</div>
                       <div class="small text-muted" title="If sold by glass"><i class="fa fa-glass"></i> By Glass: TSh {{ number_format($transfer->expected_glass_revenue) }}</div>
                     @else
-                      <span class="font-weight-bold">TSh {{ number_format($transfer->expected_revenue) }}</span>
                     @endif
                   </td>
-                  <td class="bg-light font-weight-bold text-primary">TSh {{ number_format($transfer->real_time_revenue) }}</td>
+                  <td class="bg-light font-weight-bold text-primary">
+                    <div>TSh {{ number_format($transfer->real_time_revenue) }}</div>
+                    @php 
+                        $yield = $transfer->revenue_yield;
+                        $yieldColor = $yield < 50 ? 'text-danger' : ($yield < 80 ? 'text-warning' : 'text-success');
+                    @endphp
+                    <div class="small {{ $yieldColor }}" style="font-size: 0.75rem;">
+                        <i class="fa fa-line-chart"></i> {{ number_format($yield, 1) }}% Yield
+                    </div>
+                  </td>
                   <td>
                       @php 
-                          $percent = $transfer->expected_revenue > 0 ? ($transfer->real_time_revenue / $transfer->expected_revenue) * 100 : 0;
+                          $percent = $transfer->stock_progress;
+                          $progressColor = $percent >= 100 ? 'bg-success' : 'bg-primary';
                       @endphp
                       <div class="text-center font-weight-bold small">{{ number_format($percent, 1) }}%</div>
                       <div class="progress" style="height: 5px;">
-                          <div class="progress-bar bg-primary" role="progressbar" style="width: {{ min(100, $percent) }}%" aria-valuenow="{{ $percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+                          <div class="progress-bar {{ $progressColor }}" role="progressbar" style="width: {{ min(100, $percent) }}%" aria-valuenow="{{ $percent }}" aria-valuemin="0" aria-valuemax="100"></div>
                       </div>
                   </td>
                   <td>

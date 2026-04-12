@@ -21,18 +21,39 @@ class DailyMasterSheetController extends Controller
         $ownerId = $this->getOwnerId();
         $date = $request->get('date', date('Y-m-d'));
 
-        $ledger = DailyCashLedger::where('user_id', $ownerId)
-            ->where('ledger_date', $date)
-            ->first();
+        $today = date('Y-m-d');
+        $ledgerQuery = DailyCashLedger::where('ledger_date', $date);
+        
+        $isAdmin = auth()->check() && auth()->user()->isAdmin();
+        if (!$isAdmin) {
+            $ledgerQuery->where('user_id', $ownerId);
+        }
+        $ledger = $ledgerQuery->first();
+
+        // If visiting "today" and it doesn't exist, create it
+        if (!$ledger && $date === $today) {
+            $currentStaff = $this->getCurrentStaff();
+            $ledger = DailyCashLedger::create([
+                'user_id' => $ownerId,
+                'ledger_date' => $today,
+                'accountant_id' => $currentStaff->id ?? null,
+                'opening_cash' => $this->getPreviousClosingCash($ownerId, $today),
+                'status' => 'open',
+            ]);
+        }
 
         if (!$ledger) {
             return redirect()->route('accountant.daily-master-sheet.history')->with('error', 'No ledger found for this date.');
         }
 
-        $transfers = \App\Models\StockTransfer::where('user_id', $ownerId)
-            ->whereDate('created_at', $date)
-            ->whereIn('status', ['prepared', 'completed'])
-            ->with(['productVariant.product', 'transferSales' => function($q) use ($date) {
+        $transfersQuery = \App\Models\StockTransfer::whereDate('created_at', $date)
+            ->whereIn('status', ['prepared', 'completed']);
+            
+        if (!$isAdmin) {
+            $transfersQuery->where('user_id', $ownerId);
+        }
+        
+        $transfers = $transfersQuery->with(['productVariant.product', 'transferSales' => function($q) use ($date) {
                 $q->whereDate('created_at', $date);
             }])
             ->get();
@@ -66,14 +87,18 @@ class DailyMasterSheetController extends Controller
             }
         }
         
-        $oldSales = \App\Models\TransferSale::whereHas('stockTransfer', function($q) use ($ownerId) {
-                $q->where('user_id', $ownerId);
-            })
-            ->whereDate('created_at', $date)
+        $oldSalesQuery = \App\Models\TransferSale::whereDate('created_at', $date)
             ->whereHas('stockTransfer', function($q) use ($date) {
                 $q->whereDate('created_at', '<', $date);
-            })
-            ->with('stockTransfer.productVariant.product')
+            });
+            
+        if (!$isAdmin) {
+            $oldSalesQuery->whereHas('stockTransfer', function($q) use ($ownerId) {
+                $q->where('user_id', $ownerId);
+            });
+        }
+
+        $oldSales = $oldSalesQuery->with('stockTransfer.productVariant.product')
             ->get();
             
         foreach ($oldSales as $sale) {
@@ -106,15 +131,19 @@ class DailyMasterSheetController extends Controller
         ];
 
         // NEW DATA
-        $waiterReconciliations = \App\Models\WaiterDailyReconciliation::with('waiter')
-            ->whereDate('reconciliation_date', $date)
-            ->where('user_id', $ownerId)
-            ->get();
+        $waiterReconciliationsQuery = \App\Models\WaiterDailyReconciliation::with('waiter')
+            ->whereDate('reconciliation_date', $date);
+        if (!$isAdmin) {
+            $waiterReconciliationsQuery->where('user_id', $ownerId);
+        }
+        $waiterReconciliations = $waiterReconciliationsQuery->get();
 
-        $handovers = \App\Models\FinancialHandover::where('user_id', $ownerId)
-            ->where('department', 'bar')
-            ->whereDate('handover_date', $date)
-            ->get();
+        $handoversQuery = \App\Models\FinancialHandover::where('department', 'bar')
+            ->whereDate('handover_date', $date);
+        if (!$isAdmin) {
+            $handoversQuery->where('user_id', $ownerId);
+        }
+        $handovers = $handoversQuery->get();
             
         $paymentBreakdown = [];
         foreach ($handovers as $h) {
@@ -128,6 +157,11 @@ class DailyMasterSheetController extends Controller
                             $name = strtoupper(str_replace('_', ' ', $key));
                             if ($name === 'CASH TOTAL' || $name === 'DIGITAL TOTAL' || $name === 'TOTAL') continue;
                             
+                            // Treat shortage payments as a distinct category but include them in collections
+                            if ($name === 'SHORTAGE PAYMENT') {
+                                $name = 'SHORTAGE RECOVERED';
+                            }
+                            
                             if (!isset($paymentBreakdown[$name])) $paymentBreakdown[$name] = 0;
                             $paymentBreakdown[$name] += $amt;
                         }
@@ -140,17 +174,20 @@ class DailyMasterSheetController extends Controller
             ->where('category', '!=', 'Kitchen/Food')
             ->orderBy('created_at', 'desc')->get();
             
-        $pettyCashList = \App\Models\PettyCashIssue::with('recipient')->where('user_id', $ownerId)
+        $pettyCashListQuery = \App\Models\PettyCashIssue::with('recipient')
             ->whereDate('issue_date', $date)
             ->where('status', 'issued')
-            ->where('purpose', 'NOT LIKE', '[FOOD]%')
-            ->get();
+            ->where('purpose', 'NOT LIKE', '[FOOD]%');
+        if (auth()->user()->role !== 'admin') {
+            $pettyCashListQuery->where('user_id', $ownerId);
+        }
+        $pettyCashList = $pettyCashListQuery->get();
             
         // Calculate Bar-specific collections for the summary
         $ledger->bar_cash_received = collect($handovers)->where('status', 'verified')->sum(function($h) {
              $b = $h->payment_breakdown ?? [];
              if (is_string($b)) $b = json_decode($b, true);
-             return floatval($b['cash'] ?? 0);
+             return floatval($b['cash'] ?? 0) + floatval($b['shortage_payment'] ?? 0);
         });
         $ledger->bar_digital_received = collect($handovers)->where('status', 'verified')->sum(function($h) {
             $b = $h->payment_breakdown ?? [];
@@ -159,6 +196,16 @@ class DailyMasterSheetController extends Controller
             foreach($b as $k => $v) if($k !== 'cash' && $k !== 'total' && !str_contains($k, 'attributed')) $total += floatval($v);
             return $total;
         });
+        // Manager Confirmation Status for the Profit
+        $managerHandover = FinancialHandover::where('user_id', $ownerId)
+            ->whereDate('handover_date', $date)
+            ->where('handover_type', 'accountant_to_owner')
+            ->where('department', 'Master Sheet')
+            ->first();
+        
+        $ledger->managerReceiptStatus = $managerHandover ? $managerHandover->status : 'none';
+        $ledger->isManagerReceived = ($managerHandover && $managerHandover->status === 'confirmed');
+        $ledger->actualPayout = $managerHandover ? $managerHandover->amount : 0;
 
         return view('accountant.daily_master_sheet_report', compact(
             'ledger', 
@@ -175,7 +222,24 @@ class DailyMasterSheetController extends Controller
     public function history(Request $request)
     {
         $ownerId = $this->getOwnerId();
-        $query = DailyCashLedger::where('user_id', $ownerId);
+        
+        // Ensure today's ledger exists so it shows in history
+        $today = date('Y-m-d');
+        $currentStaff = $this->getCurrentStaff();
+        DailyCashLedger::firstOrCreate(
+            ['user_id' => $ownerId, 'ledger_date' => $today],
+            [
+                'accountant_id' => $currentStaff->id ?? null,
+                'opening_cash' => $this->getPreviousClosingCash($ownerId, $today),
+                'status' => 'open',
+            ]
+        );
+
+        $isAdmin = auth()->check() && auth()->user()->isAdmin();
+        $query = DailyCashLedger::query();
+        if (!$isAdmin) {
+            $query->where('user_id', $ownerId);
+        }
 
         if ($request->filled('start_date')) {
             $query->where('ledger_date', '>=', $request->start_date);
@@ -203,6 +267,7 @@ class DailyMasterSheetController extends Controller
             
             $handoverCash = 0;
             $handoverDigital = 0;
+            $shortageCollected = 0;
             foreach ($handovers as $h) {
                 if ($h->status === 'verified') {
                     // Start by checking breakdown (Cash vs. Digital)
@@ -214,9 +279,18 @@ class DailyMasterSheetController extends Controller
                     if (is_array($breakdown) && !empty($breakdown)) {
                         foreach ($breakdown as $key => $val) {
                             $amt = floatval($val);
-                            if ($key === 'cash' || $key === 'shortage_payment' || str_contains($key, 'cash_')) {
+                            if ($key === 'shortage_payment') {
+                                $shortageCollected += $amt;
+                                // IMPORTANT: Shoratges paid in CASH should contribute to the daily cash rollover
+                                // If they were paid via digital channels, they go to digital collections
+                                $handoverCash += $amt; 
+                                continue;
+                            }
+                            if ($key === 'total') continue; // Handled within cash/digital totals
+                            
+                            if ($key === 'cash' || str_contains($key, 'cash_')) {
                                 $handoverCash += $amt;
-                            } elseif ($key !== 'total') {
+                            } else {
                                 $handoverDigital += $amt;
                             }
                         }
@@ -229,6 +303,7 @@ class DailyMasterSheetController extends Controller
             $ledger->handoverCash = $handoverCash;
             $ledger->handoverDigital = $handoverDigital;
             $ledger->handoverTotal = $handoverCash + $handoverDigital;
+            $ledger->shortageCollected = $shortageCollected;
 
             $ledger->expenseList = $ledger->expenses()
                 ->where('category', '!=', 'Kitchen/Food')
@@ -239,24 +314,23 @@ class DailyMasterSheetController extends Controller
                 ->where('status', 'issued')
                 ->where('purpose', 'NOT LIKE', '[FOOD]%')
                 ->get();
+            // Sync ledger totals to ensure petty cash is included in DB fields
+            $ledger->syncTotals();
             
-            // Expense Categorization
-            $circulationExpenses = $ledger->total_expenses_from_circulation + $ledger->pettyCashList->where('fund_source', 'circulation')->sum('amount');
-            $profitExpenses = $ledger->total_expenses_from_profit + $ledger->pettyCashList->where('fund_source', 'profit')->sum('amount');
-            
-            // Total Outflow is all cash leaving the box
-            $ledger->combined_expenses = $circulationExpenses + $profitExpenses;
-            
-            // Expose grouped expenses to the blade for correct Rollover calculation
-            $ledger->total_circulation_outflow = $circulationExpenses;
-            $ledger->total_profit_outflow = $profitExpenses;
+            // For backward compatibility with the dynamic properties used in the view
+            $ledger->combined_expenses = $ledger->total_expenses;
+            $ledger->total_circulation_outflow = $ledger->total_expenses_from_circulation;
+            $ledger->total_profit_outflow = $ledger->total_expenses_from_profit;
+
 
             // Manager Confirmation Status for the Profit
-            $managerHandover = FinancialHandover::where('user_id', $ownerId)
-                ->whereDate('handover_date', $ledger->ledger_date)
+            $managerHandoverQuery = FinancialHandover::whereDate('handover_date', $ledger->ledger_date)
                 ->where('handover_type', 'accountant_to_owner')
-                ->where('department', 'Master Sheet')
-                ->first();
+                ->where('department', 'Master Sheet');
+            if (!auth()->check() || !auth()->user()->isAdmin()) {
+                $managerHandoverQuery->where('user_id', $ownerId);
+            }
+            $managerHandover = $managerHandoverQuery->first();
             
             $ledger->managerReceiptStatus = $managerHandover ? $managerHandover->status : 'none';
             $ledger->isManagerReceived = ($managerHandover && $managerHandover->status === 'confirmed');
@@ -278,11 +352,14 @@ class DailyMasterSheetController extends Controller
 
     private function getPreviousClosingCash($ownerId, $date)
     {
-        $prevLedger = DailyCashLedger::where('user_id', $ownerId)
-            ->where('ledger_date', '<', $date)
+        $prevLedgerQuery = DailyCashLedger::where('ledger_date', '<', $date)
             ->where('status', 'closed')
-            ->orderBy('ledger_date', 'desc')
-            ->first();
+            ->orderBy('ledger_date', 'desc');
+            
+        if (!auth()->check() || !auth()->user()->isAdmin()) {
+            $prevLedgerQuery->where('user_id', $ownerId);
+        }
+        $prevLedger = $prevLedgerQuery->first();
 
         return $prevLedger ? $prevLedger->carried_forward : 0;
     }
@@ -299,16 +376,30 @@ class DailyMasterSheetController extends Controller
 
         $ledger = DailyCashLedger::findOrFail($request->ledger_id);
         
-        if ($ledger->status !== 'open') {
-            return response()->json(['success' => false, 'error' => 'Ledger is already closed/verified.']);
+        // Find handover status
+        $managerHandover = \App\Models\FinancialHandover::where('user_id', $ledger->user_id)
+            ->whereDate('handover_date', $ledger->ledger_date)
+            ->where('handover_type', 'accountant_to_owner')
+            ->where('department', 'Master Sheet')
+            ->first();
+        $isHandoverConfirmed = ($managerHandover && $managerHandover->status === 'confirmed');
+
+        if ($isHandoverConfirmed) {
+            return response()->json(['success' => false, 'error' => 'Financial handover is already confirmed by the owner. Cannot add expenses.']);
         }
 
         // Limit Checks
         if ($request->fund_source === 'profit') {
-            $availableProfit = max(0, $ledger->profit_generated - $ledger->total_expenses_from_profit);
-            // Relaxing constraint for active shifts: if it's the current date, allow slight overrides
-            if ($request->amount > $availableProfit && $ledger->ledger_date != date('Y-m-d')) {
-                return response()->json(['success' => false, 'error' => "Insufficient Profit! (Available: TSh " . number_format($availableProfit) . ")"]);
+            $submittedProfit = $ledger->profit_submitted_to_boss ?? 0;
+            $availableProfit = max(0, $ledger->profit_generated - $ledger->total_expenses_from_profit - $submittedProfit);
+            
+            if ($request->amount > $availableProfit) {
+                $errorMsg = "Insufficient Profit! ";
+                if ($submittedProfit > 0) {
+                    $errorMsg .= "(Profit of TSh " . number_format($submittedProfit) . " has already been submitted to the boss). ";
+                }
+                $errorMsg .= "Available: TSh " . number_format($availableProfit);
+                return response()->json(['success' => false, 'error' => $errorMsg]);
             }
         } else {
             $availableCirculation = max(0, ($ledger->opening_cash + $ledger->total_cash_received) - $ledger->total_expenses_from_circulation);
@@ -329,15 +420,8 @@ class DailyMasterSheetController extends Controller
             'fund_source' => $request->fund_source
         ]);
 
-        // Recalculate ledger totals
-        $ledger->total_expenses = $ledger->expenses()->sum('amount');
-        $ledger->total_expenses_from_circulation = $ledger->expenses()->where('fund_source', 'circulation')->sum('amount');
-        $ledger->total_expenses_from_profit = $ledger->expenses()->where('fund_source', 'profit')->sum('amount');
-        
-        // Re-calculate closing cash
-        $ledger->expected_closing_cash = $ledger->opening_cash + $ledger->total_cash_received + $ledger->total_digital_received - $ledger->total_expenses;
-        
-        $ledger->save();
+        // Recalculate ledger totals via centralized model logic
+        $ledger->syncTotals()->save();
 
         return response()->json(['success' => true, 'message' => 'Expense logged successfully.']);
     }
@@ -347,19 +431,22 @@ class DailyMasterSheetController extends Controller
         $expense = \App\Models\DailyExpense::findOrFail($id);
         $ledger = $expense->ledger;
 
-        if ($ledger->status !== 'open') {
-            return response()->json(['success' => false, 'error' => 'Cannot delete from a closed ledger.'], 403);
+        // Find handover status
+        $managerHandover = \App\Models\FinancialHandover::where('user_id', $ledger->user_id)
+            ->whereDate('handover_date', $ledger->ledger_date)
+            ->where('handover_type', 'accountant_to_owner')
+            ->where('department', 'Master Sheet')
+            ->first();
+        $isHandoverConfirmed = ($managerHandover && $managerHandover->status === 'confirmed');
+
+        if ($isHandoverConfirmed) {
+            return response()->json(['success' => false, 'error' => 'Financial handover is already confirmed. Cannot remove expenses.'], 403);
         }
 
         $expense->delete();
 
-        // Recalculate
-        $ledger->total_expenses = $ledger->expenses()->sum('amount');
-        $ledger->total_expenses_from_circulation = $ledger->expenses()->where('fund_source', 'circulation')->sum('amount');
-        $ledger->total_expenses_from_profit = $ledger->expenses()->where('fund_source', 'profit')->sum('amount');
-        
-        $ledger->expected_closing_cash = $ledger->opening_cash + $ledger->total_cash_received - $ledger->total_expenses;
-        $ledger->save();
+        // Recalculate via centralized model logic
+        $ledger->syncTotals()->save();
 
         return response()->json(['success' => true, 'message' => 'Expense removed.']);
     }
@@ -381,7 +468,7 @@ class DailyMasterSheetController extends Controller
 
         $ledger->update([
             'actual_closing_cash' => $request->actual_closing_cash,
-            'profit_submitted_to_boss' => $request->profit_submitted_to_boss,
+            'profit_submitted_to_boss' => 0, // Payout is now a separate step
             'money_in_circulation' => $request->money_in_circulation ?? $request->carried_forward,
             'carried_forward' => $request->carried_forward,
             'status' => 'closed',
@@ -389,23 +476,12 @@ class DailyMasterSheetController extends Controller
             'accountant_id' => Auth::user()->staff->id ?? null
         ]);
 
-        // ── AUTO-GENERATE FINANCIAL HANDOVER (Accountant to Manager/Boss)
-        if ($request->profit_submitted_to_boss > 0) {
-            $ownerId = session('is_staff') ? \App\Models\Staff::find(session('staff_id'))->user_id : Auth::id();
-            \App\Models\FinancialHandover::updateOrCreate(
-                [
-                    'user_id' => $ownerId,
-                    'handover_date' => $ledger->ledger_date,
-                    'handover_type' => 'accountant_to_owner',
-                    'department' => 'Master Sheet'
-                ],
-                [
-                    'accountant_id' => Auth::user()->staff->id ?? null,
-                    'amount' => $request->profit_submitted_to_boss,
-                    'status' => 'pending',
-                    'payment_method' => 'cash',
-                ]
-            );
+        // Trigger SMS Notifications (Manager, Accountant, and Counter Staff)
+        try {
+            $handoverSmsService = new \App\Services\HandoverSmsService();
+            $handoverSmsService->sendDailyMasterSheetClosedSms($ledger);
+        } catch (\Exception $e) {
+            \Log::error('SMS notification failed for Daily Master Sheet closure: ' . $e->getMessage());
         }
 
         if ($request->wantsJson() || $request->ajax()) {
@@ -461,7 +537,7 @@ class DailyMasterSheetController extends Controller
         $ledger = DailyCashLedger::findOrFail($request->ledger_id);
         $ownerId = $this->getOwnerId();
 
-        // Check if already exist
+        // Handle existing handover
         $existing = FinancialHandover::where('user_id', $ownerId)
             ->whereDate('handover_date', $ledger->ledger_date)
             ->where('handover_type', 'accountant_to_owner')
@@ -469,10 +545,30 @@ class DailyMasterSheetController extends Controller
             ->first();
 
         if ($existing) {
-            return response()->json(['success' => false, 'error' => 'Profit handover already exists for this day.']);
+            if ($existing->status !== 'pending') {
+                return response()->json(['success' => false, 'error' => 'Profit handover has already been confirmed/verified. Cannot update.']);
+            }
+            
+            // Update existing pending handover
+            $existing->update([
+                'amount' => $request->amount,
+                'accountant_id' => Auth::user()->staff->id ?? null,
+                'notes' => 'Updated profit submission due to expense changes'
+            ]);
+            
+            $ledger->update(['profit_submitted_to_boss' => $request->amount]);
+            
+            try {
+                $smsService = new \App\Services\HandoverSmsService();
+                $smsService->sendProfitSubmissionToBossSms($existing);
+            } catch (\Exception $e) {
+                \Log::error('Failed to send manager profit submission SMS: ' . $e->getMessage());
+            }
+            
+            return response()->json(['success' => true, 'message' => 'Profit payout updated successfully.']);
         }
 
-        FinancialHandover::create([
+        $handover = FinancialHandover::create([
             'user_id' => $ownerId,
             'accountant_id' => Auth::user()->staff->id ?? null,
             'handover_date' => $ledger->ledger_date,
@@ -484,6 +580,16 @@ class DailyMasterSheetController extends Controller
             'notes' => 'Manual profit submission from history archive'
         ]);
 
-        return response()->json(['success' => true, 'message' => 'Profit handover submitted to Boss safely.']);
+        // Update ledger to show that a payout has been initiated
+        $ledger->update(['profit_submitted_to_boss' => $request->amount]);
+
+        try {
+            $smsService = new \App\Services\HandoverSmsService();
+            $smsService->sendProfitSubmissionToBossSms($handover);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send manager profit submission SMS: ' . $e->getMessage());
+        }
+
+        return response()->json(['success' => true, 'message' => 'Profit payout successfully registered.']);
     }
 }

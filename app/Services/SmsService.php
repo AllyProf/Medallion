@@ -2,12 +2,21 @@
 
 namespace App\Services;
 
+use App\Models\SystemSetting;
+
 class SmsService
 {
-    private $username = 'emcatechn';
-    private $password = 'Emca@#12';
-    private $from = 'MauzoLink';
+    private $username;
+    private $password;
+    private $from;
     private $baseUrl = 'https://messaging-service.co.tz/link/sms/v1/text/single';
+
+    public function __construct()
+    {
+        $this->username = SystemSetting::get('sms_username', 'emcatechn');
+        $this->password = SystemSetting::get('sms_password', 'Emca@#12');
+        $this->from = SystemSetting::get('sms_sender_id', 'MEDALLION');
+    }
 
     /**
      * Send SMS

@@ -495,9 +495,9 @@ class CounterReconciliationController extends Controller
         // Whatever is actually left in the vault after pullout.
         $rolloverFloat = max(0, $totalBusinessValue - $finalProfit);
 
-        // 4. Money in circulation:
-        // Keep this equal to rollover float so tomorrow opening float and circulation always match.
-        $moneyInCirculation = $rolloverFloat;
+        // 4. Money in Circulation (Isolated Today's Sales Portion):
+        // This is the revenue portion used for restocking (COGS), isolated from opening float and profit.
+        $moneyInCirculation = max(0, $totalRevenueToday - $stockProfit - $expFromCirculation);
 
         if ($ledger->status === 'open') {
             $ledger->update([
@@ -531,7 +531,8 @@ class CounterReconciliationController extends Controller
             'rolloverFloat',
             'stockProfit',
             'staff',
-            'bar_shift'
+            'bar_shift',
+            'totalRevenueToday'
         ));
     }
 
@@ -872,6 +873,14 @@ class CounterReconciliationController extends Controller
                         'marked_by' => 'counter',
                     ],
                 ]);
+
+                // Send SMS to Waiter informing them their shift is reconciled by Counter
+                try {
+                    $smsService = new \App\Services\HandoverSmsService;
+                    $smsService->sendWaiterReconciliationSubmissionSms($reconciliation);
+                } catch (\Exception $e) {
+                    \Log::error('Failed to send Waiter Bar Reconciliation SMS: '.$e->getMessage());
+                }
             } catch (\Exception $e) {
                 \Log::error('Failed to create notification', [
                     'waiter_id' => $waiter->id,
@@ -1277,7 +1286,11 @@ class CounterReconciliationController extends Controller
 
                 foreach ($orders as $order) {
                     $orderBar = $order->items->sum('total_price');
-                    $orderFood = $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price');
+                    $orderFood = $order->kitchenOrderItems
+                        ->where('status', '!=', 'cancelled')
+                        ->sum(function ($kItem) {
+                            return ((float) ($kItem->unit_price ?? 0)) * ((int) ($kItem->quantity ?? 0));
+                        });
                     $orderTotal = $orderBar + $orderFood;
 
                     if ($orderFood > 0) {
@@ -1294,6 +1307,13 @@ class CounterReconciliationController extends Controller
 
                 $reconciliation = $waiter->dailyReconciliations->first();
                 $submittedAmount = $reconciliation ? $reconciliation->submitted_amount : 0;
+                
+                // Fix: If submitted_amount is 0 but there is a negative difference (shortage attributed by chef),
+                // calculate the virtual submitted amount as Sales + Difference (e.g., 10k - 1k = 9k)
+                if ($submittedAmount <= 0 && $reconciliation && $reconciliation->difference < 0) {
+                    $submittedAmount = (float)$foodSales + $reconciliation->difference;
+                }
+
                 $recordedAmount = $cashCollected + $digitalCollected;
 
                 // Difference
@@ -1450,7 +1470,11 @@ class CounterReconciliationController extends Controller
 
             foreach ($orders as $order) {
                 $orderBar = $order->items->sum('total_price');
-                $orderFood = $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price');
+                $orderFood = $order->kitchenOrderItems
+                    ->where('status', '!=', 'cancelled')
+                    ->sum(function ($kItem) {
+                        return ((float) ($kItem->unit_price ?? 0)) * ((int) ($kItem->quantity ?? 0));
+                    });
                 $orderTotal = $orderBar + $orderFood;
 
                 if ($orderFood > 0) {
@@ -1486,9 +1510,9 @@ class CounterReconciliationController extends Controller
             // Send Waiter SMS notifying them their food money was reconciled
             try {
                 $smsService = new \App\Services\HandoverSmsService;
-                $smsService->sendWaiterVerificationSms($reconciliation);
+                $smsService->sendWaiterReconciliationSubmissionSms($reconciliation);
             } catch (\Exception $e) {
-                \Log::error('Failed to send Waiter Food Verification SMS: '.$e->getMessage());
+                \Log::error('Failed to send Waiter Food Reconciliation SMS: '.$e->getMessage());
             }
 
             DB::commit();
@@ -1509,70 +1533,103 @@ class CounterReconciliationController extends Controller
         $validated = $request->validate([
             'reconciliation_id' => 'required|exists:waiter_daily_reconciliations,id',
             'amount' => 'required|numeric|min:0',
+            'channel' => 'nullable|string|in:cash,mobile_money,bank_transfer,pos_card,salary_deduction',
             'notes' => 'nullable|string',
         ]);
 
         $reconciliation = \App\Models\WaiterDailyReconciliation::findOrFail($validated['reconciliation_id']);
         $ownerId = $this->getOwnerId();
+        $channel = $request->get('channel', 'cash');
 
         DB::beginTransaction();
         try {
             $amount = floatval($validated['amount']);
 
-            // 1. Update the reconciliation record
-            // Add the paid amount to submitted_amount (and cash_collected)
+            // 1. Update the reconciliation record (Debt Settlement)
             $reconciliation->submitted_amount += $amount;
-            $reconciliation->cash_collected += $amount;
+
+            // Track specific payment channel for digital vs cash vs salary deduction
+            if ($channel === 'cash') {
+                $reconciliation->cash_collected += $amount;
+            } elseif ($channel === 'mobile_money') {
+                $reconciliation->mobile_money_collected += $amount;
+            } elseif ($channel === 'bank_transfer') {
+                $reconciliation->bank_collected += $amount;
+            } elseif ($channel === 'pos_card') {
+                $reconciliation->card_collected += $amount;
+            }
+            // salary_deduction counts towards debt recovery but is NOT physical cash
+
             $reconciliation->difference = $reconciliation->submitted_amount - $reconciliation->expected_amount;
 
-            // If difference is now 0 (or positive), mark as reconciled
             if (abs($reconciliation->difference) < 0.1) {
                 $reconciliation->status = 'reconciled';
             }
 
-            // Add to audit trail in notes
-            $oldNotes = json_decode($reconciliation->notes, true) ?: [];
-            $oldNotes['settlements'][] = [
+            // Track detailed settlement history in JSON
+            $notesData = json_decode($reconciliation->notes, true) ?: [];
+            if (!is_array($notesData)) $notesData = ['legacy_notes' => $reconciliation->notes];
+
+            $notesData['settlements'][] = [
+                'id' => uniqid('set_'),
                 'amount' => $amount,
+                'channel' => $channel,
                 'date' => now()->toDateTimeString(),
                 'recorded_by' => auth()->user()->name ?? 'Accountant',
                 'staff_note' => $validated['notes'] ?? 'Shortage settled',
             ];
-            $reconciliation->notes = json_encode($oldNotes);
+            $reconciliation->notes = json_encode($notesData);
             $reconciliation->save();
 
-            // 2. Add to DailyCashLedger for that date
-            // This ensures it shows up in "Final Cash" for history and master sheet
-            $ledger = DailyCashLedger::firstOrCreate(
-                ['user_id' => $ownerId, 'ledger_date' => $reconciliation->reconciliation_date],
-                ['status' => 'open']
-            );
+            // 2. Update Financial records (SKIP IF salary deduction)
+            if ($channel !== 'salary_deduction') {
+                $ledger = DailyCashLedger::firstOrCreate(
+                    ['user_id' => $ownerId, 'ledger_date' => now()->toDateString()],
+                    ['status' => 'open']
+                );
 
-            $ledger->total_cash_received += $amount;
+                if ($channel === 'cash') {
+                    $ledger->total_cash_received += $amount;
+                } else {
+                    $ledger->total_digital_received += $amount;
+                }
 
-            // Re-calculate expected closing
-            $totalExpenses = $ledger->expenses()->sum('amount');
-            $ledger->expected_closing_cash = floatval($ledger->opening_cash) + floatval($ledger->total_cash_received) + floatval($ledger->total_digital_received) - $totalExpenses;
+                $totalExpenses = $ledger->expenses()->sum('amount');
+                $ledger->expected_closing_cash = floatval($ledger->opening_cash) + floatval($ledger->total_cash_received) + floatval($ledger->total_digital_received) - $totalExpenses;
+                $ledger->save();
 
-            $ledger->save();
+                // Financial Handover update
+                $handover = FinancialHandover::where('user_id', $ownerId)
+                    ->whereDate('handover_date', now()->toDateString())
+                    ->where('department', $reconciliation->reconciliation_type === 'food' ? 'food' : 'bar')
+                    ->where('handover_type', 'staff_to_accountant')
+                    ->first();
 
-            // 3. Update Financial Handover if it exists (for Kitchen Master History accuracy)
-            // This ensures the "Net to Safe" or "Final Cash" in history reflects the settlement
-            $handover = FinancialHandover::where('user_id', $ownerId)
-                ->whereDate('handover_date', $reconciliation->reconciliation_date)
-                ->where('department', $reconciliation->reconciliation_type === 'food' ? 'food' : 'bar')
-                ->where('handover_type', 'staff_to_accountant')
-                ->first();
-
-            if ($handover) {
-                $handover->amount += $amount;
-                $pBreakdown = $handover->payment_breakdown;
-                if (is_array($pBreakdown)) {
-                    $pBreakdown['cash'] = ($pBreakdown['cash'] ?? 0) + $amount;
-                    // Log the settlement inside handover breakdown for transparency
-                    $pBreakdown['shortage_settlements'] = ($pBreakdown['shortage_settlements'] ?? 0) + $amount;
-                    $handover->payment_breakdown = $pBreakdown;
-                    $handover->save();
+                if (!$handover) {
+                    $handover = FinancialHandover::create([
+                        'user_id' => $ownerId,
+                        'handover_date' => now()->toDateString(),
+                        'department' => $reconciliation->reconciliation_type === 'food' ? 'food' : 'bar',
+                        'handover_type' => 'staff_to_accountant',
+                        'amount' => $amount,
+                        'status' => 'verified',
+                        'payment_method' => 'mixed',
+                        'payment_breakdown' => [
+                            ($channel === 'cash' ? 'cash' : 'digital') => $amount,
+                            'shortage_payment' => $amount
+                        ],
+                        'notes' => 'Generated by shortage settlement'
+                    ]);
+                } else {
+                    $handover->amount += $amount;
+                    $pBreakdown = $handover->payment_breakdown ?: [];
+                    if (is_array($pBreakdown)) {
+                        $pKey = ($channel === 'cash') ? 'cash' : 'digital';
+                        $pBreakdown[$pKey] = ($pBreakdown[$pKey] ?? 0) + $amount;
+                        $pBreakdown['shortage_payment'] = ($pBreakdown['shortage_payment'] ?? 0) + $amount;
+                        $handover->payment_breakdown = $pBreakdown;
+                        $handover->save();
+                    }
                 }
             }
 
@@ -1580,13 +1637,156 @@ class CounterReconciliationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Shortage settled successfully! Cash added to vault and reflected in accounts.',
+                'message' => 'Shortage settled successfully! ' . ($channel === 'salary_deduction' ? 'Applied as salary deduction.' : 'Amount added to accounts.'),
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('Shortage Settlement Error: '.$e->getMessage());
-
             return response()->json(['error' => 'An internal error occurred: '.$e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Reverse a specific shortage settlement entry
+     */
+    public function undoSettleShortage(Request $request)
+    {
+        $validated = $request->validate([
+            'reconciliation_id' => 'required|exists:waiter_daily_reconciliations,id',
+            'settlement_id' => 'required|string',
+        ]);
+
+        $reconciliation = \App\Models\WaiterDailyReconciliation::findOrFail($validated['reconciliation_id']);
+        $ownerId = $this->getOwnerId();
+
+        $notesData = json_decode($reconciliation->notes, true) ?: [];
+        $settlements = $notesData['settlements'] ?? [];
+        
+        $targetIndex = -1;
+        $targetSettlement = null;
+        foreach ($settlements as $idx => $s) {
+            if (isset($s['id']) && $s['id'] === $validated['settlement_id']) {
+                $targetIndex = $idx;
+                $targetSettlement = $s;
+                break;
+            }
+        }
+
+        if (!$targetSettlement) {
+            return response()->json(['error' => 'Settlement record not found.'], 404);
+        }
+
+        DB::beginTransaction();
+        try {
+            $amount = floatval($targetSettlement['amount']);
+            $channel = $targetSettlement['channel'] ?? 'cash';
+
+            // 1. Revert reconciliation debt tracking
+            $reconciliation->submitted_amount -= $amount;
+            
+            if ($channel === 'cash') {
+                $reconciliation->cash_collected -= $amount;
+            } elseif ($channel === 'mobile_money') {
+                $reconciliation->mobile_money_collected -= $amount;
+            } elseif ($channel === 'bank_transfer') {
+                $reconciliation->bank_collected -= $amount;
+            } elseif ($channel === 'pos_card') {
+                $reconciliation->card_collected -= $amount;
+            }
+
+            $reconciliation->difference = $reconciliation->submitted_amount - $reconciliation->expected_amount;
+            
+            if (abs($reconciliation->difference) > 0.1) {
+                $reconciliation->status = 'partial';
+            }
+
+            // Remove from history
+            array_splice($settlements, $targetIndex, 1);
+            $notesData['settlements'] = $settlements;
+            $reconciliation->notes = json_encode($notesData);
+            $reconciliation->save();
+
+            // 2. Revert Financial totals (IF NOT salary_deduction)
+            if ($channel !== 'salary_deduction') {
+                $settledDate = isset($targetSettlement['date']) ? \Carbon\Carbon::parse($targetSettlement['date'])->toDateString() : $reconciliation->reconciliation_date;
+                
+                $ledger = DailyCashLedger::where('user_id', $ownerId)
+                    ->where('ledger_date', $settledDate)
+                    ->first();
+
+                if ($ledger) {
+                    if ($channel === 'cash') {
+                        $ledger->total_cash_received -= $amount;
+                    } else {
+                        $ledger->total_digital_received -= $amount;
+                    }
+                    $totalExpenses = $ledger->expenses()->sum('amount');
+                    $ledger->expected_closing_cash = floatval($ledger->opening_cash) + floatval($ledger->total_cash_received) + floatval($ledger->total_digital_received) - $totalExpenses;
+                    $ledger->save();
+                }
+
+                $handover = FinancialHandover::where('user_id', $ownerId)
+                    ->whereDate('handover_date', $settledDate)
+                    ->where('department', $reconciliation->reconciliation_type === 'food' ? 'food' : 'bar')
+                    ->where('handover_type', 'staff_to_accountant')
+                    ->first();
+
+                if ($handover) {
+                    $handover->amount -= $amount;
+                    $pBreakdown = $handover->payment_breakdown;
+                    if (is_array($pBreakdown)) {
+                        $pKey = ($targetSettlement['channel'] === 'cash') ? 'cash' : 'digital';
+                        $pBreakdown[$pKey] = max(0, ($pBreakdown[$pKey] ?? 0) - $targetSettlement['amount']);
+                        $pBreakdown['shortage_payment'] = max(0, ($pBreakdown['shortage_payment'] ?? 0) - $targetSettlement['amount']);
+                        $handover->payment_breakdown = $pBreakdown;
+                        $handover->save();
+                    }
+                }
+            }
+
+            DB::commit();
+            return response()->json(['success' => true, 'message' => 'Settlement reversed successfully.']);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'Undo failed: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * View a detailed summary report for a specific shift
+     */
+    public function shiftReport(\App\Models\BarShift $shift)
+    {
+        $ownerId = $this->getOwnerId();
+        
+        // Security: Ensure the shift belongs to this business
+        if ($shift->user_id !== $ownerId) {
+            abort(403, 'Unauthorized access to this shift report.');
+        }
+
+        // Fetch handover details
+        $handover = FinancialHandover::where('bar_shift_id', $shift->id)
+            ->where('handover_type', 'staff_to_accountant')
+            ->first();
+
+        // Fetch waiter reconciliations for this shift
+        $reconciliations = WaiterDailyReconciliation::where('bar_shift_id', $shift->id)
+            ->with(['waiter.role'])
+            ->get();
+
+        // Calculate totals from reconciliations
+        $totalExpected = $reconciliations->sum('expected_amount');
+        $totalSubmitted = $reconciliations->sum('submitted_amount');
+        $totalDifference = $reconciliations->sum('difference');
+
+        return view('bar.counter.shift_report', compact(
+            'shift',
+            'handover',
+            'reconciliations',
+            'totalExpected',
+            'totalSubmitted',
+            'totalDifference'
+        ));
     }
 }

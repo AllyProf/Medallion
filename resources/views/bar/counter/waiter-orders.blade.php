@@ -133,217 +133,12 @@
                 <th>Actions</th>
               </tr>
             </thead>
-            <tbody>
-               @forelse($orders as $order)
-              <tr data-status="{{ $order->status }}" data-order-id="{{ $order->id }}" data-waiter-name="{{ $order->waiter ? $order->waiter->full_name : '' }}" class="{{ $order->status === 'cancelled' ? 'order-row-cancelled' : '' }}">
-                @php
-                  $counterTotal = (float) $order->items->sum('total_price');
-                  $counterPaid = min((float) ($order->paid_amount ?? 0), $counterTotal);
-                @endphp
-                <td><strong>{{ $order->order_number }}</strong> @if($order->status === 'cancelled') <span class="badge badge-danger">CANCELLED</span> @endif</td>
-                <td>
-                  @if($order->waiter)
-                    <i class="fa fa-user"></i> {{ $order->waiter->full_name }}<br>
-                    <small class="text-muted">{{ $order->waiter->staff_id }}</small>
-                  @else
-                    <span class="text-muted">N/A</span>
-                  @endif
-                </td>
-                <td>
-                  @if($order->order_source === 'kiosk')
-                    <span class="badge badge-info"><i class="fa fa-desktop"></i> Kiosk</span>
-                  @elseif($order->order_source === 'counter')
-                    <span class="badge badge-warning"><i class="fa fa-shopping-cart"></i> Counter</span>
-                  @elseif($order->waiter_id)
-                    <span class="badge badge-primary"><i class="fa fa-user"></i> Waiter</span>
-                  @else
-                    <span class="badge badge-secondary"><i class="fa fa-globe"></i> Web</span>
-                  @endif
-                </td>
-                <td>
-                  {{-- Counter view: bar/drink lines only (kitchen food is handled on food/chef screens) --}}
-                  <ul class="list-unstyled mb-0">
-                    @forelse($order->items->take(3) as $item)
-                    <li>
-                      @if($item->productVariant)
-                        @php
-                            $label = '';
-                            if (($item->sell_type ?? 'unit') === 'tot') {
-                                $cat = strtolower($item->productVariant->product->category ?? '');
-                                $pName = 'Tot';
-                                if (str_contains($cat, 'wine')) $pName = 'Glass';
-                                elseif (str_contains($cat, 'spirit') || str_contains($cat, 'whiskey') || str_contains($cat, 'vodka') || str_contains($cat, 'gin')) $pName = 'Shot';
-                                $label = ($item->quantity > 1 ? \Illuminate\Support\Str::plural($pName) : $pName) . ' of ';
-                            }
-                        @endphp
-                        <small>{{ $item->quantity }}x {{ $label }}{{ \App\Helpers\ProductHelper::generateDisplayName($item->productVariant->product->name ?? 'N/A', ($item->productVariant->measurement ?? '') . ' - ' . ($item->productVariant->packaging ?? ''), $item->productVariant->name) }}</small>
-                      @elseif($item->food_item_name)
-                        <small>{{ $item->quantity }}x {{ $item->food_item_name }}</small>
-                      @else
-                        <small>{{ $item->quantity }}x N/A</small>
-                      @endif
-                    </li>
-                    @empty
-                    <li><small class="text-muted">—</small></li>
-                    @endforelse
-                    @if($order->items->count() > 3)
-                    <li><small class="text-muted">+{{ $order->items->count() - 3 }} more</small></li>
-                    @endif
-                  </ul>
-                </td>
-                <td><strong>TSh {{ number_format($counterTotal, 2) }}</strong></td>
-                <td>
-                  <span class="badge badge-{{ $order->status === 'pending' ? 'warning' : ($order->status === 'served' ? 'success' : 'secondary') }}">
-                    {{ ucfirst($order->status) }}
-                  </span>
-                  @if($order->status === 'cancelled')
-                    @php $cancelSummary = $order->counterCancellationSummary(); @endphp
-                    @if($cancelSummary)
-                      <br><small class="text-danger">Reason: {{ $cancelSummary }}</small>
-                    @else
-                      <br><small class="text-muted">Cancelled</small>
-                    @endif
-                  @elseif($order->barLinesVoidAtCounterSummary())
-                    <br><small class="text-info">{{ $order->barLinesVoidAtCounterSummary() }}</small>
-                  @endif
-                </td>
-                <td>
-                                  @if($order->payment_status === 'paid')
-                    <span class="badge badge-success">
-                      <i class="fa fa-check"></i> Paid
-                    </span>
-                    @if($order->payment_method === 'mobile_money' && $order->mobile_money_number)
-                      <br><span class="text-success small font-weight-bold">{{ $order->mobile_money_number }}</span>
-                    @elseif($order->payment_method && $order->payment_method !== 'cash')
-                      <br><span class="text-info small font-weight-bold">{{ strtoupper(str_replace('_', ' ', $order->payment_method)) }}</span>
-                    @endif
-                    @if($order->paidByWaiter)
-                      <br><small class="text-muted">Counter reconciled</small>
-                    @endif
-                  @elseif($order->payment_status === 'partial')
-                    <span class="badge badge-warning">
-                      Partial: TSh {{ number_format($counterPaid, 2) }}
-                    </span>
-                    <br><small class="text-danger">TSh {{ number_format(max($counterTotal - $counterPaid, 0), 2) }} outstanding</small>
-                  @elseif($order->orderPayments && $order->orderPayments->count() > 0)
-                    @php $totalRecorded = $order->orderPayments->sum('amount'); @endphp
-                    @if($totalRecorded >= $counterTotal - 0.01)
-                      <span class="badge badge-success"><i class="fa fa-check"></i> Paid</span>
-                      <br><small class="text-muted">Awaiting counter verification</small>
-                    @else
-                      <span class="badge badge-warning">Partial</span>
-                      <br><small class="text-danger">TSh {{ number_format(max($counterTotal - $totalRecorded, 0), 2) }} outstanding</small>
-                    @endif
-                  @else
-                    <span class="badge badge-danger">Pending</span>
-                  @endif
-                </td>
-                <td>{{ $order->created_at->format('M d, Y H:i') }}</td>
-                <td>
-                  <div class="">
-                    {{-- Always: View --}}
-                    <button class="btn btn-sm btn-secondary view-order-btn mr-1 mb-1" data-order-id="{{ $order->id }}">
-                      <i class="fa fa-eye"></i> View
-                    </button>
-
-                    @if($order->status === 'pending' && $order->payment_status !== 'paid')
-                      {{-- PENDING: Mark Served --}}
-                      <button class="btn btn-sm btn-info update-status-btn mr-1 mb-1"
-                              data-order-id="{{ $order->id }}"
-                              data-status="served">
-                        <i class="fa fa-check"></i> Serve
-                      </button>
-
-                      {{-- PENDING: Cancel --}}
-                      <button class="btn btn-sm btn-danger update-status-btn mr-1 mb-1"
-                              data-order-id="{{ $order->id }}"
-                              data-status="cancelled">
-                        <i class="fa fa-ban"></i> Cancel
-                      </button>
-
-                    @elseif($order->status === 'served' && $order->payment_status !== 'paid')
-                      {{-- SERVED & UNPAID: PAY button --}}
-                      <button class="btn btn-sm btn-success font-weight-bold pay-order-btn mr-1 mb-1"
-                              data-order-id="{{ $order->id }}"
-                              data-total="{{ $counterTotal }}">
-                        <i class="fa fa-money"></i> PAY
-                      </button>
-
-                    @elseif($order->payment_status === 'paid')
-                      {{-- PAID: no actions --}}
-                      <button class="btn btn-sm btn-success" disabled style="opacity: 1;">
-                        <i class="fa fa-check-circle"></i> Paid
-                      </button>
-
-                    @elseif($order->status === 'cancelled')
-                      <button class="btn btn-sm btn-secondary" disabled style="opacity: 1;">
-                        <i class="fa fa-ban"></i> Cancelled
-                      </button>
-                    @endif
-                  </div>
-                </td>
-              </tr>
-              @empty
-              <tr>
-                <td colspan="9" class="text-center">
-                  <p class="text-muted">No orders found</p>
-                </td>
-              </tr>
-              @endforelse
+            <tbody id="orders-table-body">
+               @include('bar.counter.partials._waiter_orders_table_body')
             </tbody>
           </table>
         </div>
-        <div class="mt-3">
-          @if($orders->hasPages())
-            <ul class="pagination justify-content-center">
-              {{-- Previous Page Link --}}
-              @if($orders->onFirstPage())
-                <li class="page-item disabled">
-                  <span class="page-link">«</span>
-                </li>
-              @else
-                <li class="page-item">
-                  <a class="page-link" href="{{ $orders->previousPageUrl() }}" rel="prev">«</a>
-                </li>
-              @endif
-
-              {{-- Pagination Elements --}}
-              @foreach($orders->getUrlRange(max(1, $orders->currentPage() - 2), min($orders->lastPage(), $orders->currentPage() + 2)) as $page => $url)
-                @if($page == $orders->currentPage())
-                  <li class="page-item active">
-                    <span class="page-link">{{ $page }}</span>
-                  </li>
-                @else
-                  <li class="page-item">
-                    <a class="page-link" href="{{ $url }}">{{ $page }}</a>
-                  </li>
-                @endif
-              @endforeach
-
-              {{-- Ellipsis for pages after current range --}}
-              @if($orders->currentPage() + 2 < $orders->lastPage())
-                @if($orders->currentPage() + 3 < $orders->lastPage())
-                  <li class="page-item disabled"><span class="page-link">...</span></li>
-                @endif
-                <li class="page-item">
-                  <a class="page-link" href="{{ $orders->url($orders->lastPage()) }}">{{ $orders->lastPage() }}</a>
-                </li>
-              @endif
-
-              {{-- Next Page Link --}}
-              @if($orders->hasMorePages())
-                <li class="page-item">
-                  <a class="page-link" href="{{ $orders->nextPageUrl() }}" rel="next">»</a>
-                </li>
-              @else
-                <li class="page-item disabled">
-                  <span class="page-link">»</span>
-                </li>
-              @endif
-            </ul>
-          @endif
-        </div>
-      </div>
+      </div></div>
     </div>
   </div>
 </div>
@@ -478,6 +273,108 @@
 $(document).ready(function() {
     // Existing Order Actions...
     
+    // Background Refresh (Real-time Waiter Order Visibility)
+    let isTyping = false;
+    let typingTimer;
+    
+    function refreshOrdersTable() {
+        // Don't refresh if user is typing or if any modal is open
+        if (isTyping || $('.modal.show').length > 0) return;
+
+        const url = new URL(window.location.href);
+        const params = new URLSearchParams(url.search);
+        
+        // Ensure manual filters are preserved in polling
+        if ($('#order-search').val()) params.set('search', $('#order-search').val());
+        if ($('#waiter-filter').val() !== 'all') params.set('waiter_id', $('#waiter-filter').val());
+        if ($('#status-filter').val() !== 'all') params.set('status', $('#status-filter').val());
+
+        $.ajax({
+            url: url.pathname + '?' + params.toString(),
+            method: 'GET',
+            headers: {'X-Requested-With': 'XMLHttpRequest'},
+            success: function(html) {
+                if (html && html.trim().length > 0) {
+                    $('#orders-table-body').html(html);
+                    // Re-apply client-side filter if search/dropdowns have values
+                    filterOrders();
+                }
+            },
+            error: function() {
+                console.error("Orders background refresh failed.");
+            }
+        });
+    }
+
+    // Determine refresh frequency (30 seconds)
+    setInterval(refreshOrdersTable, 30000);
+
+    // Track typing to pause refresh
+    $('#order-search').on('keydown', function() {
+        isTyping = true;
+        clearTimeout(typingTimer);
+    });
+    $('#order-search').on('keyup', function() {
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(() => { isTyping = false; }, 2000);
+    });
+
+    // Real-time Client-side Filtering
+    function filterOrders() {
+        const searchText = $('#order-search').val().toLowerCase();
+        const waiterId = $('#waiter-filter').val();
+        const status = $('#status-filter').val();
+
+        $('.order-data-row').each(function() {
+            const row = $(this);
+            const rowText = row.text().toLowerCase();
+            const rowWaiterId = row.data('waiter-id').toString();
+            const rowStatus = row.data('status');
+
+            const matchesSearch = rowText.indexOf(searchText) !== -1;
+            const matchesWaiter = (waiterId === 'all' || rowWaiterId === waiterId);
+            const matchesStatus = (status === 'all' || rowStatus === status);
+
+            if (matchesSearch && matchesWaiter && matchesStatus) {
+                row.show();
+            } else {
+                row.hide();
+            }
+        });
+
+        // Toggle visibility of shift headers based on whether they have visible children
+        $('.shift-header').each(function() {
+            const header = $(this);
+            const group = header.data('shift-group');
+            let hasVisibleOrders = false;
+            
+            // Find all following rows until the next header
+            let next = header.next();
+            while (next.length && !next.hasClass('shift-header')) {
+                if (next.hasClass('order-data-row') && next.is(':visible')) {
+                    hasVisibleOrders = true;
+                    break;
+                }
+                next = next.next();
+            }
+            
+            if (hasVisibleOrders) {
+                header.show();
+            } else {
+                header.hide();
+            }
+        });
+    }
+
+    // Attach events for real-time filtering
+    $('#order-search').on('keyup', function() {
+        filterOrders();
+    });
+
+    $('#waiter-filter, #status-filter').on('change', function() {
+        filterOrders();
+    });
+
     // View Details
     $(document).on('click', '.view-order-btn', function() {
         const orderId = $(this).data('order-id');
@@ -580,7 +477,13 @@ $(document).ready(function() {
                     method: 'POST',
                     data: { _token: '{{ csrf_token() }}', status: status },
                     success: function(res) {
-                        Swal.fire('Updated!', 'Order status updated successfully.', 'success').then(() => location.reload());
+                        if (typeof showToast === 'function') {
+                            showToast('success', 'Order status updated successfully.', 'Updated!');
+                        } else {
+                            // Fallback if layout doesn't have showToast
+                            // (Though it should, being on dashboard layout)
+                        }
+                        setTimeout(() => location.reload(), 1200);
                     },
                     error: function(xhr) {
                         Swal.fire('Error', xhr.responseJSON.error || 'Failed to update order', 'error');

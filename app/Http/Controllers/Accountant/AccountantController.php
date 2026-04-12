@@ -39,10 +39,28 @@ class AccountantController extends Controller
 
         $location = session('active_location');
 
+        // Ensure today's ledger exists for chart accuracy
+        $today = date('Y-m-d');
+        \App\Models\DailyCashLedger::firstOrCreate(
+            ['user_id' => $ownerId, 'ledger_date' => $today],
+            [
+                'opening_cash' => \App\Models\DailyCashLedger::where('user_id', $ownerId)
+                    ->where('ledger_date', '<', $today)
+                    ->where('status', 'closed')
+                    ->orderBy('ledger_date', 'desc')
+                    ->value('carried_forward') ?? 0,
+                'status' => 'open',
+            ]
+        );
+
         // Helper to apply common filters (owner + location)
         $applyFilters = function($query) use ($ownerId, $location) {
-            $query->where('user_id', $ownerId);
-            if ($location) {
+            $isAdmin = auth()->check() && auth()->user()->role === 'admin';
+            
+            if (!$isAdmin) {
+                $query->where('user_id', $ownerId);
+            }
+            if ($location && !$isAdmin) {
                 $query->where(function($q) use ($location) {
                     $q->whereHas('table', function($sq) use ($location) {
                         $sq->where('location', $location);
@@ -62,38 +80,58 @@ class AccountantController extends Controller
             ->with(['items', 'kitchenOrderItems', 'orderPayments'])
             ->get();
 
-        // Total Potential Revenue (what was sold)
-        $todayRevenue = $todayOrders->sum(function($order) {
-            $barAmount = $order->items->sum('total_price');
-            $foodAmount = $order->kitchenOrderItems->sum('total_price');
-            return $barAmount + $foodAmount;
-        });
-        // Calculate cash and mobile money from OrderPayments only (source of truth)
-        $todayCash = $todayOrders->sum(function($order) {
-            return $order->orderPayments && $order->orderPayments->isNotEmpty()
-                ? $order->orderPayments->where('payment_method', 'cash')->sum('amount')
-                : 0;
-        });
-        $todayMobileMoney = $todayOrders->sum(function($order) {
-            return $order->orderPayments && $order->orderPayments->isNotEmpty()
-                ? $order->orderPayments->where('payment_method', 'mobile_money')->sum('amount')
-                : 0;
-        });
+        // Total Potential Revenue (what was successfully mapped via handovers)
+        $isAdmin = auth()->check() && auth()->user()->isAdmin();
+
+        $todayLedgerQuery = \App\Models\DailyCashLedger::where('ledger_date', $date);
+        if (!$isAdmin) {
+            $todayLedgerQuery->where('user_id', $ownerId);
+        }
+        $todayLedger = $todayLedgerQuery->first();
+
+        $handoversQuery = \App\Models\FinancialHandover::where('department', 'bar')
+            ->whereDate('handover_date', $date);
+        if (!$isAdmin) {
+            $handoversQuery->where('user_id', $ownerId);
+        }
+        $handovers = $handoversQuery->get();
+
+        $todayCash = 0;
+        $todayMobileMoney = 0;
+        foreach ($handovers as $h) {
+            if ($h->status === 'verified') {
+                $breakdown = $h->payment_breakdown ?? [];
+                if (is_string($breakdown)) $breakdown = json_decode($breakdown, true);
+                if (is_array($breakdown) && !empty($breakdown)) {
+                    foreach ($breakdown as $key => $val) {
+                        $amt = floatval($val);
+                        if ($key === 'shortage_payment' || $key === 'total') continue;
+                        
+                        if ($key === 'cash' || str_contains($key, 'cash_')) {
+                            $todayCash += $amt;
+                        } else {
+                            $todayMobileMoney += $amt;
+                        }
+                    }
+                } else {
+                    $todayCash += floatval($h->amount);
+                }
+            }
+        }
+
+        $todayRevenue = $todayCash + $todayMobileMoney;
+
         $todayOrdersCount = $todayOrders->count();
         $todayPaidOrders = $todayOrders->where('payment_status', 'paid')->count();
         $todayPendingAmount = $todayOrders->where('payment_status', '!=', 'paid')->sum('total_amount');
 
-        // Today's Expenses (Petty Cash)
-        $todayExpenses = PettyCashIssue::where('user_id', $ownerId)
-            ->whereDate('issue_date', $date)
-            ->where('status', 'issued')
-            ->sum('amount');
-
-        // Add Food Profits to Today's Summary
-        $todayFoodHandovers = 0; // Removed manual handovers from real-time revenue list
-        
-        $todayRevenue += $todayFoodHandovers;
-        $todayCash += $todayFoodHandovers;
+        // Today's Expenses (from Master Sheet)
+        if ($todayLedger) {
+            $todayLedger->syncTotals();
+            $todayExpenses = $todayLedger->total_expenses;
+        } else {
+            $todayExpenses = 0;
+        }
 
         // Period Financial Summary (default: current month)
         $periodOrders = $applyFilters(BarOrder::query())
@@ -174,18 +212,24 @@ class AccountantController extends Controller
         $last7Start = Carbon::now()->subDays(6)->startOfDay();
         $last7End   = Carbon::now()->endOfDay();
 
-        $last7Ledgers = \App\Models\DailyCashLedger::where('user_id', $ownerId)
-            ->whereBetween('ledger_date', [$last7Start, $last7End])
-            ->get()
+        $isAdmin = auth()->check() && auth()->user()->isAdmin();
+
+        $last7LedgersQuery = \App\Models\DailyCashLedger::whereBetween('ledger_date', [$last7Start, $last7End]);
+        if (!$isAdmin) {
+            $last7LedgersQuery->where('user_id', $ownerId);
+        }
+        $last7Ledgers = $last7LedgersQuery->get()
             ->keyBy(fn($l) => Carbon::parse($l->ledger_date)->format('Y-m-d'));
 
         // Fetch Food Profit Handovers for same period to add to charts
-        $foodProfits = \App\Models\FinancialHandover::where('user_id', $ownerId)
-            ->where('department', 'food')
+        $foodProfitsQuery = \App\Models\FinancialHandover::where('department', 'food')
             ->where('handover_type', 'accountant_to_owner')
             ->where('status', 'confirmed')
-            ->whereBetween('handover_date', [$last7Start, $last7End])
-            ->get()
+            ->whereBetween('handover_date', [$last7Start, $last7End]);
+        if (!$isAdmin) {
+            $foodProfitsQuery->where('user_id', $ownerId);
+        }
+        $foodProfits = $foodProfitsQuery->get()
             ->keyBy(fn($h) => Carbon::parse($h->handover_date)->format('Y-m-d'));
 
         for ($i = 6; $i >= 0; $i--) {
@@ -208,8 +252,10 @@ class AccountantController extends Controller
                 $dayCash += (float)$food->amount;
             }
 
-            // Calculate distinct profits for the chart
-            $barProfit = $ledger ? (float)($ledger->profit_generated ?? max(0, $dayRevenue - $dayExpenses)) : 0;
+            // Calculate distinct profits for the chart (Subtract Bar Expenses from Bar Profit for accuracy)
+            $barProfit = $ledger ? (float)($ledger->profit_generated ?? 0) : 0;
+            $barProfit = max(0, $barProfit - $dayExpenses); // Deduct expenses from bar profit
+            
             $foodProfit = $food ? (float)$food->amount : 0;
 
             $revenueByDay[] = [
@@ -492,18 +538,20 @@ class AccountantController extends Controller
 
         // ── Financial Reconciliations Aggregate (By Date & Type)
         // 0. Get submitted handovers for visibility filter
-        $handovers = \App\Models\FinancialHandover::where('user_id', $ownerId)
-            ->whereBetween('handover_date', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
-            ->get();
+        $handoversQuery = \App\Models\FinancialHandover::whereBetween('handover_date', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()]);
+        
+        if (auth()->user()?->role !== 'admin') {
+            $handoversQuery->where('user_id', $ownerId);
+        }
+        $handovers = $handoversQuery->get();
         $handoverMap = $handovers->mapWithKeys(function($h) {
             $dateStr = $h->handover_date instanceof Carbon ? $h->handover_date->format('Y-m-d') : date('Y-m-d', strtotime($h->handover_date));
             return [$dateStr . '_' . $h->department => $h];
         });
 
         // 1. Get already submitted/verified reconciliations
-        $submittedReconciliations = WaiterDailyReconciliation::query()
-            ->where('user_id', $ownerId)
-            ->when($location && $location !== 'all', function($q) use ($location) {
+        $submittedQuery = WaiterDailyReconciliation::query()
+            ->when($location && $location !== 'all' && auth()->user()?->role !== 'admin', function($q) use ($location) {
                 $q->whereHas('waiter', function($sq) use ($location) {
                     $sq->where('location_branch', $location);
                 });
@@ -514,8 +562,13 @@ class AccountantController extends Controller
                 $q->whereIn('reconciliation_type', $dbType);
             })
             ->whereBetween('reconciliation_date', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
-            ->selectRaw('reconciliation_date, reconciliation_type, SUM(expected_amount) as total_expected, SUM(submitted_amount) as total_submitted, SUM(cash_collected) as total_cash, SUM(mobile_money_collected) as total_mobile, SUM(bank_collected) as total_bank, SUM(card_collected) as total_card, COUNT(waiter_id) as waiter_count, MIN(status) as status_indicator, MAX(notes) as notes')
-            ->groupBy('reconciliation_date', 'reconciliation_type')
+            ->selectRaw('reconciliation_date, reconciliation_type, SUM(expected_amount) as total_expected, SUM(submitted_amount) as total_submitted, SUM(cash_collected) as total_cash, SUM(mobile_money_collected) as total_mobile, SUM(bank_collected) as total_bank, SUM(card_collected) as total_card, COUNT(waiter_id) as waiter_count, MIN(status) as status_indicator, MAX(notes) as notes');
+
+        if (auth()->user()?->role !== 'admin') {
+            $submittedQuery->where('user_id', $ownerId);
+        }
+
+        $submittedReconciliations = $submittedQuery->groupBy('reconciliation_date', 'reconciliation_type')
             ->get()
             ->filter(function($r) use ($handoverMap) {
                 // Only show to accountant if handover exists
@@ -1202,6 +1255,7 @@ class AccountantController extends Controller
     {
         $ownerId = $this->getOwnerId();
         
+        // 1. Outstanding Shortages (Current Debt)
         $shortages = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
             ->where('difference', '<', 0)
             ->with(['waiter'])
@@ -1229,7 +1283,41 @@ class AccountantController extends Controller
             return $b['total_owed'] <=> $a['total_owed'];
         });
 
-        return view('accountant.staff_shortages', compact('staffShortageSummaries', 'totalOutstandingShortages'));
+        // 2. Recent Settlement History (Last 30 Days)
+        $thirtyDaysAgo = now()->subDays(30);
+        $historyRecords = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
+            ->where('notes', 'like', '%"settlements"%')
+            ->where('updated_at', '>=', $thirtyDaysAgo)
+            ->with(['waiter'])
+            ->get();
+        
+        $settlementHistory = [];
+        foreach ($historyRecords as $rec) {
+            $notes = json_decode($rec->notes, true);
+            if (is_array($notes) && isset($notes['settlements'])) {
+                foreach ($notes['settlements'] as $s) {
+                    $sDate = isset($s['date']) ? \Carbon\Carbon::parse($s['date']) : null;
+                    if ($sDate && $sDate->greaterThanOrEqualTo($thirtyDaysAgo)) {
+                        $s['waiter_name'] = $rec->waiter->full_name ?? 'N/A';
+                        $s['reconciliation_id'] = $rec->id;
+                        $s['dept'] = $rec->reconciliation_type === 'food' ? 'KITCHEN' : 'DRINKS';
+                        $s['shift_date'] = $rec->reconciliation_date->format('d M Y');
+                        $settlementHistory[] = $s;
+                    }
+                }
+            }
+        }
+        
+        // Sort history by settlement date descending
+        usort($settlementHistory, function($a, $b) {
+            return strcmp($b['date'], $a['date']);
+        });
+
+        return view('accountant.staff_shortages', compact(
+            'staffShortageSummaries', 
+            'totalOutstandingShortages',
+            'settlementHistory'
+        ));
     }
 
     /**
@@ -1606,25 +1694,39 @@ class AccountantController extends Controller
                 $transferSaleQty = \App\Models\TransferSale::where('stock_transfer_id', $transfer->id)->sum('quantity');
 
                 if ($counterStock) {
-                    // Physically remaining in counter is authoritative
-                    $physicalRemaining = max(0, $counterStock->quantity ?? 0);
+                    // Physically remaining in counter is authoritative, including open portions
+                    $openBottle = \App\Models\OpenBottle::where('user_id', $ownerId)
+                        ->where('product_variant_id', $transfer->product_variant_id)
+                        ->first();
+                    
+                    $totalTots = $transfer->productVariant->total_tots ?? 0;
+                    $portionQty = ($openBottle && $totalTots > 0) ? ($openBottle->tots_remaining / $totalTots) : 0;
+                    
+                    $physicalRemaining = ($counterStock->quantity ?? 0) + $portionQty;
+                    
                     // Sold = Transferred In - Physically Remaining (capped to transfer total)
                     $transfer->sold_quantity = max($transferSaleQty, max(0, $transfer->total_units - $physicalRemaining));
                     $transfer->remaining_quantity = max(0, $transfer->total_units - $transfer->sold_quantity);
                 } else {
                     $transfer->sold_quantity = $transferSaleQty;
-                    $transfer->remaining_quantity = max(0, $transfer->total_units - $transfer->sold_quantity);
+                    $transfer->remaining_quantity = max(0, $transfer->total_units - $transferSaleQty);
                 }
                 
                 // Real-time data (branch-aware)
                 $revenueData = $this->calculateRealTimeRevenueForTransfer($transfer, $ownerId, $location);
                 $transfer->real_time_submitted = $revenueData['submitted'];
 
-                // If physical sold_qty > TransferSale records, compute revenue & profit from actual qty
-                // This handles older sales that predate the FIFO attribution system
+                // If physical sold_qty matches TransferSale records, trust POS revenue strictly
+                // Otherwise fallback to pro-rata estimation
                 $transferSaleRevenue = $revenueData['total'];
-                $physicalSoldRevenue = $transfer->sold_quantity * $financials['selling_price'];
-                $transfer->real_time_revenue = max($transferSaleRevenue, $physicalSoldRevenue);
+                $unitRevenue = $transfer->total_units > 0 ? ($transfer->expected_revenue / $transfer->total_units) : $financials['selling_price'];
+                $physicalSoldRevenue = $transfer->sold_quantity * $unitRevenue;
+                
+                if ($transferSaleQty >= ($transfer->sold_quantity - 0.01)) {
+                    $transfer->real_time_revenue = $transferSaleRevenue;
+                } else {
+                    $transfer->real_time_revenue = max($transferSaleRevenue, $physicalSoldRevenue);
+                }
 
                 $transferSaleProfit = $this->calculateRealTimeProfitForTransfer(
                     $transfer,
@@ -1634,8 +1736,31 @@ class AccountantController extends Controller
                     $location
                 );
                 $physicalSoldProfit = $transfer->sold_quantity * ($financials['selling_price'] - $financials['buying_price']);
-                $transfer->real_time_profit = max($transferSaleProfit, $physicalSoldProfit);
+                
+                if ($transferSaleQty >= ($transfer->sold_quantity - 0.01)) {
+                    $transfer->real_time_profit = $transferSaleProfit;
+                } else {
+                    $transfer->real_time_profit = max($transferSaleProfit, $physicalSoldProfit);
+                }
+                // Final metrics for UI
+                $totsPerBottle = $transfer->productVariant->total_tots ?? 0;
+                $formatQty = function($qty, $tots) {
+                    if ($tots <= 0) return number_format($qty, 0) . ' btl';
+                    $bottles = (int) floor(round($qty, 4));
+                    $remaining = round($qty - $bottles, 4);
+                    $glasses = (int) round($remaining * $tots);
+                    
+                    if ($bottles > 0 && $glasses > 0) return "{$bottles} btl, {$glasses} gls";
+                    if ($bottles > 0) return "{$bottles} btl";
+                    return "{$glasses} gls";
+                };
 
+                $transfer->formatted_stock_in = $formatQty($transfer->total_units, $totsPerBottle);
+                $transfer->formatted_sold = $formatQty($transfer->sold_quantity, $totsPerBottle);
+                $transfer->formatted_remaining = $formatQty($transfer->remaining_quantity, $totsPerBottle);
+                
+                $transfer->stock_progress = $transfer->total_units > 0 ? min(100, ($transfer->sold_quantity / $transfer->total_units) * 100) : 0;
+                $transfer->revenue_yield = $transfer->expected_revenue > 0 ? ($transfer->real_time_revenue / $transfer->expected_revenue) * 100 : 0;
                 
                 return $transfer;
             });
@@ -1803,8 +1928,22 @@ class AccountantController extends Controller
 
         $issues = $query->paginate(20);
         $staffMembers = Staff::where('user_id', $ownerId)->get();
+        
+        // Fetch recent ledgers to check for bar profit submission status
+        $recentLedgers = \App\Models\DailyCashLedger::where('user_id', $ownerId)
+            ->where('ledger_date', '>=', now()->subDays(7))
+            ->get()
+            ->keyBy(fn($l) => $l->ledger_date->format('Y-m-d'));
 
-        return view('accountant.fund_issuance', compact('issues', 'staffMembers'));
+        // Fetch recent food handovers to check for kitchen profit submission status
+        $recentFoodHandovers = \App\Models\FinancialHandover::where('user_id', $ownerId)
+            ->where('department', 'food')
+            ->where('handover_type', 'accountant_to_owner')
+            ->where('handover_date', '>=', now()->subDays(7))
+            ->get()
+            ->keyBy(fn($h) => \Carbon\Carbon::parse($h->handover_date)->format('Y-m-d'));
+
+        return view('accountant.fund_issuance', compact('issues', 'staffMembers', 'recentLedgers', 'recentFoodHandovers'));
     }
 
     /**
@@ -1927,12 +2066,12 @@ class AccountantController extends Controller
             'status' => 'issued'
         ]);
 
-        // Send SMS Notification
-        try {
-            $smsService = new \App\Services\HandoverSmsService();
-            $smsService->sendPettyCashIssuanceSms($issue);
-        } catch (\Exception $e) {
-            \Log::error('Petty Cash SMS Failed: ' . $e->getMessage());
+        // Synchronize ledger if it exists for this date
+        $ledger = \App\Models\DailyCashLedger::where('user_id', $ownerId)
+            ->whereDate('ledger_date', $request->issue_date)
+            ->first();
+        if ($ledger) {
+            $ledger->syncTotals()->save();
         }
 
         return back()->with('success', 'Funds issued successfully and SMS sent to staff.');
@@ -1984,6 +2123,11 @@ class AccountantController extends Controller
             'notes' => $request->notes
         ]);
 
+        // Recalculate ledger for both old and new dates (in case date changed)
+        if ($ledger) {
+            $ledger->syncTotals()->save();
+        }
+
         return back()->with('success', 'Fund issuance updated successfully.');
     }
 
@@ -1999,6 +2143,14 @@ class AccountantController extends Controller
         $ownerId = $this->getOwnerId();
         $issue = PettyCashIssue::where('user_id', $ownerId)->findOrFail($id);
         $issue->delete();
+
+        // Sync ledger for that date
+        $ledger = \App\Models\DailyCashLedger::where('user_id', $ownerId)
+            ->whereDate('ledger_date', $issue->issue_date)
+            ->first();
+        if ($ledger) {
+            $ledger->syncTotals()->save();
+        }
 
         return back()->with('success', 'Fund issuance deleted successfully.');
     }
@@ -2119,6 +2271,43 @@ class AccountantController extends Controller
             'confirmed_at' => now(),
         ]);
 
+        // Trigger SMS if this is a 'food' department handover
+        if ($handover->department === 'food') {
+            try {
+                $smsService = new \App\Services\HandoverSmsService();
+                $smsService->sendChefHandoverVerifiedSms($handover);
+
+                // Also notify Waiters who had food sales on this date
+                $date = $handover->handover_date;
+                $waitersWithFoodSales = \App\Models\BarOrder::where('user_id', $ownerId)
+                    ->whereDate('created_at', $date)
+                    ->whereHas('kitchenOrderItems')
+                    ->with('waiter')
+                    ->get()
+                    ->pluck('waiter')
+                    ->unique('id');
+
+                foreach ($waitersWithFoodSales as $waiter) {
+                    // Fetch their reconciliation to get the final amount
+                    $recon = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
+                        ->where('waiter_id', $waiter->id)
+                        ->whereDate('reconciliation_date', $date)
+                        ->where('reconciliation_type', 'food')
+                        ->first();
+                    
+                    $amount = $recon ? $recon->submitted_amount : 0;
+                    // Fallback to expected if submitted is 0 (auto-shortage records)
+                    if ($amount <= 0 && $recon) {
+                        $amount = $recon->expected_amount + $recon->difference;
+                    }
+
+                    $smsService->sendWaiterFoodReconciliationVerifiedSms($waiter, $date, $amount);
+                }
+            } catch (\Exception $e) {
+                \Log::error("SMS sending failed for Food Handover Verification: " . $e->getMessage());
+            }
+        }
+
         return back()->with('success', 'Staff handover confirmed successfully.');
     }
 
@@ -2236,10 +2425,28 @@ class AccountantController extends Controller
 
             $breakdown = $this->getDetailedPaymentBreakdown($orders, $type);
 
+            $reconciliations = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
+                ->whereDate('reconciliation_date', $date)
+                ->where('reconciliation_type', $type)
+                ->get();
+            
+            $settlements = [];
+            foreach ($reconciliations as $r) {
+                $notes = json_decode($r->notes, true);
+                if (is_array($notes) && isset($notes['settlements'])) {
+                    foreach ($notes['settlements'] as $s) {
+                        $s['waiter_name'] = $r->waiter->full_name ?? 'N/A';
+                        $s['reconciliation_id'] = $r->id;
+                        $settlements[] = $s;
+                    }
+                }
+            }
+
             return response()->json([
                 'success' => true,
                 'orders' => $filteredOrders,
-                'payment_breakdown' => $breakdown
+                'payment_breakdown' => $breakdown,
+                'settlements' => $settlements
             ]);
         } catch (\Exception $e) {
             \Log::error('getDepartmentOrders failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
@@ -2296,7 +2503,7 @@ class AccountantController extends Controller
             'date'      => 'required|date',
             'type'      => 'required|string',
             'amount'    => 'required|numeric|min:0',
-            'channel'   => 'required|string|in:cash,mobile_money,bank_transfer,pos_card',
+            'channel'   => 'required|string|in:cash,mobile_money,bank_transfer,pos_card,salary_deduction',
             'reference' => 'nullable|string|max:500',
         ]);
 
@@ -2372,17 +2579,23 @@ class AccountantController extends Controller
         else $startDate = now()->subDays(6)->startOfDay();
 
         // Pull directly from the Daily Cash Ledger — already perfectly consolidated
-        $ledgers = \App\Models\DailyCashLedger::where('user_id', $ownerId)
-            ->whereBetween('ledger_date', [$startDate, $endDate])
-            ->orderBy('ledger_date')
-            ->get();
+        $ledgersQuery = \App\Models\DailyCashLedger::whereBetween('ledger_date', [$startDate, $endDate])
+            ->orderBy('ledger_date');
+            
+        if (!auth()->user()?->isAdmin()) {
+            $ledgersQuery->where('user_id', $ownerId);
+        }
+        $ledgers = $ledgersQuery->get();
 
-        $foodProfits = \App\Models\FinancialHandover::where('user_id', $ownerId)
-            ->where('department', 'food')
+        $foodProfitsQuery = \App\Models\FinancialHandover::where('department', 'food')
             ->where('handover_type', 'accountant_to_owner')
             ->where('status', 'confirmed')
-            ->whereBetween('handover_date', [$startDate, $endDate])
-            ->get();
+            ->whereBetween('handover_date', [$startDate, $endDate]);
+            
+        if (!auth()->user()?->isAdmin()) {
+            $foodProfitsQuery->where('user_id', $ownerId);
+        }
+        $foodProfits = $foodProfitsQuery->get();
         $dailyPerformance = [];
         $totalRevenue = 0;
         $totalCogs = 0;
@@ -2396,7 +2609,8 @@ class AccountantController extends Controller
 
             $dayRevenue   = $ledger ? (float)($ledger->total_cash_received + $ledger->total_digital_received) : 0;
             $dayExpenses  = $ledger ? (float)($ledger->total_expenses ?? 0) : 0;
-            $barProfit    = $ledger ? (float)($ledger->profit_generated ?? max(0, $dayRevenue - $dayExpenses)) : 0;
+            $barProfitStock = $ledger ? (float)($ledger->profit_generated ?? max(0, $dayRevenue - $dayExpenses)) : 0;
+            $barProfit = max(0, $barProfitStock - $dayExpenses);
             
             $foodProfit = $food ? (float)$food->amount : 0;
             
@@ -2413,12 +2627,27 @@ class AccountantController extends Controller
                 'bar_profit' => $barProfit,
                 'food_profit' => $foodProfit,
                 'total_profit' => $integratedProfit,
+                'expenses'   => $dayExpenses,
             ];
         }
 
         // Approximate COGS = Revenue - Profit - Expenses
         $totalNetProfit = collect($dailyPerformance)->sum('total_profit');
         $totalCogs = max(0, $totalRevenue - $totalNetProfit - $totalExpenses);
+
+        // Expense Distribution by Category (from PettyCashIssue purposes)
+        $expenseItems = \App\Models\PettyCashIssue::where('user_id', $ownerId)
+            ->where('status', 'issued')
+            ->whereBetween('issue_date', [$startDate, $endDate])
+            ->get();
+
+        $expenseByCategory = $expenseItems
+            ->groupBy(function($item) {
+                return $item->purpose ? ucfirst(trim($item->purpose)) : 'General';
+            })
+            ->map(fn($group) => $group->sum('amount'))
+            ->sortByDesc(fn($amount) => $amount)
+            ->toArray();
 
         // Historical Comparison (Everyday for the last 7 days)
         $historical = [];
@@ -2443,8 +2672,9 @@ class AccountantController extends Controller
                 ->sum('amount');
 
             $dRev = $dayLedger ? (float)($dayLedger->total_cash_received + $dayLedger->total_digital_received) : 0;
-            $dExp = (float)$dayPettyCash;
-            $dBarProfit = $dayLedger ? (float)($dayLedger->profit_generated ?? 0) : 0;
+            $dExp = $dayLedger ? (float)($dayLedger->total_expenses ?? 0) : (float)$dayPettyCash;
+            $dBarProfitStock = $dayLedger ? (float)($dayLedger->profit_generated ?? 0) : 0;
+            $dBarProfit = max(0, $dBarProfitStock - $dExp);
             
             $dFoodProfit = $dayFood->sum('amount');
 
@@ -2459,7 +2689,7 @@ class AccountantController extends Controller
         }
 
         return view('accountant.reports.business-trends', compact(
-            'period', 'dailyPerformance', 'totalRevenue', 'totalCogs', 'totalExpenses', 'totalNetProfit', 'historical'
+            'period', 'dailyPerformance', 'totalRevenue', 'totalCogs', 'totalExpenses', 'totalNetProfit', 'historical', 'expenseByCategory'
         ));
     }
 
@@ -2484,12 +2714,15 @@ class AccountantController extends Controller
             $dateRange[] = $d->format('Y-m-d');
         }
 
-        $orders = \App\Models\BarOrder::where('user_id', $ownerId)
-            ->whereBetween('created_at', [$startDate, $endDate])
+        $ordersQuery = \App\Models\BarOrder::whereBetween('created_at', [$startDate, $endDate])
             ->where('status', '!=', 'cancelled') // Capture all active valid orders (fixes missing food orders stuck in 'pending' bar states)
-            ->whereNotNull('waiter_id')
-            ->with(['waiter', 'items', 'kitchenOrderItems'])
-            ->get();
+            ->whereNotNull('waiter_id');
+            
+        if (!auth()->user()?->isAdmin()) {
+            $ordersQuery->where('user_id', $ownerId);
+        }
+        
+        $orders = $ordersQuery->with(['waiter', 'items', 'kitchenOrderItems'])->get();
 
         $grouped = $orders->groupBy('waiter_id');
 

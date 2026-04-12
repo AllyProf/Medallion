@@ -55,17 +55,18 @@ class StockTransferSmsService
             }
         }
 
-        // Also send to Stock Keeper(s) as confirmation if approved
-        if ($status === 'approved') {
-            $stockKeepers = Staff::where('user_id', $ownerId)
+        // Also send to Stock Keeper(s) and Accountant(s) for key statuses
+        if (in_array($status, ['approved', 'prepared', 'completed'])) {
+            $staffToNotify = Staff::where('user_id', $ownerId)
                 ->where('is_active', true)
                 ->whereHas('role', function($query) {
-                    $query->whereIn('name', ['Stock Keeper', 'Stockkeeper']);
+                    $query->whereIn('name', ['Stock Keeper', 'Stockkeeper', 'Accountant'])
+                          ->orWhereIn('slug', ['stock-keeper', 'stockkeeper', 'accountant']);
                 })->get();
 
-            foreach ($stockKeepers as $sk) {
-                if ($sk->phone_number) {
-                    $this->smsService->sendSms($sk->phone_number, $message);
+            foreach ($staffToNotify as $recipient) {
+                if ($recipient->phone_number) {
+                    $this->smsService->sendSms($recipient->phone_number, $message);
                 }
             }
         }
@@ -163,66 +164,38 @@ class StockTransferSmsService
         $sentCount = 0;
         $failedCount = 0;
 
-        // Send SMS to Stock Keepers
-        $stockKeepers = Staff::where('user_id', $ownerId)
+        // Send SMS to Stock Keepers and Accountants
+        $staffToNotify = Staff::where('user_id', $ownerId)
             ->where('is_active', true)
             ->whereHas('role', function($query) {
-                $query->where(function($q) {
-                    $q->where('name', 'Stock Keeper')
-                      ->orWhere('name', 'Stockkeeper');
-                });
+                $query->whereIn('name', ['Stock Keeper', 'Stockkeeper', 'Accountant'])
+                      ->orWhereIn('slug', ['stock-keeper', 'stockkeeper', 'accountant']);
             })
             ->get();
         
-        \Log::info('Stock transfer request SMS - Stock keepers found', [
-            'transfer_id' => $stockTransfer->id,
-            'stock_keepers_count' => $stockKeepers->count(),
-            'owner_id' => $ownerId,
-            'message_preview' => substr($message, 0, 100),
-            'notification_enabled' => $enableNotifications
-        ]);
-
-        if ($stockKeepers->count() === 0) {
-            \Log::warning('No stock keepers found for SMS notification', [
+        if ($staffToNotify->count() === 0) {
+            \Log::warning('No stock keepers or accountants found for SMS notification', [
                 'transfer_id' => $stockTransfer->id,
                 'owner_id' => $ownerId
             ]);
         }
 
-        foreach ($stockKeepers as $stockKeeper) {
-            if ($stockKeeper->phone_number) {
-                \Log::info('Attempting to send SMS to stock keeper', [
-                    'stock_keeper_id' => $stockKeeper->id,
-                    'phone' => $stockKeeper->phone_number,
+        foreach ($staffToNotify as $recipient) {
+            if ($recipient->phone_number) {
+                \Log::info('Attempting to send SMS to staff', [
+                    'staff_id' => $recipient->id,
+                    'phone' => $recipient->phone_number,
+                    'role' => $recipient->role->name ?? 'N/A',
                     'transfer_id' => $stockTransfer->id
                 ]);
                 
-                $result = $this->smsService->sendSms($stockKeeper->phone_number, $message);
+                $result = $this->smsService->sendSms($recipient->phone_number, $message);
                 
                 if ($result['success']) {
                     $sentCount++;
-                    \Log::info('Stock transfer request SMS sent to stock keeper', [
-                        'stock_keeper_id' => $stockKeeper->id,
-                        'transfer_id' => $stockTransfer->id,
-                        'phone' => $stockKeeper->phone_number,
-                        'http_code' => $result['http_code'] ?? 'N/A'
-                    ]);
                 } else {
                     $failedCount++;
-                    \Log::error('Failed to send stock transfer request SMS to stock keeper', [
-                        'stock_keeper_id' => $stockKeeper->id,
-                        'transfer_id' => $stockTransfer->id,
-                        'phone' => $stockKeeper->phone_number,
-                        'error' => $result['error'] ?? 'Unknown error',
-                        'http_code' => $result['http_code'] ?? 'N/A',
-                        'response' => $result['response'] ?? 'N/A'
-                    ]);
                 }
-            } else {
-                \Log::warning('Stock keeper has no phone number', [
-                    'stock_keeper_id' => $stockKeeper->id,
-                    'transfer_id' => $stockTransfer->id
-                ]);
             }
         }
 
@@ -309,34 +282,23 @@ class StockTransferSmsService
         $sentCount = 0;
         $failedCount = 0;
 
-        // Send SMS to Counter Staff
-        $counterStaff = Staff::where('user_id', $ownerId)
+        // Send SMS to Counter, Stock Keepers and Accountants
+        $staffToNotify = Staff::where('user_id', $ownerId)
             ->where('is_active', true)
             ->whereHas('role', function($query) {
-                $query->where('name', 'Counter')
-                      ->orWhere('name', 'Bar Counter');
+                $query->whereIn('name', ['Counter', 'Bar Counter', 'Stock Keeper', 'Stockkeeper', 'Accountant'])
+                      ->orWhereIn('slug', ['counter', 'bar-counter', 'stock-keeper', 'stockkeeper', 'accountant']);
             })
             ->get();
 
-        foreach ($counterStaff as $counter) {
-            if ($counter->phone_number) {
-                $result = $this->smsService->sendSms($counter->phone_number, $message);
+        foreach ($staffToNotify as $recipient) {
+            if ($recipient->phone_number) {
+                $result = $this->smsService->sendSms($recipient->phone_number, $message);
                 
                 if ($result['success']) {
                     $sentCount++;
-                    \Log::info("Stock transfer {$status} SMS sent to counter staff", [
-                        'counter_id' => $counter->id,
-                        'transfer_id' => $stockTransfer->id,
-                        'phone' => $counter->phone_number,
-                        'status' => $status
-                    ]);
                 } else {
                     $failedCount++;
-                    \Log::error("Failed to send stock transfer {$status} SMS to counter staff", [
-                        'counter_id' => $counter->id,
-                        'transfer_id' => $stockTransfer->id,
-                        'error' => $result['error'] ?? 'Unknown error'
-                    ]);
                 }
             }
         }
@@ -389,41 +351,18 @@ class StockTransferSmsService
         $sentCount = 0;
         $failedCount = 0;
 
-        // Send SMS to Stock Keepers
-        $stockKeepers = Staff::where('user_id', $ownerId)
+        // Send SMS to Stock Keepers, Accountants, and Counter Staff
+        $staffToNotify = Staff::where('user_id', $ownerId)
             ->where('is_active', true)
             ->whereHas('role', function($query) {
-                $query->where(function($q) {
-                    $q->where('name', 'Stock Keeper')
-                      ->orWhere('name', 'Stockkeeper');
-                });
+                $query->whereIn('name', ['Stock Keeper', 'Stockkeeper', 'Accountant', 'Counter', 'Bar Counter'])
+                      ->orWhereIn('slug', ['stock-keeper', 'stockkeeper', 'accountant', 'counter', 'bar-counter']);
             })
             ->get();
 
-        foreach ($stockKeepers as $stockKeeper) {
-            if ($stockKeeper->phone_number) {
-                $result = $this->smsService->sendSms($stockKeeper->phone_number, $message);
-                
-                if ($result['success']) {
-                    $sentCount++;
-                } else {
-                    $failedCount++;
-                }
-            }
-        }
-
-        // Send SMS to Counter Staff
-        $counterStaff = Staff::where('user_id', $ownerId)
-            ->where('is_active', true)
-            ->whereHas('role', function($query) {
-                $query->where('name', 'Counter')
-                      ->orWhere('name', 'Bar Counter');
-            })
-            ->get();
-
-        foreach ($counterStaff as $counter) {
-            if ($counter->phone_number) {
-                $result = $this->smsService->sendSms($counter->phone_number, $message);
+        foreach ($staffToNotify as $recipient) {
+            if ($recipient->phone_number) {
+                $result = $this->smsService->sendSms($recipient->phone_number, $message);
                 
                 if ($result['success']) {
                     $sentCount++;
@@ -547,14 +486,12 @@ class StockTransferSmsService
             }
         }
 
-        // Send SMS to Stock Keepers
-        $stockKeepers = Staff::where('user_id', $ownerId)
+        // Send SMS to Stock Keepers and Accountants
+        $staffToNotify = Staff::where('user_id', $ownerId)
             ->where('is_active', true)
             ->whereHas('role', function($query) {
-                $query->where(function($q) {
-                    $q->where('name', 'Stock Keeper')
-                      ->orWhere('name', 'Stockkeeper');
-                });
+                $query->whereIn('name', ['Stock Keeper', 'Stockkeeper', 'Accountant'])
+                      ->orWhereIn('slug', ['stock-keeper', 'stockkeeper', 'accountant']);
             })
             ->get();
 
@@ -617,21 +554,19 @@ class StockTransferSmsService
         
         $message .= "\nPlease review and approve the batch #{$transferNumber}.";
 
-        // Send to Stock Keepers
+        // Send to Stock Keepers and Accountants
         $sentCount = 0;
-        $stockKeepers = Staff::where('user_id', $ownerId)
+        $staffToNotify = Staff::where('user_id', $ownerId)
             ->where('is_active', true)
             ->whereHas('role', function($query) {
-                $query->where(function($q) {
-                    $q->where('name', 'Stock Keeper')
-                      ->orWhere('name', 'Stockkeeper');
-                });
+                $query->whereIn('name', ['Stock Keeper', 'Stockkeeper', 'Accountant'])
+                      ->orWhereIn('slug', ['stock-keeper', 'stockkeeper', 'accountant']);
             })
             ->get();
 
-        foreach ($stockKeepers as $stockKeeper) {
-            if ($stockKeeper->phone_number) {
-                $result = $this->smsService->sendSms($stockKeeper->phone_number, $message);
+        foreach ($staffToNotify as $recipient) {
+            if ($recipient->phone_number) {
+                $result = $this->smsService->sendSms($recipient->phone_number, $message);
                 if (isset($result['success']) && $result['success']) $sentCount++;
             }
         }

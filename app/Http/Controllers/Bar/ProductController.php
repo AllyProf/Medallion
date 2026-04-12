@@ -368,6 +368,9 @@ class ProductController extends Controller
             'variants.*.total_tots' => 'nullable|integer|min:1',
             'variants.*.packaging' => 'required|string|in:Piece,Carton,Crate',
             'variants.*.items_per_package' => 'nullable|integer|min:1',
+            'variants.*.buying_price_per_unit' => 'nullable|numeric|min:0',
+            'variants.*.selling_price_per_unit' => 'nullable|numeric|min:0',
+            'variants.*.selling_price_per_tot' => 'nullable|numeric|min:0',
         ]);
 
         // Verify supplier belongs to owner
@@ -417,6 +420,9 @@ class ProductController extends Controller
                             'selling_type' => $variantData['selling_type'],
                             'can_sell_in_tots' => in_array($variantData['selling_type'], ['glass', 'mixed']),
                             'total_tots' => in_array($variantData['selling_type'], ['glass', 'mixed']) ? ($variantData['total_tots'] ?? null) : null,
+                            'buying_price_per_unit' => $variantData['buying_price_per_unit'] ?? 0,
+                            'selling_price_per_unit' => $variantData['selling_price_per_unit'] ?? 0,
+                            'selling_price_per_tot' => $variantData['selling_price_per_tot'] ?? 0,
                         ];
                         
                         if ($vImagePath) {
@@ -446,8 +452,9 @@ class ProductController extends Controller
                         'selling_type' => $variantData['selling_type'],
                         'packaging' => $variantData['packaging'],
                         'items_per_package' => $variantData['packaging'] === 'Piece' ? 1 : ($variantData['items_per_package'] ?? 1),
-                        'buying_price_per_unit' => 0,
-                        'selling_price_per_unit' => 0,
+                        'buying_price_per_unit' => $variantData['buying_price_per_unit'] ?? 0,
+                        'selling_price_per_unit' => $variantData['selling_price_per_unit'] ?? 0,
+                        'selling_price_per_tot' => $variantData['selling_price_per_tot'] ?? 0,
                         'can_sell_in_tots' => in_array($variantData['selling_type'], ['glass', 'mixed']),
                         'total_tots' => in_array($variantData['selling_type'], ['glass', 'mixed']) ? ($variantData['total_tots'] ?? null) : null,
                         'is_active' => true,

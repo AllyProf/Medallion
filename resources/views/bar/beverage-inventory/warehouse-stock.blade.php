@@ -117,7 +117,7 @@
                                 <td>{{ $item['category'] }}</td>
                                 <td class="text-center">
                                     <span class="badge badge-{{ $item['is_low_stock'] ? 'danger' : 'success' }}" style="font-size: 14px; padding: 5px 10px;">
-                                        {{ number_format($item['quantity']) }} btl
+                                        {{ number_format($item['quantity']) }} {{ $item['unit'] }}
                                     </span>
                                 </td>
                                 <td class="text-center">
@@ -125,7 +125,7 @@
                                 </td>
                                 @if($showRevenue)
                                 <td class="text-right">
-                                    <small class="text-muted">TSh {{ number_format($item['buying_price']) }} / btl</small><br>
+                                    <small class="text-muted">TSh {{ number_format($item['buying_price']) }} / {{ $item['unit'] }}</small><br>
                                     <strong>TSh {{ number_format($item['value']) }}</strong>
                                 </td>
                                 @endif
@@ -148,7 +148,7 @@
                                     <div class="d-flex justify-content-between">
                                         <h6 class="font-weight-bold mb-1">{{ $item['display_title'] }}</h6>
                                         <span class="badge badge-{{ $item['is_low_stock'] ? 'danger' : 'success' }}">
-                                            {{ number_format($item['quantity']) }} btl
+                                            {{ number_format($item['quantity']) }} {{ $item['unit'] }}
                                         </span>
                                     </div>
                                     <p class="text-muted small mb-2">{{ $item['variant'] }} • {{ $item['category'] }}</p>

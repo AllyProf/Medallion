@@ -37,7 +37,7 @@
   --border-dark: #000000;
 }
 
-body, html { background-color: var(--bg-main) !important; color: var(--text-main) !important; font-family: 'Inter', sans-serif; height: 100vh; overflow: hidden; }
+body, html { background-color: var(--bg-main) !important; color: var(--text-main) !important; font-family: "Century Gothic", sans-serif; height: 100vh; overflow: hidden; }
 
 /* Layout */
 .pos-wrapper { display: flex; height: 100vh; width: 100vw; flex-direction: column; background-color: var(--bg-main); }
@@ -166,7 +166,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 
 .action-buttons { display: flex; gap: 10px; height: 45px; }
 .btn-action { border: none; border-radius: 4px; font-weight: bold; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center; text-transform: uppercase; font-size: 0.9rem; }
-.btn-calc { flex: 0 0 50px; background-color: #1f618d; font-size: 1.2rem; }
+.btn-refresh { flex: 0 0 50px; background-color: #1f618d; font-size: 1.2rem; }
 .btn-trash { flex: 0 0 50px; background-color: var(--accent-red); font-size: 1.2rem; }
 .btn-quick { flex: 1; background-color: var(--accent-green); }
 .btn-place { flex: 1; background-color: var(--accent-yellow); color: #000; }
@@ -273,7 +273,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
     .grand-total-box { font-size: 1.7rem; padding: 22px; }
     .action-buttons { height: 64px; gap: 14px; }
     .btn-action { font-size: 1.15rem; border-radius: 8px; }
-    .btn-calc, .btn-trash { flex: 0 0 70px; font-size: 1.6rem; }
+    .btn-refresh, .btn-trash { flex: 0 0 70px; font-size: 1.6rem; }
 
     /* Empty cart message */
     #empty-cart-msg { padding: 40px; font-size: 1.1rem; }
@@ -471,6 +471,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                      data-portion-label="{{ $v['portion_label'] }}"
                      data-unit-label="{{ $v['unit'] }}"
                      data-total-tots="{{ $v['total_tots'] }}"
+                     data-open-tots="{{ $v['open_tots'] ?? 0 }}"
                      data-price="{{ $v['selling_price'] }}"
                      data-price-tot="{{ $v['selling_price_per_tot'] }}"
                      data-can-tot="{{ $v['can_sell_in_tots'] ? 'true' : 'false' }}"
@@ -587,7 +588,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                 </div>
 
                 <div class="action-buttons">
-                    <button class="btn-action btn-calc"><i class="fa fa-calculator"></i></button>
+                    <button class="btn-action btn-refresh" title="Refresh Products" onclick="window.location.reload();"><i class="fa fa-refresh"></i></button>
                     <button class="btn-action btn-trash" id="btn-clear-cart"><i class="fa fa-trash-o"></i></button>
                     <button class="btn-action btn-place" id="btn-finish-order" disabled>Place Order</button>
                 </div>
@@ -619,6 +620,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                 <input type="hidden" id="m-price-tot">
                 <input type="hidden" id="m-portion-label">
                 <input type="hidden" id="m-total-tots">
+                <input type="hidden" id="m-open-tots">
                 <input type="hidden" id="m-unit-label">
                 
                 <h6 id="m-name" class="font-weight-bold mb-0"></h6>
@@ -786,6 +788,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         $('#m-price-tot').val(canSellTot ? d.priceTot : "");
         $('#m-portion-label').val(d.portionLabel || 'Tot');
         $('#m-total-tots').val(d.totalTots || 1);
+        $('#m-open-tots').val(d.openTots || 0);
         $('#m-unit-label').val(d.unitLabel || 'btl');
         
         $('#m-name').text(d.name);
@@ -800,7 +803,8 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         $('#m-id').data('available', available);
         if (d.type === 'drink') {
             const unit = d.unitLabel === 'btl' ? 'Bottle' : 'Piece';
-            $('#m-stock-display').text('Stock: ' + available + ' ' + unit + 's').show();
+            const plural = unit === 'Bottle' ? 's' : 's';
+            $('#m-stock-display').text('Stock: ' + available + ' ' + unit + plural).show();
         } else {
             $('#m-stock-display').hide();
         }
@@ -861,22 +865,30 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
     $('#m-minus').on('click', () => { let v = parseInt($('#m-quantity').val()) || 1; if (v > 1) $('#m-quantity').val(v-1); });
     $('#m-plus').on('click', () => { 
         let v = parseInt($('#m-quantity').val()) || 1; 
-        const available = parseInt($('#m-id').data('available')) || 9999;
-        if (v < available) {
+        const availableBottles = parseInt($('#m-id').data('available')) || 9999;
+        const sellType = $('input[name="m_sell_type"]:checked').val() || 'unit';
+        const totalTots = parseInt($('#m-total-tots').val()) || 1;
+        const openTots = parseInt($('#m-open-tots').val()) || 0;
+        const effectiveAvailable = (sellType === 'tot') ? (availableBottles * totalTots) + openTots : availableBottles;
+        if (v < effectiveAvailable) {
             $('#m-quantity').val(v+1); 
         } else {
-            KioskToast.fire({ icon: 'warning', title: 'Cannot exceed available stock (' + available + ')' });
+            KioskToast.fire({ icon: 'warning', title: 'Cannot exceed available stock (' + effectiveAvailable + ')' });
         }
     });
 
     window.updateModalQty = function(val) {
         let v = parseInt($('#m-quantity').val()) || 1;
-        const available = parseInt($('#m-id').data('available')) || 9999;
-        if (v + val <= available) {
+        const availableBottles = parseInt($('#m-id').data('available')) || 9999;
+        const sellType = $('input[name="m_sell_type"]:checked').val() || 'unit';
+        const totalTots = parseInt($('#m-total-tots').val()) || 1;
+        const openTots = parseInt($('#m-open-tots').val()) || 0;
+        const effectiveAvailable = (sellType === 'tot') ? (availableBottles * totalTots) + openTots : availableBottles;
+        if (v + val <= effectiveAvailable) {
             $('#m-quantity').val(v + val);
         } else {
-            $('#m-quantity').val(available);
-            KioskToast.fire({ icon: 'warning', title: 'Adjusted to maximum available stock (' + available + ')' });
+            $('#m-quantity').val(effectiveAvailable);
+            KioskToast.fire({ icon: 'warning', title: 'Adjusted to maximum available stock (' + effectiveAvailable + ')' });
         }
     };
 
@@ -933,8 +945,10 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         const unitLabel = $('#m-unit-label').val() === 'btl' ? 'Bottle' : 'Piece';
         
         if (sellType === 'tot') {
-            const totalPortions = Math.floor(availableBottles * totalTots);
-            $('#m-stock-display').html('<i class="fa fa-glass"></i> Stock: ' + totalPortions.toLocaleString() + ' ' + portionLabel + 's');
+            const openTots = parseInt($('#m-open-tots').val()) || 0;
+            const totalPortions = Math.floor(availableBottles * totalTots) + openTots;
+            const pLabel = portionLabel === 'Glass' ? 'Glasses' : portionLabel + 's';
+            $('#m-stock-display').html('<i class="fa fa-glass"></i> Stock: ' + totalPortions.toLocaleString() + ' ' + pLabel);
         } else {
             $('#m-stock-display').html('<i class="fa fa-database"></i> Stock: ' + availableBottles.toLocaleString() + ' ' + unitLabel + 's');
         }
@@ -965,15 +979,19 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         }
 
         const qty = parseInt($('#m-quantity').val()) || 1;
-        const available = parseInt($('#m-id').data('available')) || 9999;
+        const availableBottles = parseInt($('#m-id').data('available')) || 9999;
+        const totalTots = parseInt($('#m-total-tots').val()) || 1;
+        const openTots = parseInt($('#m-open-tots').val()) || 0;
+        // For tot/glass sales, effective stock is bottles × tots-per-bottle + any already opened parts
+        const effectiveAvailable = (sellType === 'tot') ? (availableBottles * totalTots) + openTots : availableBottles;
 
-        if (qty > available) {
-            KioskToast.fire({ icon: 'error', title: 'Cannot add more than available stock (' + available + ')' });
+        if (qty > effectiveAvailable) {
+            KioskToast.fire({ icon: 'error', title: 'Cannot add more than available stock (' + effectiveAvailable + ')' });
             return;
         }
 
         const foodCategory = type === 'food' ? ($('#m-id').data('foodCategory') || '') : '';
-        addToCartFast(id, type, name, variant, finalPrice, sellType, qty, notes, available, foodCategory);
+        addToCartFast(id, type, name, variant, finalPrice, sellType, qty, notes, effectiveAvailable, foodCategory);
         $('#addItemModal').modal('hide');
         $('#m-note').val(''); // Clear it
     });
@@ -1255,6 +1273,9 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     },
                     success: function(orderRes) {
                         if (orderRes.success) {
+                            // 1. Immediately close the Confirmation modal to prevent stacking
+                            Swal.close();
+                            
                             btn.prop('disabled', false).html('Place Order');
                             
                             KioskToast.fire({
@@ -1265,13 +1286,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                             const isUpdating = !!editingOrderId;
                             const orderIdStr = orderRes.order.id;
                             const needsKitchenDocket = cart.some(i => i.type === 'food' && !(i.food_category && foodCategoryIsBeverage(i.food_category)));
-
-                            if (needsKitchenDocket) {
-                                setTimeout(() => {
-                                    const docketUrl = '{{ url("/bar/kiosk/print-docket") }}/' + orderIdStr;
-                                    window.open(docketUrl, '_blank', 'width=420,height=700');
-                                }, 400);
-                            }
+                            const waiterName = $('#form-waiter-name-display').text().replace('✓ ', '').trim() || '';
 
                             // 2. Clear Cart and UI immediately
                             cart = [];
@@ -1282,48 +1297,63 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                             $('#form-customer-name').val('');
                             $('#form-customer-phone').val('');
                             $('#form-waiter-name-display').text('');
-                                               // 3. Play Thank You voice (Female-sounding/Higher pitch)
+
+                            // 3. Play Thank You voice
                             try {
-                                const waiterName = $('#form-waiter-name-display').text().replace('✓ ', '').trim() || '';
                                 const utter = new SpeechSynthesisUtterance('Thank you ' + waiterName + '. Welcome back.');
-                                
-                                // Try to find a female voice
                                 const voices = window.speechSynthesis.getVoices();
                                 const femaleVoice = voices.find(v => (v.name.includes('Female') || v.name.includes('Samantha') || v.name.includes('Zira') || v.name.includes('Google US English')));
                                 if (femaleVoice) utter.voice = femaleVoice;
-                                
                                 utter.lang = 'en-US';
                                 utter.rate = 1.0;
-                                utter.pitch = 1.3; // Higher pitch for female sound
+                                utter.pitch = 1.3;
                                 window.speechSynthesis.cancel();
                                 window.speechSynthesis.speak(utter);
                             } catch(e) {}
 
-                            // 4. Show Success Alert with OK button
+                            const finalizeOrderSuccessUi = () => {
+                                // Close any remaining modals/backdrops
+                                $('#addItemModal, #actionAuthModal, #kioskOrdersModal').modal('hide');
+                                $('body').removeClass('modal-open');
+                                $('.modal-backdrop').remove();
+
+                                // Clear remaining inputs
+                                $('#form-waiter-pin').val('');
+                                $('#form-waiter-id').val('');
+                                
+                                // Refresh background data
+                                fetchOngoingOrders(null, true);
+                                refreshKioskData();
+
+                                // 4. Handle Kitchen Docket Printing AFTER the modal is gone
+                                // This prevents focus theft from "freezing" the main window
+                                if (needsKitchenDocket) {
+                                    const docketUrl = '{{ url("/bar/kiosk/print-docket") }}/' + orderIdStr;
+                                    window.open(docketUrl, '_blank', 'width=420,height=700');
+                                }
+                            };
+
+                            // 5. Show Success Alert
+                            // For food: Use a button to ensure the popup isn't blocked and focus isn't stolen mid-animation
+                            // For drinks: Use automatic timer
                             Swal.fire({
                                 icon: 'success',
                                 title: isUpdating ? 'Ticket Updated!' : '✅ Order Dispatched!',
                                 html: '<b>Ticket: ' + orderRes.order.order_number + '</b><br><span style="font-size:0.9rem; color:#aaa;">Your order has been sent to the counter.</span>',
-                                confirmButtonText: 'OK',
-                                confirmButtonColor: '#28a745',
+                                showConfirmButton: needsKitchenDocket, 
+                                confirmButtonText: 'OK (Print Docket)',
+                                timer: needsKitchenDocket ? null : 2000,
+                                timerProgressBar: !needsKitchenDocket,
                                 background: '#1e1e1e',
                                 color: '#fff',
-                                allowOutsideClick: false
-                            }).then((result) => {
-                                // Clear inputs now that they've seen the message
-                                $('#form-waiter-pin').val('');
-                                $('#form-waiter-name-display').text('');
-                                $('#form-waiter-id').val('');
-                                
-                                // Reset cart state (already done above, but being safe)
-                                cart = [];
-                                editingOrderId = null;
-                                $('#btn-finish-order').text('Place Order').removeClass('btn-info').addClass('btn-yellow');
-                                updateCart();
-                                
-                                // Refresh background data
-                                refreshKioskData();
+                                allowOutsideClick: false,
+                                returnFocus: false,
+                                didClose: function() {
+                                    finalizeOrderSuccessUi();
+                                }
                             });
+
+
                         }
                     },
                     error: function(xhr) {
@@ -1407,6 +1437,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                      data-portion-label="${v.portion_label}"
                      data-unit-label="${v.unit}"
                      data-total-tots="${v.total_tots}"
+                     data-open-tots="${v.open_tots || 0}"
                      data-price="${v.selling_price}"
                      data-price-tot="${v.selling_price_per_tot}"
                      data-can-tot="${v.can_sell_in_tots ? 'true' : 'false'}"

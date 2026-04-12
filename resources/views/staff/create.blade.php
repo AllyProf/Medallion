@@ -176,7 +176,7 @@
           </div>
         </div>
 
-        <!-- Row: Religion -->
+        <!-- Row: Religion and PIN -->
         <div class="row">
           <div class="col-md-6">
             <div class="form-group">
@@ -186,6 +186,23 @@
               @error('religion')
                 <div class="invalid-feedback">{{ $message }}</div>
               @enderror
+            </div>
+          </div>
+          
+          <div class="col-md-6" id="pin_section" style="display: none;">
+            <div class="form-group">
+              <label>Kiosk PIN <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <input type="text" class="form-control @error('pin') is-invalid @enderror" 
+                       id="custom_pin" name="pin" value="{{ old('pin') }}" placeholder="Enter 4-digit PIN" maxlength="4" pattern="\d{4}">
+                <div class="input-group-append">
+                  <button class="btn btn-outline-secondary" type="button" id="generate_pin_btn" onclick="document.getElementById('custom_pin').value = Math.floor(1000 + Math.random() * 9000)"><i class="fa fa-refresh"></i> Generate</button>
+                </div>
+              </div>
+              @error('pin')
+                <div class="invalid-feedback d-block">{{ $message }}</div>
+              @enderror
+              <small class="form-text text-muted">Used for Kiosk login. Required for Waiters.</small>
             </div>
           </div>
         </div>
@@ -316,6 +333,33 @@
       checkbox.checked = true;
       section.style.display = 'block';
     }
+
+    // Role selection listener for PIN section
+    var roleSelect = document.getElementById('role_id');
+    var pinSection = document.getElementById('pin_section');
+    var customPinInput = document.getElementById('custom_pin');
+
+    function checkRoleForPin() {
+      if (!roleSelect) return;
+      var selectedOption = roleSelect.options[roleSelect.selectedIndex];
+      if (selectedOption && selectedOption.value !== "") {
+        var roleName = selectedOption.text.toLowerCase();
+        // Show PIN field if role comprises waiter
+        if (roleName.includes('waiter')) {
+          pinSection.style.display = 'block';
+          if (!customPinInput.value) {
+             customPinInput.value = Math.floor(1000 + Math.random() * 9000); // auto generate default
+          }
+        } else {
+          pinSection.style.display = 'none';
+        }
+      } else {
+        pinSection.style.display = 'none';
+      }
+    }
+    
+    roleSelect.addEventListener('change', checkRoleForPin);
+    checkRoleForPin(); // run on load in case of validation errors
 
     // Update custom file input labels with selected file name
     var fileInputs = document.querySelectorAll('#attachments-section .custom-file-input');

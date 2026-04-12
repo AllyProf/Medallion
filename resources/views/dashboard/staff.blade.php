@@ -16,9 +16,14 @@
 
 @if(isset($statistics) && !empty($statistics))
 <!-- Statistics Cards -->
+<style>
+  /* Ensure all statistically widgets share identical dimensions */
+  .widget-small { min-height: 110px; }
+  .widget-small .info { display: flex; flex-direction: column; justify-content: center; }
+</style>
 <div class="row">
   <div class="col-md-3">
-    <div class="widget-small primary coloured-icon">
+    <div class="widget-small primary coloured-icon mb-3">
       <i class="icon fa fa-archive fa-3x"></i>
       <div class="info">
         <h4>Warehouse Stock</h4>
@@ -27,7 +32,7 @@
     </div>
   </div>
   <div class="col-md-3">
-    <div class="widget-small info coloured-icon">
+    <div class="widget-small info coloured-icon mb-3">
       <i class="icon fa fa-cubes fa-3x"></i>
       <div class="info">
         <h4>Counter Stock Items</h4>
@@ -39,7 +44,7 @@
     </div>
   </div>
   <div class="col-md-3">
-    <div class="widget-small warning coloured-icon">
+    <div class="widget-small warning coloured-icon mb-3">
       <i class="icon fa fa-exchange fa-3x"></i>
       <div class="info">
         <h4>Pending Transfers</h4>
@@ -48,7 +53,7 @@
     </div>
   </div>
   <div class="col-md-3">
-    <div class="widget-small danger coloured-icon">
+    <div class="widget-small danger coloured-icon mb-3">
       <i class="icon fa fa-exclamation-triangle fa-3x"></i>
       <div class="info">
         <h4>Low Stock Items</h4>
@@ -207,7 +212,7 @@
                   </span>
                 </td>
                 <td>
-                  <a href="{{ route('bar.beverage-inventory.index') }}" class="btn btn-sm btn-warning">
+                  <a href="{{ route('bar.stock-receipts.create') }}" class="btn btn-sm btn-warning">
                     <i class="fa fa-plus"></i> Restock
                   </a>
                 </td>

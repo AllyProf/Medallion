@@ -85,8 +85,8 @@ class BeverageInventoryController extends Controller
                     // Calculate packaging information
                     $packagingType = $variant->packaging ?? 'Packages';
                     $itemsPerPackage = $variant->items_per_package ?? 1;
-                    $warehousePackages = $warehouseQty > 0 ? floor($warehouseQty / $itemsPerPackage) : 0;
-                    $counterPackages = $counterQty > 0 ? floor($counterQty / $itemsPerPackage) : 0;
+                    $warehousePackages = ($itemsPerPackage > 0) ? floor($warehouseQty / $itemsPerPackage) : 0;
+                    $counterPackages = ($itemsPerPackage > 0) ? floor($counterQty / $itemsPerPackage) : 0;
                     $totalPackages = $warehousePackages + $counterPackages;
                     
                     $stockOverview->push([
@@ -110,6 +110,7 @@ class BeverageInventoryController extends Controller
                         'warehouse_packages' => $warehousePackages,
                         'counter_packages' => $counterPackages,
                         'total_packages' => $totalPackages,
+                        'unit' => $variant->inventory_unit,
                     ]);
                 }
             }
@@ -290,9 +291,9 @@ class BeverageInventoryController extends Controller
                     $totalWarehouseValue   += $value;
 
                     $packagingType  = $variant->packaging ?? 'Packages';
-                    $ipp            = $variant->items_per_package ?? 1;
-                    $packagingCount = $ipp > 1 ? floor($quantity / $ipp) : 0;
-                    $extraBottles   = $ipp > 1 ? ($quantity % $ipp) : $quantity;
+                    $ipp            = ($variant->items_per_package > 0) ? $variant->items_per_package : 1;
+                    $packagingCount = floor($quantity / $ipp);
+                    $extraBottles   = $quantity % $ipp;
 
                     // Clean Title: prioritize variant name and remove redundant brand/parentheses
                     $vName        = $variant->name ?? '';
@@ -334,6 +335,7 @@ class BeverageInventoryController extends Controller
                         'packages'              => $packagingCount,
                         'extra_bottles'         => $extraBottles,
                         'packaging_type'        => $packagingType,
+                        'unit'                  => $variant->inventory_unit,
                         'is_low_stock'          => $quantity < 10,
                     ]);
                 }

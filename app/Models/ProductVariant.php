@@ -28,7 +28,7 @@ class ProductVariant extends Model
         'unit',
     ];
 
-    protected $appends = ['display_name'];
+    protected $appends = ['display_name', 'inventory_unit'];
 
     protected $casts = [
         'items_per_package' => 'integer',
@@ -38,6 +38,21 @@ class ProductVariant extends Model
         'is_active' => 'boolean',
         'can_sell_in_tots' => 'boolean',
     ];
+
+    /**
+     * Get standardized inventory counting unit (e.g. btl instead of ml).
+     */
+    public function getInventoryUnitAttribute()
+    {
+        $unit = strtolower($this->unit ?? 'btl');
+        $liquidUnits = ['ml', 'l', 'mls', 'liter', 'litre', 'liters'];
+        
+        if (in_array($unit, $liquidUnits)) {
+            return 'btl';
+        }
+        
+        return $this->unit ?? 'btl';
+    }
 
     /**
      * Get clean display name for Mobile POS.

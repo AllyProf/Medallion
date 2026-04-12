@@ -26,8 +26,8 @@
 </div>
 
 <div class="row">
-  <!-- Trend Line Chart -->
-  <div class="col-md-12">
+  <!-- Daily Performance Line Chart (left col) -->
+  <div class="col-md-7">
     <div class="tile">
       <h3 class="tile-title"><i class="fa fa-area-chart"></i> Daily Financial Performance</h3>
       <div class="tile-body">
@@ -37,20 +37,30 @@
       </div>
     </div>
   </div>
-</div>
 
-<div class="row">
-   <div class="col-md-12">
+  <!-- Expense Distribution Pie Chart (right col) -->
+  <div class="col-md-5">
     <div class="tile">
-      <h3 class="tile-title"><i class="fa fa-bar-chart"></i> Historical Financial Comparison</h3>
+      <h3 class="tile-title"><i class="fa fa-pie-chart"></i> Expense Distribution</h3>
       <div class="tile-body">
-        <div style="position: relative; height: 350px; width: 100%;">
-          <canvas id="historicalComparisonChart"></canvas>
+        @php $hasExpenses = !empty($expenseByCategory) && array_sum(array_values($expenseByCategory)) > 0; @endphp
+        @if($hasExpenses)
+        <div style="position: relative; height: 280px; width: 100%;">
+          <canvas id="expenseDistributionChart"></canvas>
         </div>
+        <div style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;" id="expenseLegend"></div>
+        @else
+        <div style="text-align: center; padding: 80px 20px; color: #aaa;">
+          <i class="fa fa-pie-chart fa-3x" style="margin-bottom: 15px; display: block; color: #ddd;"></i>
+          <p style="font-size: 14px;">No expense records for this period.</p>
+          <small>Tracked from Petty Cash issues.</small>
+        </div>
+        @endif
       </div>
     </div>
   </div>
 </div>
+
 @endsection
 
 @push('scripts')
@@ -64,7 +74,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const totalCogs = {{ floatval($totalCogs) }};
     const totalExpenses = {{ floatval($totalExpenses) }};
     const totalNetProfit = {{ floatval($totalNetProfit) }};
-    const historicalData = @json($historical);
 
     // 1. Daily Financial Performance Chart
     const ctxDaily = document.getElementById('dailyPerformanceChart');
@@ -76,29 +85,6 @@ document.addEventListener('DOMContentLoaded', function() {
             data: {
                 labels: dailyPerformanceData.map(d => d.label),
                 datasets: [
-                    {
-                        label: 'Target Profit Goal',
-                        data: dailyPerformanceData.map(() => 50000),
-                        borderColor: '#ffc107',
-                        borderDash: [5, 5],
-                        borderWidth: 2,
-                        fill: false,
-                        pointRadius: 0,
-                        type: 'line',
-                        order: 1
-                    },
-                    {
-                        label: 'Total Potential (Revenue)',
-                        data: dailyPerformanceData.map(d => d.revenue),
-                        borderColor: '#adb5bd',
-                        borderDash: [3, 3],
-                        borderWidth: 1.5,
-                        fill: false,
-                        tension: 0.4,
-                        pointRadius: 0,
-                        type: 'line',
-                        order: 2
-                    },
                     {
                         label: 'Drinks Profit',
                         data: dailyPerformanceData.map(d => d.bar_profit),
@@ -114,6 +100,22 @@ document.addEventListener('DOMContentLoaded', function() {
                         pointHoverRadius: 8,
                         type: 'line',
                         order: 4
+                    },
+                    {
+                        label: 'Expenses',
+                        data: dailyPerformanceData.map(d => d.expenses),
+                        borderColor: '#dc3545',
+                        backgroundColor: 'rgba(220, 53, 69, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#dc3545',
+                        pointBorderWidth: 2,
+                        pointRadius: 4,
+                        pointHoverRadius: 8,
+                        type: 'line',
+                        order: 5
                     },
                     {
                         label: 'Food Profit',
@@ -164,54 +166,63 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
 
+    // 2. Expense Distribution Pie Chart
+    const expenseData = @json($expenseByCategory);
+    const ctxExp = document.getElementById('expenseDistributionChart');
+    if (ctxExp && Object.keys(expenseData).length > 0) {
+        const labels = Object.keys(expenseData);
+        const values = Object.values(expenseData);
+        const total  = values.reduce((a, b) => a + b, 0);
 
-    // 3. Historical Comparison Bar Chart
-    const ctxHist = document.getElementById('historicalComparisonChart');
-    if (ctxHist && historicalData.length > 0) {
-        historicalData.reverse(); // Reverse to read oldest to newest left to right
-        new Chart(ctxHist, {
-            type: 'bar',
+        const palette = [
+            '#dc3545','#fd7e14','#ffc107','#28a745','#17a2b8',
+            '#6610f2','#e83e8c','#20c997','#6f42c1','#007bff'
+        ];
+        const bgColors = labels.map((_, i) => palette[i % palette.length]);
+
+        new Chart(ctxExp, {
+            type: 'doughnut',
             data: {
-                labels: historicalData.map(h => h.label),
-                datasets: [
-                    {
-                        label: 'Expenses Used (TSh)',
-                        data: historicalData.map(h => h.expenses),
-                        type: 'line',
-                        borderColor: '#e53935',
-                        backgroundColor: 'rgba(229, 57, 53, 0.1)',
-                        borderWidth: 2,
-                        tension: 0.4,
-                        fill: true
-                    },
-                    {
-                        label: 'Drinks Profit Generated (TSh)',
-                        data: historicalData.map(h => h.bar_profit),
-                        backgroundColor: '#1a237e',
-                        borderRadius: 4
-                    },
-                    {
-                        label: 'Food Profit Generated (TSh)',
-                        data: historicalData.map(h => h.food_profit),
-                        backgroundColor: '#00897b',
-                        borderRadius: 4
-                    }
-                ]
+                labels: labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: bgColors.map(c => c + 'dd'),
+                    borderColor: bgColors,
+                    borderWidth: 2,
+                    hoverOffset: 10,
+                }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                cutout: '55%',
                 plugins: {
-                    legend: { position: 'top' },
+                    legend: { display: false },
                     tooltip: {
                         callbacks: {
-                            label: function(ctx) { return ctx.dataset.label + ': TSh ' + Math.round(ctx.parsed.y).toLocaleString(); }
+                            label: ctx => {
+                                const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : 0;
+                                return ` TSh ${Math.round(ctx.parsed).toLocaleString()} (${pct}%)`;
+                            }
                         }
                     }
                 }
             }
         });
+
+        // Custom legend
+        const legend = document.getElementById('expenseLegend');
+        if (legend) {
+            labels.forEach((label, i) => {
+                const pct = total > 0 ? ((values[i] / total) * 100).toFixed(1) : 0;
+                const item = document.createElement('div');
+                item.style.cssText = 'display:flex;align-items:center;gap:5px;background:#f8f9fa;padding:4px 10px;border-radius:20px;font-size:11px;';
+                item.innerHTML = `<span style="width:10px;height:10px;border-radius:50%;background:${bgColors[i]};display:inline-block;flex-shrink:0;"></span><strong>${label}</strong>: TSh ${Math.round(values[i]).toLocaleString()} <span style="color:#888;">(${pct}%)</span>`;
+                legend.appendChild(item);
+            });
+        }
     }
+
 });
 </script>
 @endpush

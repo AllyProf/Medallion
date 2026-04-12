@@ -21,69 +21,82 @@ class DashboardController extends Controller
             $isStaff = false;
         }
 
-        // Check if this is a staff member
-        if ($isStaff) {
-            $staff = \App\Models\Staff::find(session('staff_id'));
+        // Check if this is a staff member or a Super Admin managing the business
+        if ($isStaff || ($isUser && auth()->user()->isAdmin())) {
+            if ($isStaff) {
+                $staff = \App\Models\Staff::find(session('staff_id'));
+                
+                if (!$staff || !$staff->is_active) {
+                    session()->forget(['is_staff', 'staff_id', 'staff_name', 'staff_email', 'staff_role_id', 'staff_user_id']);
+                    return redirect()->route('login')->with('error', 'Your staff account is no longer active.');
+                }
+
+                // IMPORTANT: Verify staff email matches session
+                if ($staff->email !== session('staff_email')) {
+                    session()->forget(['is_staff', 'staff_id', 'staff_name', 'staff_email', 'staff_role_id', 'staff_user_id']);
+                    return redirect()->route('login')->with('error', 'Session mismatch. Please login again.');
+                }
+
+                $owner = $staff->owner;
+                $roleSlug = $staff->role ? \Illuminate\Support\Str::slug($staff->role->name) : 'staff';
+                $roleName = strtolower($staff->role->name ?? '');
+            } else {
+                $staff = auth()->user();
+                $owner = auth()->user();
+                $roleSlug = 'admin';
+                $roleName = 'manager'; // Treat admin as manager for business view
+            }
             
-            if (!$staff || !$staff->is_active) {
-                session()->forget(['is_staff', 'staff_id', 'staff_name', 'staff_email', 'staff_role_id', 'staff_user_id']);
-                return redirect()->route('login')->with('error', 'Your staff account is no longer active.');
+            // Redirect specific staff roles to their dedicated dashboards (not for admin users)
+            if ($isStaff) {
+                if (strtolower($staff->role->name ?? '') === 'counter') {
+                    return redirect()->route('bar.counter.dashboard');
+                }
+                if (strtolower($staff->role->name ?? '') === 'waiter') {
+                    return redirect()->route('bar.waiter.dashboard');
+                }
+                if (strtolower($staff->role->name ?? '') === 'chef') {
+                    return redirect()->route('bar.chef.dashboard');
+                }
+                if (strtolower($staff->role->name ?? '') === 'accountant') {
+                    return redirect()->route('accountant.dashboard');
+                }
+                if (strtolower($staff->role->name ?? '') === 'marketing') {
+                    return redirect()->route('marketing.dashboard');
+                }
+
+                // If URL doesn't include the role, redirect to include it (only for staff)
+                if (!$role || $role !== $roleSlug) {
+                    return redirect()->route('dashboard.role', ['role' => $roleSlug]);
+                }
             }
 
-            // IMPORTANT: Verify staff email matches session
-            if ($staff->email !== session('staff_email')) {
-                session()->forget(['is_staff', 'staff_id', 'staff_name', 'staff_email', 'staff_role_id', 'staff_user_id']);
-                return redirect()->route('login')->with('error', 'Session mismatch. Please login again.');
-            }
-
-            // Get the owner's business info
-            $owner = $staff->owner;
-            
-            // Get staff role slug for URL
-            $roleSlug = $staff->role ? \Illuminate\Support\Str::slug($staff->role->name) : 'staff';
-            
-            // Redirect Counter staff to their dashboard
-            if (strtolower($staff->role->name ?? '') === 'counter') {
-                return redirect()->route('bar.counter.dashboard');
-            }
-            
-            // Redirect Waiter staff to their dashboard
-            if (strtolower($staff->role->name ?? '') === 'waiter') {
-                return redirect()->route('bar.waiter.dashboard');
-            }
-            
-            // Redirect Chef staff to their dashboard
-            if (strtolower($staff->role->name ?? '') === 'chef') {
-                return redirect()->route('bar.chef.dashboard');
-            }
-            
-            // Redirect Accountant staff to their dashboard
-            if (strtolower($staff->role->name ?? '') === 'accountant') {
-                return redirect()->route('accountant.dashboard');
-            }
-            
-            // Redirect Marketing staff to their dashboard
-            if (strtolower($staff->role->name ?? '') === 'marketing') {
-                return redirect()->route('marketing.dashboard');
-            }
-            
-            // If URL doesn't include the role, redirect to include it
-            if (!$role || $role !== $roleSlug) {
-                return redirect()->route('dashboard.role', ['role' => $roleSlug]);
-            }
-            
-            // Route Manager to dedicated dashboard with rich data
+            // Route Manager/Admin to dedicated dashboard with rich data
             $statistics = [];
-            $roleName = strtolower($staff->role->name ?? '');
             $ownerId  = $owner->id;
 
-            if ($roleName === 'manager') {
+            if ($roleName === 'manager' || (auth()->check() && auth()->user()->role === 'admin')) {
                 $location = session('active_location');
+
+                // Ensure today's ledger exists for the manager's trend chart
+                $todayDate = date('Y-m-d');
+                \App\Models\DailyCashLedger::firstOrCreate(
+                    ['user_id' => $ownerId, 'ledger_date' => $todayDate],
+                    [
+                        'opening_cash' => \App\Models\DailyCashLedger::where('user_id', $ownerId)
+                            ->where('ledger_date', '<', $todayDate)
+                            ->where('status', 'closed')
+                            ->orderBy('ledger_date', 'desc')
+                            ->value('carried_forward') ?? 0,
+                        'status' => 'open',
+                    ]
+                );
 
                 // Helper to apply branch filter to various models
                 // It checks both the waiter/staff associated and the table location (if applicable)
                 $applyLocation = function($query, $staffKey = 'waiter_id', $tableCheck = true) use ($location) {
-                    if ($location) {
+                    $isAdmin = auth()->check() && auth()->user()->isAdmin();
+                    if ($location && !$isAdmin) {
                         $query->where(function($q) use ($location, $staffKey, $tableCheck) {
                             // Filter by staff/waiter's branch
                             $q->whereExists(function ($sq) use ($location, $staffKey) {
@@ -104,59 +117,85 @@ class DashboardController extends Controller
                     return $query;
                 };
 
-                // ── Today's revenue
-                // Calculate from both unified bar items and food items that aren't cancelled
-                $todayOrdersRecords = $applyLocation(\App\Models\BarOrder::where('user_id', $ownerId))
-                    ->whereDate('created_at', today())
-                    ->where('status', '!=', 'cancelled')
-                    ->with(['items', 'kitchenOrderItems'])
-                    ->get();
-                    
-                $todayRevenue = $todayOrdersRecords->sum(function($order) {
-                    $b = $order->items ? $order->items->where('status', '!=', 'cancelled')->sum('total_price') : 0;
-                    $f = $order->kitchenOrderItems ? $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price') : 0;
-                    return $b + $f;
-                });
+                // ── Today's revenue (From Master Sheet)
+                $handoversQuery = \App\Models\FinancialHandover::where('handover_date', today())
+                    ->where('handover_type', 'staff_to_accountant');
+                
+                if (!auth()->check() || auth()->user()->role !== 'admin') {
+                    $handoversQuery->where('user_id', $ownerId);
+                }
+                $handovers = $handoversQuery->get();
+                
+                $todayRevenue = 0;
+                foreach ($handovers as $h) {
+                    if ($h->status === 'verified') {
+                        $breakdown = $h->payment_breakdown ?? [];
+                        if (is_string($breakdown)) $breakdown = json_decode($breakdown, true);
+                        if (is_array($breakdown) && !empty($breakdown)) {
+                            foreach ($breakdown as $key => $val) {
+                                if ($key === 'shortage_payment' || $key === 'total') continue;
+                                $todayRevenue += floatval($val);
+                            }
+                        } else {
+                            $todayRevenue += floatval($h->amount);
+                        }
+                    }
+                }
 
-                // ── This month revenue
-                $monthOrdersRecords = $applyLocation(\App\Models\BarOrder::where('user_id', $ownerId))
-                    ->whereMonth('created_at', now()->month)
-                    ->whereYear('created_at', now()->year)
-                    ->where('status', '!=', 'cancelled')
-                    ->with(['items', 'kitchenOrderItems'])
-                    ->get();
-                    
-                $monthRevenue = $monthOrdersRecords->sum(function($order) {
-                    $b = $order->items ? $order->items->where('status', '!=', 'cancelled')->sum('total_price') : 0;
-                    $f = $order->kitchenOrderItems ? $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price') : 0;
-                    return $b + $f;
+                // ── This month revenue (From Master Sheet)
+                $monthLedgersQuery = \App\Models\DailyCashLedger::whereMonth('ledger_date', now()->month)
+                    ->whereYear('ledger_date', now()->year);
+                
+                if (!auth()->check() || auth()->user()->role !== 'admin') {
+                    $monthLedgersQuery->where('user_id', $ownerId);
+                }
+                $monthLedgers = $monthLedgersQuery->get();
+                
+                $monthRevenue = $monthLedgers->sum(function($l) {
+                    return floatval($l->total_cash_received) + floatval($l->total_digital_received);
                 });
+                $monthRevenue += $todayRevenue; // Add today's live revenue since today's ledger might not be closed yet
 
                 // ── Today's orders
-                $todayOrders = $todayOrdersRecords->count();
+                $todayOrdersQuery = \App\Models\BarOrder::whereDate('created_at', today())
+                    ->where('status', '!=', 'cancelled');
+                if (!auth()->check() || auth()->user()->role !== 'admin') {
+                    $todayOrdersQuery->where('user_id', $ownerId);
+                }
+                $todayOrders = $applyLocation($todayOrdersQuery)->count();
 
                 // ── Pending orders
-                $pendingOrders = $applyLocation(\App\Models\BarOrder::where('user_id', $ownerId))
-                    ->where('status', 'pending')
-                    ->count();
+                $pendingOrdersQuery = \App\Models\BarOrder::where('status', 'pending');
+                if (!auth()->check() || auth()->user()->role !== 'admin') {
+                    $pendingOrdersQuery->where('user_id', $ownerId);
+                }
+                $pendingOrders = $applyLocation($pendingOrdersQuery)->count();
 
                 // ── Stock transfers summary
                 // Filter by requester branch
-                $pendingTransfers  = $applyLocation(\App\Models\StockTransfer::where('user_id', $ownerId), 'requested_by', false)
-                    ->where('status', 'pending')->count();
-                $approvedTransfers = $applyLocation(\App\Models\StockTransfer::where('user_id', $ownerId), 'requested_by', false)
-                    ->where('status', 'approved')->count();
-                $completedTransfersToday = $applyLocation(\App\Models\StockTransfer::where('user_id', $ownerId), 'requested_by', false)
-                    ->where('status', 'completed')
-                    ->whereDate('updated_at', today())
-                    ->count();
+                $pTransfersQuery = \App\Models\StockTransfer::where('status', 'pending');
+                $aTransfersQuery = \App\Models\StockTransfer::where('status', 'approved');
+                $cTransfersQuery = \App\Models\StockTransfer::where('status', 'completed')->whereDate('updated_at', today());
+
+                if (!auth()->check() || auth()->user()->role !== 'admin') {
+                    $pTransfersQuery->where('user_id', $ownerId);
+                    $aTransfersQuery->where('user_id', $ownerId);
+                    $cTransfersQuery->where('user_id', $ownerId);
+                }
+
+                $pendingTransfers  = $applyLocation($pTransfersQuery, 'requested_by', false)->count();
+                $approvedTransfers = $applyLocation($aTransfersQuery, 'requested_by', false)->count();
+                $completedTransfersToday = $applyLocation($cTransfersQuery, 'requested_by', false)->count();
 
                 // ── Total transfer sales value
-                $totalTransferSalesValue = \App\Models\TransferSale::whereHas('stockTransfer', function($q) use ($ownerId, $location) {
-                    $q->where('user_id', $ownerId)
-                      ->where('status', 'completed')
+                $transSalesQuery = \App\Models\TransferSale::whereHas('stockTransfer', function($q) use ($ownerId, $location) {
+                    if (!auth()->check() || auth()->user()->role !== 'admin') {
+                        $q->where('user_id', $ownerId);
+                    }
+                    $q->where('status', 'completed')
                       ->whereMonth('created_at', now()->month);
-                    if ($location) {
+                    
+                    if ($location && auth()->user()->role !== 'admin') {
                         $q->whereExists(function ($sq) use ($location) {
                             $sq->select(\DB::raw(1))
                                ->from('staff')
@@ -164,21 +203,24 @@ class DashboardController extends Controller
                                ->where('staff.location_branch', $location);
                         });
                     }
-                })->sum('total_price');
+                });
+                $totalTransferSalesValue = $transSalesQuery->sum('total_price');
 
                 // ── Recent stock receipts (this month)
                 // Filter by received_by branch
-                $recentReceiptsQuery = \App\Models\StockReceipt::where('user_id', $ownerId)
-                    ->with(['productVariant.product', 'supplier'])
+                $recentReceiptsQuery = \App\Models\StockReceipt::with(['productVariant.product', 'supplier'])
                     ->whereMonth('received_date', now()->month);
                 
-                if ($location) {
-                    $recentReceiptsQuery->whereExists(function ($sq) use ($location) {
-                        $sq->select(\DB::raw(1))
-                           ->from('staff')
-                           ->whereColumn('staff.id', 'stock_receipts.received_by')
-                           ->where('staff.location_branch', $location);
-                    });
+                if (!auth()->check() || auth()->user()->role !== 'admin') {
+                    $recentReceiptsQuery->where('user_id', $ownerId);
+                    if ($location) {
+                        $recentReceiptsQuery->whereExists(function ($sq) use ($location) {
+                            $sq->select(\DB::raw(1))
+                               ->from('staff')
+                               ->whereColumn('staff.id', 'stock_receipts.received_by')
+                               ->where('staff.location_branch', $location);
+                        });
+                    }
                 }
                 
                 $recentReceipts = $recentReceiptsQuery->orderBy('received_date', 'desc')
@@ -186,16 +228,18 @@ class DashboardController extends Controller
                     ->get();
 
                 // ── Monthly Purchase Cost
-                $monthlyPurchaseCostQuery = \App\Models\StockReceipt::where('user_id', $ownerId)
-                    ->whereMonth('received_date', now()->month);
+                $monthlyPurchaseCostQuery = \App\Models\StockReceipt::whereMonth('received_date', now()->month);
                 
-                if ($location) {
-                    $monthlyPurchaseCostQuery->whereExists(function ($sq) use ($location) {
-                        $sq->select(\DB::raw(1))
-                           ->from('staff')
-                           ->whereColumn('staff.id', 'stock_receipts.received_by')
-                           ->where('staff.location_branch', $location);
-                    });
+                if (!auth()->check() || auth()->user()->role !== 'admin') {
+                    $monthlyPurchaseCostQuery->where('user_id', $ownerId);
+                    if ($location) {
+                        $monthlyPurchaseCostQuery->whereExists(function ($sq) use ($location) {
+                            $sq->select(\DB::raw(1))
+                               ->from('staff')
+                               ->whereColumn('staff.id', 'stock_receipts.received_by')
+                               ->where('staff.location_branch', $location);
+                        });
+                    }
                 }
                 $monthlyPurchaseCost = $monthlyPurchaseCostQuery->sum('final_buying_cost');
 
@@ -208,9 +252,13 @@ class DashboardController extends Controller
 
                 // ── Revenue last 7 days
                 $dateRange = collect(range(0, 6))->map(fn($day) => now()->subDays($day)->format('Y-m-d'))->reverse()->values();
-                $trendOrdersRaw = clone $applyLocation(\App\Models\BarOrder::where('user_id', $ownerId))
-                    ->where('status', '!=', 'cancelled')
-                    ->where('created_at', '>=', now()->subDays(6)->startOfDay())
+                
+                $trendQuery = \App\Models\BarOrder::where('status', '!=', 'cancelled')
+                    ->where('created_at', '>=', now()->subDays(6)->startOfDay());
+                if (!auth()->check() || auth()->user()->role !== 'admin') {
+                    $trendQuery->where('user_id', $ownerId);
+                }
+                $trendOrdersRaw = $applyLocation($trendQuery)
                     ->with(['items', 'kitchenOrderItems'])
                     ->get();
                     
@@ -231,11 +279,14 @@ class DashboardController extends Controller
                 // ── Top selling DRINKS this month
                 $topDrinks = \App\Models\OrderItem::with('productVariant.product')
                     ->whereHas('order', function($q) use ($ownerId, $location) {
-                        $q->where('user_id', $ownerId)
-                          ->where('status', '!=', 'cancelled')
+                        if (!auth()->check() || auth()->user()->role !== 'admin') {
+                            $q->where('user_id', $ownerId);
+                        }
+                        $q->where('status', '!=', 'cancelled')
                           ->whereMonth('created_at', now()->month)
                           ->whereYear('created_at', now()->year);
-                        if ($location) {
+                        
+                        if ($location && auth()->user()->role !== 'admin') {
                             $q->where(function($sq) use ($location) {
                                 $sq->whereExists(function ($ssq) use ($location) {
                                     $ssq->select(\DB::raw(1))
@@ -371,12 +422,15 @@ class DashboardController extends Controller
                 ->take(10);
 
                 // ── Category Distribution: Drinks categories + Food dishes (this month)
-                $drinkCategories = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $location) {
-                    $q->where('user_id', $ownerId)
-                      ->where('status', '!=', 'cancelled')
+                $drinkCatsQuery = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $location) {
+                    if (!auth()->check() || auth()->user()->role !== 'admin') {
+                        $q->where('user_id', $ownerId);
+                    }
+                    $q->where('status', '!=', 'cancelled')
                       ->whereMonth('created_at', now()->month)
                       ->whereYear('created_at', now()->year);
-                    if ($location) {
+                    
+                    if ($location && auth()->user()->role !== 'admin') {
                         $q->where(function($sq) use ($location) {
                             $sq->whereExists(function ($ssq) use ($location) {
                                 $ssq->select(\DB::raw(1))
@@ -388,13 +442,15 @@ class DashboardController extends Controller
                             });
                         });
                     }
-                })
-                ->join('product_variants', 'order_items.product_variant_id', '=', 'product_variants.id')
-                ->join('products', 'product_variants.product_id', '=', 'products.id')
-                ->selectRaw('products.category as category, SUM(order_items.quantity) as total_sold, SUM(order_items.total_price) as total_revenue')
-                ->groupBy('products.category')
-                ->orderByDesc('total_sold')
-                ->get()
+                });
+                
+                $drinkCategories = $drinkCatsQuery
+                    ->join('product_variants', 'order_items.product_variant_id', '=', 'product_variants.id')
+                    ->join('products', 'product_variants.product_id', '=', 'products.id')
+                    ->selectRaw('products.category as category, SUM(order_items.quantity) as total_sold, SUM(order_items.total_price) as total_revenue')
+                    ->groupBy('products.category')
+                    ->orderByDesc('total_sold')
+                    ->get()
                 ->map(fn($item) => (object)[
                     'category'      => $item->category ?? 'Drinks',
                     'total_sold'    => (int) $item->total_sold,
@@ -433,17 +489,51 @@ class DashboardController extends Controller
                 $barMonthlyTarget = $monthlyTargets['monthly_bar']->target_amount ?? 0;
                 $foodMonthlyTarget = $monthlyTargets['monthly_food']->target_amount ?? 0;
                 
-                $barTargetProgress = $barMonthlyTarget > 0 ? min(100, round(($monthRevenue / $barMonthlyTarget) * 100)) : 0;
-                // We've already computed pure food revenue elsewhere as well so we can leave this as it was.
-                // For now, let's use a combined progress or show separately if possible.
-                // Re-calculating food actual for dashboard
+                // Calculate gross bar sales (OrderItem) for target progress instead of using verified revenue
+                $monthBarSales = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $location) {
+                        $q->where('user_id', $ownerId)
+                          ->where('status', '!=', 'cancelled')
+                          ->whereMonth('created_at', now()->month)
+                          ->whereYear('created_at', now()->year);
+                        
+                        // Apply location filters
+                        if ($location) {
+                            $q->where(function($sq) use ($location) {
+                                $sq->whereExists(function ($ssq) use ($location) {
+                                    $ssq->select(\DB::raw(1))
+                                       ->from('staff')
+                                       ->whereColumn('staff.id', 'orders.waiter_id')
+                                       ->where('staff.location_branch', $location);
+                                })->orWhereHas('table', function($ssq) use ($location) {
+                                    $ssq->where('location', $location);
+                                });
+                            });
+                        }
+                    })->sum('total_price');
+
+                $barTargetProgress = $barMonthlyTarget > 0 ? min(100, round(($monthBarSales / $barMonthlyTarget) * 100)) : 0;
+                
+                // Re-calculating food actual for dashboard with PROPER location filtering
                 $foodMonthRevenue = \App\Models\KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $location) {
                         $q->where('user_id', $ownerId)
                           ->where('status', '!=', 'cancelled')
                           ->whereMonth('created_at', now()->month)
                           ->whereYear('created_at', now()->year);
-                        // Apply location filters... 
-                    })->where('status', '!=', 'cancelled')->sum('total_price');
+                        
+                        // Apply location filters
+                        if ($location) {
+                            $q->where(function($sq) use ($location) {
+                                $sq->whereExists(function ($ssq) use ($location) {
+                                    $ssq->select(\DB::raw(1))
+                                       ->from('staff')
+                                       ->whereColumn('staff.id', 'orders.waiter_id')
+                                       ->where('staff.location_branch', $location);
+                                })->orWhereHas('table', function($ssq) use ($location) {
+                                    $ssq->where('location', $location);
+                                });
+                            });
+                        }
+                    })->sum('total_price');
                 $foodTargetProgress = $foodMonthlyTarget > 0 ? min(100, round(($foodMonthRevenue / $foodMonthlyTarget) * 100)) : 0;
 
                 // ── Master Sheet Financials (Manager Context)
@@ -459,11 +549,16 @@ class DashboardController extends Controller
                     ->get();
 
                 // ── Top Waiters this month
-                $waiterOrdersMonth = $applyLocation(\App\Models\BarOrder::where('user_id', $ownerId))
-                    ->whereMonth('created_at', now()->month)
+                $waitersQuery = \App\Models\BarOrder::whereMonth('created_at', now()->month)
                     ->whereYear('created_at', now()->year)
                     ->where('status', '!=', 'cancelled')
-                    ->whereNotNull('waiter_id')
+                    ->whereNotNull('waiter_id');
+                
+                if (!auth()->check() || auth()->user()->role !== 'admin') {
+                    $waitersQuery->where('user_id', $ownerId);
+                }
+                
+                $waiterOrdersMonth = $applyLocation($waitersQuery)
                     ->with(['waiter', 'items', 'kitchenOrderItems'])
                     ->get();
 
@@ -575,10 +670,10 @@ class DashboardController extends Controller
             // This is just a safety check - in normal flow, auth()->user() is already verified
         }
         
-        // Redirect admins to admin dashboard
-        if ($user->isAdmin()) {
-            return redirect()->route('admin.dashboard.index');
-        }
+        // Redirect admins to business dashboard (DEPRECATED - handled above)
+        // if ($user->isAdmin()) {
+        //     return redirect()->route('admin.dashboard.index');
+        // }
 
         // Check if user needs to complete business configuration
         if (!$user->isConfigured()) {

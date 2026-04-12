@@ -7,6 +7,24 @@
   /* ── Trend chart ── */
   #revenueTrendChart { max-height: 250px; }
 
+  /* ── Metric Cards Uniformity ── */
+  .stats-row .col-md { display: flex; }
+  .widget-small { 
+    width: 100%; 
+    min-height: 70px; 
+    align-items: center; 
+    border-radius: 6px; 
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05); 
+    transition: transform 0.2s;
+    border: 1px solid rgba(0,0,0,0.05);
+    margin-bottom: 15px;
+  }
+  .widget-small:hover { transform: translateY(-2px); }
+  .widget-small .info { padding: 8px 15px; }
+  .widget-small .info h4 { text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; font-weight: 700; margin-bottom: 2px; opacity: 0.7; }
+  .widget-small .info p { font-size: 15px; margin-bottom: 0; }
+  .widget-small .icon { width: 50px; height: 100%; display: flex; align-items: center; justify-content: center; border-radius: 6px 0 0 6px; font-size: 20px; }
+
   /* ── Top products bar ── */
   .product-bar-row { margin-bottom: 12px; }
   .product-bar-label { font-size: 14px; font-weight: 500; color: #2c3e50; margin-bottom: 6px; display: flex; justify-content: space-between; }
@@ -49,37 +67,40 @@
   </div>
 </div>
 
-<div class="row mb-3">
+<div class="row mb-4 stats-row">
   <div class="col-md">
-    <div class="widget-small primary coloured-icon"><i class="icon fa fa-money fa-3x"></i>
-      <div class="info">
-        <h4>Today Revenue</h4>
+    <div class="widget-small primary coloured-icon h-100 text-white"><i class="icon fa fa-money fa-2x"></i>
+      <div class="info" style="color: white !important;">
+        <h4 style="color: white !important; opacity: 0.9;">Today Revenue</h4>
         <p><b>TSh {{ number_format($todayRevenue) }}</b></p>
-        <small class="text-muted">Bar: {{ number_format($todayBarSales) }} | Food: {{ number_format($todayRevenue - $todayBarSales) }}</small>
+        <div style="font-size: 10px; opacity: 0.8; margin-top: 4px; color: white !important;">Bar: {{ number_format($todayBarSales) }} | Food: {{ number_format($todayRevenue - $todayBarSales) }}</div>
       </div>
     </div>
   </div>
   <div class="col-md">
-    <div class="widget-small info coloured-icon"><i class="icon fa fa-cutlery fa-3x"></i>
+    <div class="widget-small info coloured-icon h-100"><i class="icon fa fa-cutlery fa-2x"></i>
       <div class="info">
         <h4>Today Kitchen Profit</h4>
         <p><b>TSh {{ number_format($todayRevenue - $todayBarSales) }}</b></p>
+        <div style="font-size: 10px; opacity: 0; margin-top: 4px;">-</div> {{-- Hidden balancer --}}
       </div>
     </div>
   </div>
   <div class="col-md">
-    <div class="widget-small success coloured-icon"><i class="icon fa fa-bank fa-3x"></i>
-      <div class="info">
-        <h4>Cash Collected</h4>
-        <p><b>TSh {{ number_format($todayCash) }}</b></p>
+    <div class="widget-small success coloured-icon h-100 text-dark"><i class="icon fa fa-bank fa-2x"></i>
+      <div class="info" style="color: #000 !important;">
+        <h4 style="color: #000 !important; opacity: 0.9;">Cash Collected</h4>
+        <p><b style="color: #000 !important;">TSh {{ number_format($todayCash) }}</b></p>
+        <div style="font-size: 10px; opacity: 0; margin-top: 4px;">-</div> {{-- Hidden balancer --}}
       </div>
     </div>
   </div>
   <div class="col-md">
-    <div class="widget-small danger coloured-icon"><i class="icon fa fa-shopping-cart fa-3x"></i>
+    <div class="widget-small danger coloured-icon h-100"><i class="icon fa fa-shopping-cart fa-2x"></i>
       <div class="info">
         <h4>Today Expenses</h4>
         <p><b>TSh {{ number_format($todayExpenses ?? 0) }}</b></p>
+        <div style="font-size: 10px; opacity: 0; margin-top: 4px;">-</div> {{-- Hidden balancer --}}
       </div>
     </div>
   </div>
@@ -191,34 +212,42 @@
       <h3 class="tile-title">Quick Actions</h3>
       <div class="tile-body">
         <div class="row">
-          <div class="col-md-3 mb-3">
+          <div class="col-md-4 mb-3">
             <a href="{{ route('accountant.reconciliations') }}" class="btn btn-outline-primary btn-block p-3">
               <i class="fa fa-exchange fa-2x mb-2"></i><br>
               RECONCILIATIONS
             </a>
           </div>
-          <div class="col-md-3 mb-3">
+          <div class="col-md-4 mb-3">
             <a href="{{ route('accountant.fund-issuance') }}" class="btn btn-outline-warning btn-block p-3">
               <i class="fa fa-money fa-2x mb-2"></i><br>
               ISSUE PETTY CASH
             </a>
           </div>
-          <div class="col-md-3 mb-3">
-            <a href="{{ route('accountant.reports') }}" class="btn btn-outline-info btn-block p-3">
-              <i class="fa fa-line-chart fa-2x mb-2"></i><br>
-              FINANCIAL REPORTS
-            </a>
-          </div>
-          <div class="col-md-3 mb-3">
+          <div class="col-md-4 mb-3">
             <a href="{{ route('reports.stock-receipts') }}" class="btn btn-outline-dark btn-block p-3">
               <i class="fa fa-file-text-o fa-2x mb-2"></i><br>
-              STOCK REPORTS
+              REPORTS (RECEIPTS)
             </a>
           </div>
-          <div class="col-md-3 mb-3">
-            <a href="{{ route('bar.beverage-inventory.index') }}" class="btn btn-outline-secondary btn-block p-3">
-              <i class="fa fa-cubes fa-2x mb-2"></i><br>
-              INVENTORY
+        </div>
+        <div class="row">
+          <div class="col-md-4 mb-3">
+            <a href="{{ route('bar.counter.counter-stock') }}" class="btn btn-outline-info btn-block p-3">
+              <i class="fa fa-glass fa-2x mb-2"></i><br>
+              COUNTER STOCK
+            </a>
+          </div>
+          <div class="col-md-4 mb-3">
+            <a href="{{ route('bar.beverage-inventory.warehouse-stock') }}" class="btn btn-outline-success btn-block p-3">
+              <i class="fa fa-archive fa-2x mb-2"></i><br>
+              WAREHOUSE STOCK
+            </a>
+          </div>
+          <div class="col-md-4 mb-3">
+            <a href="{{ route('reports.stock-transfers') }}" class="btn btn-outline-secondary btn-block p-3">
+              <i class="fa fa-truck fa-2x mb-2"></i><br>
+              TRANSFER REPORTS
             </a>
           </div>
         </div>
@@ -257,38 +286,6 @@
         labels: trendData.map(d => d.date),
         datasets: [
           {
-            label: 'Target Profit Goal',
-            data: trendData.map(() => 50000),
-            borderColor: '#ffc107',
-            borderDash: [5, 5],
-            borderWidth: 2,
-            fill: false,
-            pointRadius: 0,
-            type: 'line',
-            order: 1
-          },
-          {
-            label: 'Total Potential (Revenue)',
-            data: trendData.map(d => d.revenue),
-            borderColor: '#adb5bd',
-            borderDash: [3, 3],
-            borderWidth: 1.5,
-            fill: false,
-            tension: 0.4,
-            pointRadius: 0,
-            type: 'line',
-            order: 2
-          },
-          {
-            label: 'Expense Shadows',
-            data: trendData.map(d => d.expenses),
-            backgroundColor: 'rgba(220, 53, 69, 0.4)',
-            borderWidth: 0,
-            type: 'bar',
-            barThickness: 15,
-            order: 5
-          },
-          {
             label: 'Drinks Profit',
             data: trendData.map(d => d.bar_profit),
             borderColor: '#007bff',
@@ -301,8 +298,7 @@
             pointBorderWidth: 2,
             pointRadius: trendData.map((d, i) => i === maxProfitIndex ? 7 : 4),
             pointHoverRadius: 8,
-            type: 'line',
-            order: 4
+            type: 'line'
           },
           {
             label: 'Food Profit',
@@ -317,8 +313,7 @@
             pointBorderWidth: 2,
             pointRadius: trendData.map((d, i) => i === maxProfitIndex ? 7 : 4),
             pointHoverRadius: 8,
-            type: 'line',
-            order: 3
+            type: 'line'
           }
         ]
       },

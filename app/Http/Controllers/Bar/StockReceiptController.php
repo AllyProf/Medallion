@@ -121,7 +121,7 @@ class StockReceiptController extends Controller
                         'name' => $variant->name,
                         'measurement' => $variant->measurement,
                         'packaging' => $variant->packaging,
-                        'unit' => $variant->unit,
+                        'unit' => $variant->inventory_unit,
                         'items_per_package' => $variant->items_per_package,
                         'selling_type' => $variant->selling_type,
                         'buying_price_per_unit' => $variant->buying_price_per_unit ? (float)$variant->buying_price_per_unit : null,
@@ -333,14 +333,12 @@ class StockReceiptController extends Controller
 
             DB::commit();
 
-            // Send Notifications
-            if ($lastCreatedReceipt) {
-                try {
-                    $smsService = new \App\Services\StockReceiptSmsService();
-                    $smsService->sendStockReceiptNotification($lastCreatedReceipt, $ownerId);
-                } catch (\Exception $e) {
-                    \Log::error('SMS Notification failed for stock receipt: ' . $e->getMessage());
-                }
+            // Send Batch Notifications
+            try {
+                $smsService = new \App\Services\StockReceiptSmsService();
+                $smsService->sendBatchStockReceiptNotification($receiptNumber, $ownerId);
+            } catch (\Exception $e) {
+                \Log::error('SMS Batch Notification failed for stock receipt: ' . $e->getMessage());
             }
 
             if (request()->ajax()) {

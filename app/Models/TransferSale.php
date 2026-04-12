@@ -18,7 +18,7 @@ class TransferSale extends Model
     ];
 
     protected $casts = [
-        'quantity' => 'integer',
+        'quantity' => 'decimal:4',
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
     ];

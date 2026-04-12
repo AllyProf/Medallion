@@ -138,27 +138,68 @@ class TargetController extends Controller
     {
         $startOfMonth = Carbon::createFromDate($year, $month, 1)->startOfMonth();
         $endOfMonth = Carbon::createFromDate($year, $month, 1)->endOfMonth();
+        $location = session('active_location');
 
         // Actual Bar Sales this month
-        $actualBar = OrderItem::whereHas('order', function($q) use ($ownerId, $startOfMonth, $endOfMonth) {
+        $actualBar = OrderItem::whereHas('order', function($q) use ($ownerId, $startOfMonth, $endOfMonth, $location) {
                 $q->where('user_id', $ownerId)
-                  ->where('status', 'served')
+                  ->where('status', '!=', 'cancelled')
                   ->whereBetween('created_at', [$startOfMonth, $endOfMonth]);
+                
+                if ($location) {
+                    $q->where(function($sq) use ($location) {
+                        $sq->whereExists(function ($ssq) use ($location) {
+                            $ssq->select(\DB::raw(1))
+                               ->from('staff')
+                               ->whereColumn('staff.id', 'orders.waiter_id')
+                               ->where('staff.location_branch', $location);
+                        })->orWhereHas('table', function($ssq) use ($location) {
+                            $ssq->where('location', $location);
+                        });
+                    });
+                }
             })->sum('total_price');
 
         // Actual Food Sales this month
-        $actualFood = KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $startOfMonth, $endOfMonth) {
+        $actualFood = KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $startOfMonth, $endOfMonth, $location) {
                 $q->where('user_id', $ownerId)
-                  ->where('status', 'served')
+                  ->where('status', '!=', 'cancelled')
                   ->whereBetween('created_at', [$startOfMonth, $endOfMonth]);
+                
+                if ($location) {
+                    $q->where(function($sq) use ($location) {
+                        $sq->whereExists(function ($ssq) use ($location) {
+                            $ssq->select(\DB::raw(1))
+                               ->from('staff')
+                               ->whereColumn('staff.id', 'orders.waiter_id')
+                               ->where('staff.location_branch', $location);
+                        })->orWhereHas('table', function($ssq) use ($location) {
+                            $sq->where('location', $location);
+                        });
+                    });
+                }
             })->sum('total_price');
 
         // Staff Daily Performance
         $staffPerformances = [];
-        $staffOrders = BarOrder::where('user_id', $ownerId)
+        $staffOrdersQuery = BarOrder::where('user_id', $ownerId)
             ->whereDate('created_at', $date)
-            ->where('status', 'served')
-            ->select('waiter_id', DB::raw('SUM(total_amount) as total'))
+            ->where('status', '!=', 'cancelled');
+        
+        if ($location) {
+            $staffOrdersQuery->where(function($q) use ($location) {
+                $q->whereExists(function ($sq) use ($location) {
+                    $sq->select(\DB::raw(1))
+                       ->from('staff')
+                       ->whereColumn('staff.id', 'orders.waiter_id')
+                       ->where('staff.location_branch', $location);
+                })->orWhereHas('table', function($sq) use ($location) {
+                    $sq->where('location', $location);
+                });
+            });
+        }
+
+        $staffOrders = $staffOrdersQuery->select('waiter_id', DB::raw('SUM(total_amount) as total'))
             ->groupBy('waiter_id')
             ->get();
 

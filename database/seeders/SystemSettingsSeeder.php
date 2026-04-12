@@ -28,7 +28,7 @@ class SystemSettingsSeeder extends Seeder
         // SMS Settings
         SystemSetting::set('sms_username', 'emcatechn', 'text', 'sms', 'SMS gateway username');
         SystemSetting::set('sms_password', 'Emca@#12', 'text', 'sms', 'SMS gateway password');
-        SystemSetting::set('sms_sender_id', 'MauzoLink', 'text', 'sms', 'SMS sender ID');
+        SystemSetting::set('sms_sender_id', 'MEDALLION', 'text', 'sms', 'SMS sender ID');
 
         // General Settings
         SystemSetting::set('currency', 'TSh', 'text', 'general', 'System currency');

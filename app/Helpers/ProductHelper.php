@@ -13,115 +13,65 @@ class ProductHelper
      */
     public static function generateDisplayName($productName, $variantDescription = '', $variantSpecificName = '')
     {
-        $brands = ["bonite", "sbc", "tcc", "tbl", "sbl", "factory", "tanzania", "distillers", "limited", "ltd", "azam", "company"];
-        $packaging = ["crate", "pieces", "piece", "pcs", "unit", "btl", "bottle", "carton", "ctn", "pkg", "package"];
-        $flavors = [
-            "fanta", "sprite", "krest", "stoney", "orange", "water", "grand malt", "tangawizi", 
-            "aloe", "kilimanjaro", "safari", "serengeti", "mirinda", "pepsi", "coca-cola", 
-            "coke", "embe", "nanasi", "passion", "apple", "mango", "citrus", "tonic", 
-            "soda water", "ginger ale", "red bull", "hennessy", "jack daniel", "whisky", "brandy"
-        ];
-
-        // 1. Extract Parent Product Name from brackets if it exists (e.g. "Coca-Cola")
-        $productTitle = $productName;
-        if (preg_match('/\((.*?)\)/', $productName, $matches)) {
-            $productTitle = $matches[1];
+        $vSpec = trim($variantSpecificName);
+        $mAndPkg = trim($variantDescription);
+        
+        // Extract measurement (e.g. "750ml" from "750ml - Piece")
+        $m = '';
+        if (preg_match('/^(\d+(\.\d+)?\s*(ml|l|g|kg|btl|pcs)?)/i', $mAndPkg, $matches)) {
+            $m = $matches[1];
+        }
+        $cleanM = $m;
+        if (is_numeric($m) && $m > 0) {
+            $cleanM = ($m < 10) ? $m.'L' : $m.'ml';
         }
 
-        // 2. Look for specific Flavor/Identity in variant fields
-        $identity = null;
-        $allText = strtolower(($variantSpecificName ?? '') . ' ' . ($variantDescription ?? ''));
-        foreach ($flavors as $flavor) {
-            if (str_contains($allText, $flavor)) {
-                // If found in variantSpecificName, use that exact string
-                if ($variantSpecificName && str_contains(strtolower($variantSpecificName), $flavor)) {
-                    $identity = $variantSpecificName;
-                } else {
-                    // Otherwise try to find the specific word in variantDescription
-                    $identity = $variantDescription;
-                }
-                break;
-            }
-        }
+        // 1. Determine if the variant name is a true identity (e.g., "Fanta Orange")
+        $strippedV = preg_replace('/\b\d+(\.\d+)?\s*(ml|l|g|kg|pcs|btl)?\b/i', '', $vSpec);
+        $strippedV = preg_replace('/\b(piece|pieces|pcs|crate|carton|box|bottle|btl|unit|pkg|package|ctn)\b/i', '', $strippedV);
+        $strippedV = trim(preg_replace('/[-\s]+/', ' ', $strippedV), ' -');
+        
+        $genericDescriptors = ['dry', 'sweet', 'red', 'white', 'rose', 'light', 'dark', 'extra', 'premium', 'classic', 'original', 'regular', 'special', 'medium', 'semi', 'brut', 'demi', 'sec'];
+        $strippedWords = str_word_count($strippedV);
+        $isGenericSingle = ($strippedWords === 1 && in_array(strtolower($strippedV), $genericDescriptors));
+        
+        // Is usable if it's 2+ words, or a long single word that isn't a generic descriptor
+        $useVariantName = !empty($strippedV) && ($strippedWords >= 2 || (strlen($strippedV) > 5 && !$isGenericSingle));
 
-        // 3. Determine Core (Flavor > Parent > Product Name)
-        $coreTitle = $identity ?: $productTitle;
-
-        // 4. Cleanup Core Title (Remove Brand Prefixes like SBC, Bonite)
-        foreach ($brands as $brand) {
-            $coreTitle = preg_replace('/\b' . preg_quote($brand, '/') . '\b/i', '', $coreTitle);
-        }
-        $coreTitle = trim(preg_replace('/\s+/', ' ', $coreTitle));
-
-        // 5. Process Variant / Size
-        $variantParts = explode('-', $variantDescription);
-        $cleanVariantParts = [];
-        $size = null;
-
-        foreach ($variantParts as $part) {
-            $part = trim($part);
-            $lowerPart = strtolower($part);
-            if ($part === '') continue;
-
-            // Strip packaging metadata
-            $isPkg = false;
-            foreach ($packaging as $pkg) {
-                if (str_contains($lowerPart, $pkg)) { $isPkg = true; break; }
-            }
-            if ($isPkg) continue;
-
-            // Detect Size (Numeric or common drink sizes)
-            $isNumericSize = preg_match('/^(\d+(\.\d+)?\s*(ml|l|g|kg|btl|pcs)?)$/i', $part);
-            $liquidSizeWords = ["large", "small", "medium", "normal", "double", "single"];
-            $isWordSize = in_array($lowerPart, $liquidSizeWords);
-
-            if ($isNumericSize || $isWordSize) {
-                $size = str_replace(' ', '', $part);
-                
-                // If it's purely numeric (no unit yet) and it's a beverage context, append ml/L
-                if (is_numeric($size)) {
-                    if (floatval($size) < 10) {
-                        $size .= 'L';
-                    } else {
-                        $size .= 'ml';
+        if ($useVariantName) {
+            // "Fanta Orange"
+            $productNameBase = $vSpec;
+        } else {
+            // "Dodoma Red (Dry)" OR "Soft Drinks (Bonite)"
+            $productNameBase = $productName;
+            if (preg_match('/^(.+?)\s*\((.+?)\)(.*)$/u', $productNameBase, $nm)) {
+                $beforeBracket = trim($nm[1]);
+                $inBracket     = trim($nm[2]);
+                $afterBracket  = trim($nm[3]);
+                $genericCatWords = ['drink', 'beverage', 'beer', 'wine', 'spirit', 'soda', 'water', 'juice', 'alcohol', 'liquor', 'soft'];
+                foreach ($genericCatWords as $gw) {
+                    if (stripos($beforeBracket, $gw) !== false) {
+                        // Extract "Bonite"
+                        $productNameBase = $inBracket . ($afterBracket ? ' '.$afterBracket : '');
+                        break;
                     }
                 }
-                continue;
-            }
-
-            // Only add to variant description if not already in core title
-            if (stripos($coreTitle, $part) === false && stripos($part, $coreTitle) === false) {
-                $cleanVariantParts[] = $part;
             }
         }
 
-        // 6. Build Final Display Name
-        $displayName = $coreTitle;
+        // Append measurement if not already there (ignoring spaces for comparison)
+        $nmBase = str_replace(' ', '', strtolower($productNameBase));
+        $nmClean = str_replace(' ', '', strtolower($cleanM));
         
-        $variantSuffix = implode(' - ', $cleanVariantParts);
-        if (!empty($variantSuffix) && strcasecmp($displayName, $variantSuffix) !== 0) {
-            $displayName .= ' - ' . $variantSuffix;
+        if ($cleanM && stripos($nmBase, $nmClean) === false) {
+            $productNameBase .= ' (' . $cleanM . ')';
         }
+        
+        // If the original product name was specific context we discarded, append it as a variant?
+        // E.g. "Dodoma Red" vs "Dodoma Red (Dry)". If user specified $isGenericSingle = true, 
+        // they might want "Dodoma Red (Dry)" instead of discarding "Dry".
+        // Luckily, our logic keeps "Dodoma Red (Dry)" intact because it falls into the `else` block!
 
-        if (!empty($size)) {
-            $displayName .= ' (' . $size . ')';
-        }
-
-        // 7. If variantSpecificName is meaningful & wasn't used as core, append it as a qualifier
-        if (!empty($variantSpecificName) && $variantSpecificName !== $coreTitle && $identity === null) {
-            // Don't duplicate if it's already in the display name
-            if (stripos($displayName, $variantSpecificName) === false) {
-                // Insert after core title, before size
-                if (!empty($size)) {
-                    // Rebuild: CoreTitle (VariantName)(Size)
-                    $displayName = $coreTitle . ' (' . $variantSpecificName . ')(' . $size . ')';
-                } else {
-                    $displayName = $coreTitle . ' (' . $variantSpecificName . ')';
-                }
-                return trim($displayName);
-            }
-        }
-
-        return trim($displayName);
+        return trim($productNameBase);
     }
 }

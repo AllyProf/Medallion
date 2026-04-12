@@ -124,7 +124,8 @@
                   data-brand="{{ $brandSlug }}"
                   data-name="{{ $searchName }}"
                   data-item-id="{{ $variant['id'] }}"
-                  data-qty="{{ $qty }}">
+                  data-qty="{{ $qty }}"
+                  data-threshold="{{ $variant['counter_alert_threshold'] }}">
               
                   <div class="tile p-3 h-100 mb-0 shadow-sm border inventory-item-card transition-all" 
                        id="card-{{ $variant['id'] }}"
@@ -166,8 +167,17 @@
                              $u = strtolower($unitLabel);
                              if (in_array($u, ['ml', 'cl', 'l'])) $u = 'btl';
                              $finalUnit = $qty == 1 ? $u : ($u . 's');
+                             
+                             $openStr = '';
+                             if (($variant['open_tots'] ?? 0) > 0) {
+                                 $pName = 'Tot';
+                                 $cat = strtolower($variant['raw_category'] ?? '');
+                                 if (str_contains($cat, 'wine')) $pName = 'Glass';
+                                 elseif (str_contains($cat, 'spirit') || str_contains($cat, 'whiskey') || str_contains($cat, 'vodka') || str_contains($cat, 'gin')) $pName = 'Shot';
+                                 $openStr = ' <span class="text-info ml-1">+ ' . $variant['open_tots'] . ' ' . ($variant['open_tots'] > 1 ? \Illuminate\Support\Str::plural($pName) : $pName) . '</span>';
+                             }
                           @endphp
-                          <strong class="text-{{ $statusColor }} font-weight-bold">{{ number_format($qty) }} {{ $finalUnit }}</strong>
+                          <strong class="text-{{ $statusColor }} font-weight-bold">{{ number_format($qty) }} {{ $finalUnit }}{!! $openStr !!}</strong>
                       </div>
                       {{-- Packages hidden for counter bottles focus --}}
                   </div>
@@ -238,7 +248,8 @@
                           data-category="{{ $catSlug }}" 
                           data-brand="{{ $brandSlug }}"
                           data-name="{{ $searchName }}"
-                          data-qty="{{ $variant['quantity'] }}">
+                          data-qty="{{ $variant['quantity'] }}"
+                          data-threshold="{{ $variant['counter_alert_threshold'] }}">
                           <td><strong class="text-primary">{{ $displayTitle }}</strong><br><small class="text-muted">{{ $variant['brand'] }}</small></td>
                           <td>
                             <strong>{{ $variant['brand'] }}</strong><br>
@@ -250,8 +261,17 @@
                                  $u = strtolower($unitLabel);
                                  if (in_array($u, ['ml', 'cl', 'l'])) $u = 'btl';
                                  $finalUnit = $variant['quantity'] == 1 ? $u : ($u . 's');
+                                 
+                                 $openStr = '';
+                                 if (($variant['open_tots'] ?? 0) > 0) {
+                                     $pName = 'Tot';
+                                     $cat = strtolower($variant['raw_category'] ?? '');
+                                     if (str_contains($cat, 'wine')) $pName = 'Glass';
+                                     elseif (str_contains($cat, 'spirit') || str_contains($cat, 'whiskey') || str_contains($cat, 'vodka') || str_contains($cat, 'gin')) $pName = 'Shot';
+                                     $openStr = '<br><span class="text-info smallest font-weight-bold">+ ' . $variant['open_tots'] . ' ' . ($variant['open_tots'] > 1 ? \Illuminate\Support\Str::plural($pName) : $pName) . ' open</span>';
+                                 }
                               @endphp
-                              <strong class="text-{{ $variant['quantity'] < 10 ? 'warning' : 'dark' }}">{{ number_format($variant['quantity']) }} {{ $finalUnit }}</strong>
+                              <strong class="text-{{ $variant['quantity'] < 10 ? 'warning' : 'dark' }}">{{ number_format($variant['quantity']) }} {{ $finalUnit }}</strong>{!! $openStr !!}
                               {{-- Packages hidden for counter bottles focus --}}
                           </td>
                           <td>
@@ -388,6 +408,19 @@
         color: #fff !important;
     }
     
+    .inventory-item-card.is-out-of-stock .bg-light,
+    .inventory-item-card.is-out-of-stock .bg-white,
+    .inventory-item-card.is-low-stock .bg-light,
+    .inventory-item-card.is-low-stock .bg-white {
+        background-color: transparent !important;
+        border-color: rgba(255,255,255,0.2) !important;
+    }
+    
+    .inventory-item-card.is-low-stock .bg-light,
+    .inventory-item-card.is-low-stock .bg-white {
+        border-color: rgba(0,0,0,0.1) !important;
+    }
+    
     .inventory-item-card.is-out-of-stock .text-muted,
     .inventory-item-card.is-low-stock .text-muted {
         opacity: 0.8 !important;
@@ -432,7 +465,8 @@ var _currentThresholdId = null;
 
 function openThresholdModal(id, name) {
   _currentThresholdId = id;
-  var saved = localStorage.getItem('counter_lowstock_' + id) || 10;
+  const wrapper = $(`.product-card-wrapper[data-item-id="${id}"]`).first();
+  const saved = wrapper.attr('data-threshold') || 10;
   $('#threshold-product-name').text(name);
   $('#threshold-value').val(saved);
   $('#thresholdModal').modal('show');
@@ -498,12 +532,46 @@ $(document).ready(function () {
 
     // 3. THRESHOLD SAVE
     $('#saveThresholdBtn').on('click', function () {
-        var val = parseInt($('#threshold-value').val(), 10);
+        const btn = $(this);
+        const val = parseInt($('#threshold-value').val(), 10);
         if (isNaN(val) || val < 1) return;
         
-        localStorage.setItem('counter_lowstock_' + _currentThresholdId, val);
-        updateProductAlertState(_currentThresholdId, val);
-        $('#thresholdModal').modal('hide');
+        const id = _currentThresholdId;
+        
+        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> SAVING...');
+        
+        $.ajax({
+            url: "{{ route('bar.counter.update-threshold') }}",
+            method: 'POST',
+            data: {
+                _token: "{{ csrf_token() }}",
+                id: id,
+                threshold: val
+            },
+            success: function(response) {
+                if (response.success) {
+                    // Update data attribute
+                    $(`.product-card-wrapper[data-item-id="${id}"]`).attr('data-threshold', response.threshold);
+                    updateProductAlertState(id, response.threshold);
+                    $('#thresholdModal').modal('hide');
+                    $.notify({
+                        title: "Success: ",
+                        message: "Alert threshold updated successfully.",
+                        icon: 'fa fa-check' 
+                    },{
+                        type: "success"
+                    });
+                } else {
+                    alert(response.message || 'Error updating threshold');
+                }
+            },
+            error: function() {
+                alert('Network error. Failed to save threshold.');
+            },
+            complete: function() {
+                btn.prop('disabled', false).text('SAVE ALERT SETTINGS');
+            }
+        });
     });
 
     // Core Highlighting Function
@@ -550,8 +618,9 @@ $(document).ready(function () {
     });
 
     uniqueItemIds.forEach(function(id) {
-        const saved = localStorage.getItem('counter_lowstock_' + id) || 10;
-        updateProductAlertState(id, saved);
+        const wrapper = $(`.product-card-wrapper[data-item-id="${id}"]`).first();
+        const threshold = wrapper.attr('data-threshold') || 10;
+        updateProductAlertState(id, threshold);
     });
 });
 </script>

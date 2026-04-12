@@ -65,10 +65,10 @@ class LoginController extends Controller
                 'is_staff'
             ]);
 
-            // Redirect admins to admin dashboard, customers to regular dashboard
+            // Redirect admins to business dashboard, customers to regular dashboard
             $user = Auth::user();
             if ($user->isAdmin()) {
-                return redirect()->intended(route('admin.dashboard.index'));
+                return redirect()->intended('/dashboard');
             }
 
             // Check if user needs to complete business configuration

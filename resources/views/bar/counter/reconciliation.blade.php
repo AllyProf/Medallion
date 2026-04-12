@@ -643,22 +643,24 @@
                    <div class="row text-center">
                      <div class="col-6 border-right border-bottom pb-2 mb-2 px-1">
                         <small class="text-muted font-weight-bold d-block" style="font-size: 0.6rem;">VAULT CASH (ACTUAL)</small>
-                        <span class="font-weight-bold small">TSh {{ number_format($vaultVal) }}</span>
+                        <span class="font-weight-bold small" style="color: #940000;">TSh {{ number_format($vaultVal) }}</span>
+                        <br><small class="text-muted" style="font-size:0.55rem;">({{ number_format($ledger->opening_cash) }} bf + {{ number_format($totalRevenueToday) }} today)</small>
                      </div>
                      <div class="col-6 border-bottom pb-2 mb-2 px-1">
                         <small class="text-muted font-weight-bold d-block" style="font-size: 0.6rem;">ROLLOVER FLOAT</small>
-                        <span class="text-info font-weight-bold small">TSh {{ number_format($circVal) }}</span>
+                        <span class="font-weight-bold small" style="color: #940000;">TSh {{ number_format($circVal) }}</span>
+                        <br><small class="text-muted" style="font-size:0.55rem;">({{ number_format($ledger->opening_cash) }} bf + {{ number_format($moneyInCirculation) }} circ)</small>
                      </div>
                      <div class="col-6 border-right px-1">
                         <small class="text-muted font-weight-bold d-block" style="font-size: 0.6rem;">GENERATED PROFIT</small>
-                        <span class="text-danger font-weight-bold small" title="Actual pullable sum after expenses">TSh {{ number_format($finPrf) }}</span>
+                        <span class="font-weight-bold small" style="color: #940000;" title="Actual pullable sum after expenses">TSh {{ number_format($finPrf) }}</span>
                         @if($stockProfit > $finPrf)
                            <br><small class="text-muted" style="font-size:0.55rem;">({{ number_format($stockProfit) }} - {{ number_format($stockProfit - $finPrf) }} exp)</small>
                         @endif
                      </div>
                      <div class="col-6 px-1">
                         <small class="text-muted font-weight-bold d-block" style="font-size: 0.6rem;">MONEY IN CIRCULATION</small>
-                        <span class="text-primary font-weight-bold small">TSh {{ number_format($moneyInCirculation) }}</span>
+                        <span class="font-weight-bold small" style="color: #940000;">TSh {{ number_format($moneyInCirculation) }}</span>
                      </div>
                    </div>
                 </div>
@@ -693,19 +695,37 @@
                   @endif
                 </form>
               @else
-                <div class="text-center py-3 bg-light rounded shadow-inner mb-3 position-relative border" style="border-color: #28a745 !important; border-width: 2px !important;">
+                <div class="text-center py-3 bg-light rounded shadow-inner mb-3 position-relative border" style="border-color: #940000 !important; border-width: 2px !important;">
                     <div class="position-absolute" style="top: 10px; right: 10px;">
                         <button class="btn btn-outline-danger btn-sm undo-close-day-btn" data-ledger-id="{{ $ledger->id }}" style="border-radius: 20px; font-size: 0.7rem;">
                             <i class="fa fa-unlock"></i> Reopen
                         </button>
                     </div>
-                    <i class="fa fa-shield text-success fa-2x mb-2"></i>
-                    <h5 class="text-success font-weight-bold">SHIFT CLOSED</h5>
-                    <p class="small text-muted mb-2">Data stored securely.</p>
+                    <i class="fa fa-shield fa-2x mb-2" style="color: #940000;"></i>
+                    <h5 class="font-weight-bold" style="color: #940000;">SHIFT CLOSED</h5>
+                    <p class="small text-muted mb-2">Data stored securely for {{ \Carbon\Carbon::parse($ledger->ledger_date)->format('M d, Y') }}.</p>
                     <div class="row mt-2 border-top pt-2 mx-1 text-dark" style="font-size: 0.75rem;">
-                       <div class="col-4 border-right px-1">Profit:<br><strong class="text-success">{{ number_format($ledger->profit_submitted_to_boss) }}</strong></div>
-                       <div class="col-4 border-right px-1">Vault:<br><strong>{{ number_format($ledger->actual_closing_cash) }}</strong></div>
-                       <div class="col-4 px-1">Float:<br><strong class="text-info">{{ number_format($ledger->carried_forward) }}</strong></div>
+                       <div class="col-4 border-right px-1">
+                          Profit:<br>
+                          <strong style="color: #940000;">{{ number_format($finalProfit) }}</strong>
+                          <br><small class="text-muted" style="font-size:0.55rem;">
+                             @if($stockProfit > $finalProfit)
+                                ({{ number_format($stockProfit) }} gen - {{ number_format($stockProfit - $finalProfit) }} exp)
+                             @else
+                                (net)
+                             @endif
+                          </small>
+                       </div>
+                       <div class="col-4 border-right px-1">
+                          Vault:<br>
+                          <strong style="color: #940000;">{{ number_format($ledger->actual_closing_cash) }}</strong>
+                          <br><small class="text-muted" style="font-size:0.55rem;">({{ number_format($ledger->opening_cash) }} bf + {{ number_format($totalRevenueToday) }} today)</small>
+                       </div>
+                       <div class="col-4 px-1">
+                          Float:<br>
+                          <strong style="color: #940000;">{{ number_format($ledger->carried_forward) }}</strong>
+                          <br><small class="text-muted" style="font-size:0.55rem;">({{ number_format($ledger->opening_cash) }} bf + {{ number_format($moneyInCirculation ?? ($ledger->carried_forward - $ledger->opening_cash)) }} circ)</small>
+                       </div>
                     </div>
                 </div>
               @endif
@@ -1339,7 +1359,7 @@ $(document).ready(function() {
       success: function(response) {
         if (response.success && response.orders.length > 0) {
           let html = '<div class="table-responsive"><table class="table table-sm">';
-          html += '<thead><tr><th>Order #</th><th>Time</th><th>Platform</th><th>Bar Items (Drinks)</th><th>Food Items</th><th>Bar Amount</th><th>Food Amount</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead><tbody>';
+          html += '<thead><tr><th>Order #</th><th>Time</th><th>Platform</th><th>Bar Items (Drinks)</th><th>Bar Amount</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead><tbody>';
           
           response.orders.forEach(function(order) {
             // Calculate bar amount (from items - drinks)
@@ -1393,15 +1413,7 @@ $(document).ready(function() {
               });
             } else { html += '<span class="text-muted">-</span>'; }
             html += '</td>';
-            html += '<td>';
-            if (!isCounterOnlyView && order.kitchen_order_items && order.kitchen_order_items.length > 0) {
-              order.kitchen_order_items.forEach(function(item) {
-                html += '<span class="badge badge-info">' + item.quantity + 'x ' + item.food_item_name + '</span> ';
-              });
-            } else { html += '<span class="text-muted">-</span>'; }
-            html += '</td>';
             html += '<td><strong>TSh ' + barAmount.toLocaleString() + '</strong></td>';
-            html += '<td><strong>TSh ' + foodAmount.toLocaleString() + '</strong></td>';
             html += '<td><strong>TSh ' + barAmount.toLocaleString() + '</strong></td>';
             html += '<td>';
             if (order.order_payments && order.order_payments.length > 0) {

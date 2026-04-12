@@ -75,10 +75,7 @@ class StaffNotificationService
     public function notifyStockTransferStatus($transfer, $status, $ownerId, $reason = null)
     {
         $variant = $transfer->productVariant;
-        $productName = $variant->product->name ?? 'Product';
-        $vName = $variant->name ?? '';
-        
-        $fullName = "{$productName} ({$vName})";
+        $fullName = $variant->display_name ?? ($variant->product->name ?? 'Product');
         $qtyStr = "{$transfer->quantity_requested} " . ($variant->packaging ?? 'packages');
         
         $title = "Stock Transfer Status: " . ucfirst($status);
@@ -122,9 +119,7 @@ class StaffNotificationService
     public function notifyStockTransferRequest($transfer, $ownerId)
     {
         $variant = $transfer->productVariant;
-        $productName = $variant->product->name ?? 'Product';
-        $vName = $variant->name ?? '';
-        $fullName = "{$productName} ({$vName})";
+        $fullName = $variant->display_name ?? ($variant->product->name ?? 'Product');
         $qtyStr = "{$transfer->quantity_requested} " . ($variant->packaging ?? 'packages');
         
         $title = "New Stock Transfer Request";

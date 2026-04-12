@@ -24,6 +24,20 @@ class MasterSheetAnalyticsController extends Controller
         $endDate = Carbon::today();
         $startDate = Carbon::today()->subDays($days - 1);
 
+        // Ensure today's ledger exists for analytics consistency
+        $todayDate = date('Y-m-d');
+        DailyCashLedger::firstOrCreate(
+            ['user_id' => $ownerId, 'ledger_date' => $todayDate],
+            [
+                'opening_cash' => \App\Models\DailyCashLedger::where('user_id', $ownerId)
+                    ->where('ledger_date', '<', $todayDate)
+                    ->where('status', 'closed')
+                    ->orderBy('ledger_date', 'desc')
+                    ->value('carried_forward') ?? 0,
+                'status' => 'open',
+            ]
+        );
+
         // 1. Summary Cards Data
         $summary = DailyCashLedger::where('user_id', $ownerId)
             ->whereBetween('ledger_date', [$startDate, $endDate])
@@ -118,6 +132,14 @@ class MasterSheetAnalyticsController extends Controller
             'status' => 'confirmed',
             'confirmed_at' => now(),
         ]);
+
+        // Notify Accountants that the Manager has received the cash
+        try {
+            $smsService = new \App\Services\HandoverSmsService();
+            $smsService->sendManagerProfitReceiptSms($handover);
+        } catch (\Exception $e) {
+            \Log::error('SMS notification failed for Manager Profit Receipt: ' . $e->getMessage());
+        }
 
         return redirect()->back()->with('success', 'Profit receipt confirmed successfully. Records updated.');
     }

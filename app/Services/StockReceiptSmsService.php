@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\StockReceipt;
 use App\Models\Staff;
 use App\Models\SystemSetting;
+use Carbon\Carbon;
 
 class StockReceiptSmsService
 {
@@ -16,108 +17,80 @@ class StockReceiptSmsService
     }
 
     /**
-     * Send stock receipt notification SMS to stock keeper and counter staff
+     * Send summary notification SMS for a batch of stock receipts
      */
-    public function sendStockReceiptNotification(StockReceipt $stockReceipt, $ownerId)
+    public function sendBatchStockReceiptNotification($receiptNumber, $ownerId)
     {
         // Check if notifications are enabled
         $enableNotifications = SystemSetting::get('enable_stock_receipt_sms_' . $ownerId, true);
         
         if (!$enableNotifications) {
             \Log::info('Stock receipt SMS notifications are disabled', [
-                'receipt_id' => $stockReceipt->id,
+                'receipt_number' => $receiptNumber,
                 'owner_id' => $ownerId
             ]);
             return false;
         }
 
-        $product = $stockReceipt->productVariant->product;
-        $variant = $stockReceipt->productVariant;
-        $supplier = $stockReceipt->supplier;
+        $receipts = StockReceipt::where('user_id', $ownerId)
+            ->where('receipt_number', $receiptNumber)
+            ->with(['productVariant.product', 'supplier', 'receivedBy'])
+            ->get();
 
-        // Build message for stock keeper
-        $stockKeeperMessage = "STOCK RECEIPT NOTIFICATION\n\n";
-        $stockKeeperMessage .= "Receipt #: {$stockReceipt->receipt_number}\n";
-        $stockKeeperMessage .= "Product: {$product->name}\n";
-        $stockKeeperMessage .= "Variant: {$variant->measurement} - {$variant->packaging}\n";
-        $stockKeeperMessage .= "Supplier: {$supplier->company_name}\n";
-        $stockKeeperMessage .= "Quantity: {$stockReceipt->quantity_received} {$variant->packaging}\n";
-        $stockKeeperMessage .= "Total Btls/Pcs: " . number_format($stockReceipt->total_units) . "\n";
-        $stockKeeperMessage .= "Date: " . $stockReceipt->received_date->format('M d, Y') . "\n";
-        $stockKeeperMessage .= "\nStock has been added to warehouse.";
+        if ($receipts->isEmpty()) {
+            return false;
+        }
 
-        // Build message for counter staff
-        $counterMessage = "NEW STOCK AVAILABLE FOR REQUEST\n\n";
-        $counterMessage .= "Product: {$product->name}\n";
-        $counterMessage .= "Variant: {$variant->measurement} - {$variant->packaging}\n";
-        $counterMessage .= "Available: {$stockReceipt->quantity_received} {$variant->packaging}\n";
-        $counterMessage .= "Total Btls/Pcs: " . number_format($stockReceipt->total_units) . "\n";
-        $counterMessage .= "Receipt #: {$stockReceipt->receipt_number}\n";
-        $counterMessage .= "\nYou can now request stock transfer from warehouse to counter.";
+        $supplierName = $supplier->company_name;
+        $receivedByName = ($receivedBy->name ?? 'System');
+        $date = Carbon::parse($receipts->first()->received_date)->format('M d, Y');
+        $itemCount = $receipts->count();
 
         $sentCount = 0;
         $failedCount = 0;
 
-        // Send SMS to Stock Keepers
-        $stockKeepers = Staff::where('user_id', $ownerId)
+        // roles to notify: manager, accountant, counter
+        $rolesToNotify = ['manager', 'accountant', 'counter'];
+
+        $staffToNotify = Staff::where('user_id', $ownerId)
             ->where('is_active', true)
-            ->whereHas('role', function($query) {
-                $query->where(function($q) {
-                    $q->where('name', 'Stock Keeper')
-                      ->orWhere('name', 'Stockkeeper');
-                });
+            ->whereHas('role', function($query) use ($rolesToNotify) {
+                $query->whereIn('slug', $rolesToNotify);
             })
+            ->with('role')
             ->get();
 
-        foreach ($stockKeepers as $stockKeeper) {
-            if ($stockKeeper->phone_number) {
-                $result = $this->smsService->sendSms($stockKeeper->phone_number, $stockKeeperMessage);
+        foreach ($staffToNotify as $staff) {
+            if ($staff->phone_number) {
+                $roleSlug = $staff->role->slug ?? '';
                 
-                if ($result['success']) {
-                    $sentCount++;
-                    \Log::info('Stock receipt SMS sent to stock keeper', [
-                        'stock_keeper_id' => $stockKeeper->id,
-                        'receipt_id' => $stockReceipt->id,
-                        'phone' => $stockKeeper->phone_number
-                    ]);
+                // Build role-specific message
+                if ($roleSlug === 'counter') {
+                    $message = "STOCK ARRIVED - {$supplierName}\n\n";
+                    $message .= "Batch: #{$receiptNumber}\n";
+                    $message .= "Please request your station products from the stock keeper.\n";
+                    $message .= "Date: {$date}";
                 } else {
-                    $failedCount++;
-                    \Log::error('Failed to send stock receipt SMS to stock keeper', [
-                        'stock_keeper_id' => $stockKeeper->id,
-                        'receipt_id' => $stockReceipt->id,
-                        'error' => $result['error'] ?? 'Unknown error'
-                    ]);
+                    // Manager and Accountant
+                    $message = "STOCK RECEIVED - {$supplierName}\n\n";
+                    $message .= "Batch: #{$receiptNumber}\n";
+                    $message .= "Items: {$itemCount} products\n";
+                    $message .= "Received By: {$receivedByName}\n";
+                    $message .= "Date: {$date}\n";
+                    $message .= "\nPlease verify the receipt in the dashboard.";
                 }
-            }
-        }
 
-        // Send SMS to Counter Staff
-        $counterStaff = Staff::where('user_id', $ownerId)
-            ->where('is_active', true)
-            ->whereHas('role', function($query) {
-                $query->where('name', 'Counter')
-                      ->orWhere('name', 'Bar Counter');
-            })
-            ->get();
-
-        foreach ($counterStaff as $counter) {
-            if ($counter->phone_number) {
-                $result = $this->smsService->sendSms($counter->phone_number, $counterMessage);
+                $result = $this->smsService->sendSms($staff->phone_number, $message);
                 
                 if ($result['success']) {
                     $sentCount++;
-                    \Log::info('Stock receipt SMS sent to counter staff', [
-                        'counter_id' => $counter->id,
-                        'receipt_id' => $stockReceipt->id,
-                        'phone' => $counter->phone_number
+                    \Log::info('Stock receipt localized SMS sent', [
+                        'staff_id' => $staff->id,
+                        'role' => $roleSlug,
+                        'receipt_number' => $receiptNumber,
                     ]);
                 } else {
                     $failedCount++;
-                    \Log::error('Failed to send stock receipt SMS to counter staff', [
-                        'counter_id' => $counter->id,
-                        'receipt_id' => $stockReceipt->id,
-                        'error' => $result['error'] ?? 'Unknown error'
-                    ]);
                 }
             }
         }
@@ -128,24 +101,19 @@ class StockReceiptSmsService
             $phones = array_map('trim', explode(',', $additionalPhones));
             foreach ($phones as $phone) {
                 if (!empty($phone)) {
-                    $result = $this->smsService->sendSms($phone, $stockKeeperMessage);
-                    
-                    if ($result['success']) {
-                        $sentCount++;
-                    } else {
-                        $failedCount++;
-                    }
+                    $this->smsService->sendSms($phone, $message);
                 }
             }
         }
 
-        \Log::info('Stock receipt SMS notifications completed', [
-            'receipt_id' => $stockReceipt->id,
-            'sent' => $sentCount,
-            'failed' => $failedCount
-        ]);
-
         return $sentCount > 0;
     }
-}
 
+    /**
+     * Legacy method for single receipt notification (kept for backward compatibility if needed)
+     */
+    public function sendStockReceiptNotification(StockReceipt $stockReceipt, $ownerId)
+    {
+        return $this->sendBatchStockReceiptNotification($stockReceipt->receipt_number, $ownerId);
+    }
+}

@@ -77,7 +77,7 @@
               <th colspan="3" class="text-center">DAILY COLLECTIONS</th>
               <th class="text-right">EXPECTED</th>
               <th class="text-right">EXPENSES</th>
-              <th class="text-right text-success">NET TO SAFE</th>
+              <th class="text-right text-success">NET COLLECTION</th>
               <th rowspan="2" class="text-center d-print-none">ACTIONS</th>
             </tr>
             <tr>
@@ -86,7 +86,7 @@
               <th class="text-right">TOTAL</th>
               <th class="text-right">POS TOTAL</th>
               <th class="text-right">KITCHEN</th>
-              <th class="text-right text-success">FINAL CASH</th>
+              <th class="text-right text-success">FINAL NET</th>
             </tr>
           </thead>
           <tbody>
@@ -106,9 +106,9 @@
                         <span class="status-badge badge-pending">PENDING</span>
                     @endif
                   </td>
-                  <td class="money-column">{{ number_format($h->amount) }}</td>
+                  <td class="money-column">{{ number_format($h->amount - $h->digital_total) }}</td>
                   <td class="money-column">{{ number_format($h->digital_total) }}</td>
-                  <td class="money-column font-weight-bold">{{ number_format($h->amount + $h->digital_total) }}</td>
+                  <td class="money-column font-weight-bold">{{ number_format($h->amount) }}</td>
                   <td class="money-column font-weight-bold bg-light">{{ number_format($h->expected_sales) }}</td>
                   <td class="money-column text-danger">({{ number_format($h->expenses_total) }})</td>
                   <td class="money-column text-success font-weight-bold" style="background: #fdfdfd">
