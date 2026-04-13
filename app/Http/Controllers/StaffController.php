@@ -56,12 +56,18 @@ class StaffController extends Controller
         // Get user's enabled business types
         $businessTypes = $user->enabledBusinessTypes()->get();
 
-        // Get user's roles for dropdown (only roles created by this owner)
-        $roles = $user->ownedRoles()->where('is_active', true)->get();
+        $isAdmin = auth()->check() && auth()->user()->isAdmin();
 
-        if ($roles->count() == 0) {
-            return redirect()->route('business-configuration.edit')
-                ->with('warning', 'Please create at least one role in Business Configuration before registering staff members.');
+        // Get roles: Super Admin sees ALL roles; owners only see their own
+        if ($isAdmin) {
+            $roles = \App\Models\Role::where('is_active', true)->with('user')->get();
+        } else {
+            $roles = $user->ownedRoles()->where('is_active', true)->get();
+
+            if ($roles->count() == 0) {
+                return redirect()->route('business-configuration.edit')
+                    ->with('warning', 'Please create at least one role in Business Configuration before registering staff members.');
+            }
         }
 
         return view('staff.create', compact('roles', 'businessTypes'));
@@ -593,29 +599,35 @@ class StaffController extends Controller
      */
     private function sendStaffCredentialsSms($staff, $password, $pin)
     {
-        $businessName = "MEDALLION RESTAURANT";
-        $roleName = $staff->role ? $staff->role->name : 'N/A';
-        
-        $message = "HABARI! Karibu MEDALLION!\n\n";
-        $message .= "Umeandikishwa kama mfanyakazi wa " . $businessName . ".\n\n";
-        $message .= "TAARIFA ZA AKAUNTI YAKO:\n";
-        $message .= "Jina: " . $staff->full_name . "\n";
-        $message .= "Staff ID: " . $staff->staff_id . "\n";
-        $message .= "Jukumu: " . $roleName . "\n";
-        
-        // Waiters do not get Dashboard Login (Email/Password), only Kiosk PIN
-        if (strpos(strtolower($roleName), 'waiter') !== false) {
+        $roleName = $staff->role ? $staff->role->name : 'Staff';
+        $isWaiter = stripos($roleName, 'waiter') !== false;
+
+        if ($isWaiter) {
+            // Waiters: PIN only — no dashboard access needed
+            $message  = "Welcome to MEDALLION RESTAURANT!\n\n";
+            $message .= "Your staff account has been created.\n\n";
+            $message .= "YOUR ACCOUNT DETAILS:\n";
+            $message .= "Name: " . $staff->full_name . "\n";
+            $message .= "Staff ID: " . $staff->staff_id . "\n";
+            $message .= "Role: " . $roleName . "\n";
             $message .= "Kiosk PIN: " . $pin . "\n\n";
-            $message .= "Tafadhali tumia PIN yako kuingia kwenye POS (Kiosk) kwa ajili ya kuchukua Oda.\n\n";
+            $message .= "Use your PIN to log in at the POS Kiosk to take orders.\n\n";
+            $message .= "Thank you!";
         } else {
+            // All other staff: Full credentials (email + password) — no PIN needed
+            $message  = "Welcome to MEDALLION RESTAURANT!\n\n";
+            $message .= "Your staff account has been created.\n\n";
+            $message .= "YOUR ACCOUNT DETAILS:\n";
+            $message .= "Name: " . $staff->full_name . "\n";
+            $message .= "Staff ID: " . $staff->staff_id . "\n";
+            $message .= "Role: " . $roleName . "\n";
             $message .= "Email: " . $staff->email . "\n";
-            $message .= "Password: " . $password . "\n";
-            $message .= "Kiosk PIN: " . $pin . "\n\n";
-            $message .= "Tafadhali login kwa kutumia credentials hapo juu.\n\n";
+            $message .= "Password: " . $password . "\n\n";
+            $message .= "Please log in using the credentials above.\n";
+            $message .= "For security, you will be required to change your password on first login.\n\n";
+            $message .= "Thank you!";
         }
 
-        $message .= "Asante!";
-        
         $this->smsService->sendSms($staff->phone_number, $message);
     }
 }
