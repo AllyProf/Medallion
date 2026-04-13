@@ -58,10 +58,15 @@ class MenuService
             $commonMenuIds->push($commonMenu->id);
         }
 
-        // Role detection for exceptions
+        // Standardized Role detection
         $roleName = strtolower(trim($staffRole->name ?? ''));
         $roleSlug = strtolower(trim($staffRole->slug ?? ''));
-        if (in_array($roleName, ['super admin', 'super administrator']) || in_array($roleSlug, ['super-admin', 'superadmin'])) {
+        
+        $isSuperAdmin = !empty($staffRole->is_super_admin_virtual) || 
+                       in_array($roleName, ['super admin', 'super administrator']) || 
+                       in_array($roleSlug, ['super-admin', 'superadmin']);
+        
+        if ($isSuperAdmin) {
             $staffRole->is_super_admin_virtual = true;
         }
 
@@ -108,10 +113,23 @@ class MenuService
                             return false;
                         }
 
-                        // For Manager role, hide specific business menus
-                        $isManager = in_array(strtolower($staffRole->name ?? ''), ['manager', 'general manager', 'administrator']) || in_array(strtolower($staffRole->slug ?? ''), ['manager', 'admin']);
-                        if ($isManager && in_array($menu->slug, ['restaurant-management', 'manager-master-sheet-root'])) {
-                            return false;
+                        // Unified filtering for Manager and Super Admin roles
+                        $isManager = in_array(strtolower($staffRole->name ?? ''), ['manager', 'general manager', 'administrator']) || 
+                                     in_array(strtolower($staffRole->slug ?? ''), ['manager', 'admin']) ||
+                                     !empty($staffRole->is_super_admin_virtual);
+
+                        if ($isManager) {
+                            $hiddenSlugs = [
+                                'restaurant-management', 
+                                'manager-master-sheet-root',
+                                'bar-sales-orders',
+                                'bar-ops-settings',
+                                'targets',
+                                'hr'
+                            ];
+                            if (in_array($menu->slug, $hiddenSlugs)) {
+                                return false;
+                            }
                         }
 
                         return true;
@@ -246,6 +264,12 @@ class MenuService
             ->orderBy('sort_order')
             ->get()
             ->map(function($menu) use ($staffRole) {
+                if ($menu->slug === 'chef-reconciliation') {
+                    $menu->name = 'Food Reconciliation';
+                    // Point to the accountant-specific route as requested
+                    $menu->route = 'accountant.food.reconciliation';
+                    $menu->full_url = route('accountant.food.reconciliation');
+                }
                 $menu->children = $this->getCommonMenuChildrenForStaff($menu, $staffRole);
                 return $menu;
             })
@@ -255,7 +279,7 @@ class MenuService
                     return true;
                 }
 
-                // Super Admin role: show all manager-relevant common menus
+                // Super Admin role: show only necessary manager-relevant common menus
                 if ($this->isSuperAdminRole($staffRole)) {
                     // Hide generic/non-operational menus not relevant to admin daily operations
                     $adminHiddenSlugs = [
@@ -265,8 +289,12 @@ class MenuService
                         'settings',
                         'restaurant-management',
                         'daily-master-sheet',
-                        'chef-reconciliation', // Redundant for Super Admin
-                        'bar-reconciliation',  // Redundant for Super Admin
+                        'bar-reconciliation',        // Redundant for Super Admin
+                        'bar-sales-orders',           // Hide root Sales & Orders
+                        'manager-master-sheet-root',  // Hide root Master Sheet (integrated in Reconciliation)
+                        'bar-ops-settings',           // Hide root Operations & Settings
+                        'targets',                    // Hide root Sales Targets
+                        'hr',                         // Hide Human Resources per request
                     ];
                     if (in_array($menu->slug, $adminHiddenSlugs)) return false;
                     return true;
@@ -298,9 +326,10 @@ class MenuService
                     return false;
                 }
                 
-                // Show Chef Reconciliation only for Chef
+                // Show Food Reconciliation for Chef, Accountant, and Manager/Admin
                 if ($menu->slug === 'chef-reconciliation') {
-                    return $isChef;
+                    $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin', 'super-admin']);
+                    return $isChef || $isAccountant || $isManager;
                 }
                 
                 // Managers always see Stock Audit
@@ -352,56 +381,56 @@ class MenuService
                     $child->name = 'Bar Master History';
                 }
                 return $child;
-            })
-            ->filter(function($child) use ($staffRole, $parentMenu) {
-                // Role detection for child filtering
-                $roleName = strtolower($staffRole->name ?? '');
-                $roleSlug = strtolower($staffRole->slug ?? '');
-                $isAccountant = in_array($roleName, ['accountant', 'finance manager', 'finance']) || in_array($roleSlug, ['accountant']);
-                $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']);
+            });
+            
+        // Role detection for child filtering
+        $roleName = strtolower($staffRole->name ?? '');
+        $roleSlug = strtolower($staffRole->slug ?? '');
+        $isAccountant = in_array($roleName, ['accountant', 'finance manager', 'finance']) || in_array($roleSlug, ['accountant']);
+        $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin', 'super-admin', 'general-manager']);
+        $isSuperAdmin = !empty($staffRole->is_super_admin_virtual) || $roleSlug === 'super-admin';
 
-                // Super Admin virtual role: apply manager-level filtering
-                if (!empty($staffRole->is_super_admin_virtual)) {
-                    // Hide Verify Reconciliations and Daily Master Sheet (same as manager)
-                    if (in_array(strtolower($child->name), ['verify reconciliations', 'verify reconciliation', 'daily master sheet']) ||
-                        in_array($child->slug, ['verify-reconciliations', 'verify-reconciliation', 'daily-master-sheet'])) {
-                        return false;
-                    }
-                    return true;
-                }
+        $children = $children->filter(function($child) use ($staffRole, $parentMenu, $isAccountant, $isManager, $isSuperAdmin) {
+            // Hide 'Stock Levels' for administrative roles as requested
+            if (($isManager || $isSuperAdmin) && $child->slug === 'bar-stock-levels') {
+                return false;
+            }
 
-                // HIDE redundant master sheet links for accountants
-                if ($isAccountant && in_array($child->slug, ['daily-master-sheet', 'daily-master-sheet-history'])) {
+            // Super Admin virtual role: apply manager-level filtering
+            if ($isSuperAdmin) {
+                // Hide redundant items for Super Admin (keep only requested ones)
+                if (in_array($child->slug, ['daily-master-sheet', 'verify-reconciliations', 'verify-reconciliation']) ||
+                    in_array(strtolower($child->name), ['daily master sheet', 'verify reconciliations', 'verify reconciliation'])) {
                     return false;
                 }
+                return true;
+            }
 
-                // Hide Verify Reconciliations and Daily Master Sheet for Manager
-                if ($isManager && (
-                    strtolower($child->name) === 'verify reconciliations' || 
-                    strtolower($child->name) === 'verify reconciliation' || 
-                    strtolower($child->name) === 'daily master sheet' ||
-                    $child->slug === 'verify-reconciliations' || 
-                    $child->slug === 'verify-reconciliation' ||
-                    $child->slug === 'daily-master-sheet'
-                )) {
-                    return false;
-                }
+            // HIDE redundant master sheet links for accountants
+            if ($isAccountant && in_array($child->slug, ['daily-master-sheet', 'daily-master-sheet-history'])) {
+                return false;
+            }
 
-                return $this->canAccessMenuForStaff($staffRole, $child);
-            })
+            // Hide Verify Reconciliations and Daily Master Sheet for Manager
+            if ($isManager && (
+                strtolower($child->name) === 'verify reconciliations' || 
+                strtolower($child->name) === 'verify reconciliation' || 
+                strtolower($child->name) === 'daily master sheet' ||
+                $child->slug === 'verify-reconciliations' || 
+                $child->slug === 'verify-reconciliation' ||
+                $child->slug === 'daily-master-sheet'
+            )) {
+                return false;
+            }
 
-            ->values();
+            return $this->canAccessMenuForStaff($staffRole, $child);
+        })->values();
             
         // Inject Food-related items for Accountants/Managers under the accountant-parent menu
-        $roleName = strtolower(trim($staffRole->name ?? ''));
-        $roleSlug = strtolower(trim($staffRole->slug ?? ''));
-        $isAccountantOrAdmin = in_array($roleName, ['accountant', 'manager', 'admin', 'finance', 'account', 'general manager', 'administrator']) || 
-                               in_array($roleSlug, ['accountant', 'manager', 'admin', 'finance', 'account', 'general-manager', 'super-admin']);
-        
-        if ($isAccountantOrAdmin && $parentMenu->slug === 'accountant-parent') {
+        if (($isManager || $isAccountant || $isSuperAdmin) && $parentMenu->slug === 'accountant-parent') {
             $foodHistoryChild = (object)[
                 'id' => 'mock_food_history_child',
-                'name' => 'Kitchen Master History',
+                'name' => 'Kitchen Master history',
                 'slug' => 'food-master-history',
                 'icon' => 'fa-history',
                 'route' => 'accountant.food-master-sheet.history',
@@ -412,8 +441,8 @@ class MenuService
             ];
             $children->push($foodHistoryChild);
             
-            $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin', 'general-manager', 'super-admin']);
-            if ($isManager) {
+            // Inject Receive Profits for Managers/Accountants and Super Admins
+            if ($isManager || $isAccountant || $isSuperAdmin) {
                 $receiveProfitsChild = (object)[
                     'id' => 'mock_receive_profits_child',
                     'name' => 'Receive Profits',
@@ -445,8 +474,9 @@ class MenuService
 
         // Filter by permissions - but allow children without routes if staff has related permissions
         return $children->filter(function($child) use ($staffRole) {
-            // Hide 'Stock Levels' as requested
-            if ($child->slug === 'bar-stock-levels') {
+            // Hide 'Stock Levels' for administrative roles
+            $isAdmin = !empty($staffRole->is_super_admin_virtual) || in_array(strtolower($staffRole->slug ?? ''), ['admin', 'super-admin', 'manager']);
+            if ($isAdmin && $child->slug === 'bar-stock-levels') {
                 return false;
             }
 

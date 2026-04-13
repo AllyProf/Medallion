@@ -56,7 +56,7 @@ class StaffController extends Controller
         // Get user's enabled business types
         $businessTypes = $user->enabledBusinessTypes()->get();
 
-        $isAdmin = auth()->check() && auth()->user()->isAdmin();
+        $isAdmin = $this->isSuperAdminRole();
 
         // Get roles: Super Admin sees ALL distinct roles; owners only see their own
         if ($isAdmin) {
@@ -244,7 +244,7 @@ class StaffController extends Controller
         
         // For staff members or Super Admin, skip plan check
         // Only check plan for regular users (owners) who are not platform admins
-        $isAdmin = auth()->check() && auth()->user()->isAdmin();
+        $isAdmin = $this->isSuperAdminRole();
         if (!session('is_staff') && !$isAdmin) {
             // Check if user's plan allows staff registration
             $plan = $user->currentPlan();
@@ -255,7 +255,7 @@ class StaffController extends Controller
         }
 
         // Super Admin sees ALL staff across ALL locations
-        if (auth()->check() && auth()->user()->isAdmin()) {
+        if ($this->isSuperAdminRole()) {
             $staff = Staff::with(['role', 'businessType'])->orderBy('created_at', 'desc')->get();
         } else {
             $staffQuery = Staff::where('user_id', $ownerId)
@@ -419,7 +419,7 @@ class StaffController extends Controller
         
         $ownerId = $this->getOwnerId();
         $staffQuery = Staff::query()->with(['role', 'businessType']);
-        if (!(auth()->check() && auth()->user()->isAdmin())) {
+        if (!$this->isSuperAdminRole()) {
             $staffQuery->where('user_id', $ownerId);
         }
         $staff = $staffQuery->findOrFail($id);
@@ -446,7 +446,7 @@ class StaffController extends Controller
         
         $ownerId = $this->getOwnerId();
         $staffQuery = Staff::where('user_id', $ownerId);
-        if (auth()->check() && auth()->user()->isAdmin()) {
+        if ($this->isSuperAdminRole()) {
             $staffQuery = Staff::query();
         }
         $staff = $staffQuery->findOrFail($id);
@@ -455,7 +455,7 @@ class StaffController extends Controller
         $businessTypes = $user->enabledBusinessTypes()->get();
         
         // Get user's roles for dropdown
-        if (auth()->check() && auth()->user()->isAdmin()) {
+        if ($this->isSuperAdminRole()) {
             $roles = \App\Models\Role::where('is_active', true)->get()->unique(function ($item) {
                 return strtolower(trim($item->name));
             });
@@ -485,7 +485,7 @@ class StaffController extends Controller
         
         $ownerId = $this->getOwnerId();
         $staffQuery = Staff::where('user_id', $ownerId);
-        if (auth()->check() && auth()->user()->isAdmin()) {
+        if ($this->isSuperAdminRole()) {
             $staffQuery = Staff::query();
         }
         $staff = $staffQuery->findOrFail($id);
@@ -588,7 +588,7 @@ class StaffController extends Controller
         
         $ownerId = $this->getOwnerId();
         $staffQuery = Staff::where('user_id', $ownerId);
-        if (auth()->check() && auth()->user()->isAdmin()) {
+        if ($this->isSuperAdminRole()) {
             $staffQuery = Staff::query();
         }
         $staff = $staffQuery->findOrFail($id);

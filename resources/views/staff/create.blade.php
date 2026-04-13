@@ -142,7 +142,7 @@
               <label>Staff Role <span class="text-danger">*</span></label>
               <select class="form-control @error('role_id') is-invalid @enderror" name="role_id" id="role_id" required>
                 <option value="">Select Role</option>
-                @if(auth()->check() && auth()->user()->isAdmin())
+                @if(isset($isAdmin) && $isAdmin)
                   @php
                     $saRole = \App\Models\Role::where('name', 'Super Admin')->orWhere('slug', 'super-admin')->first();
                   @endphp
@@ -153,7 +153,7 @@
                 @endif
                 @if($roles->count() > 0)
                   @foreach($roles as $role)
-                    @if(auth()->check() && auth()->user()->isAdmin() && (strtolower($role->name) == 'super admin' || $role->slug == 'super-admin'))
+                    @if(isset($isAdmin) && $isAdmin && (strtolower($role->name) == 'super admin' || $role->slug == 'super-admin'))
                       @continue
                     @endif
                     <option value="{{ $role->id }}" {{ old('role_id') == $role->id ? 'selected' : '' }}>
@@ -166,7 +166,7 @@
                 @else
                   <option value="" disabled>No roles available. Please create roles in Business Configuration first.</option>
                 @endif
-                @if(auth()->check() && auth()->user()->isAdmin())
+                @if(isset($isAdmin) && $isAdmin)
                   </optgroup>
                 @endif
               </select>

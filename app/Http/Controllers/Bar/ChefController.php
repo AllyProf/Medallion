@@ -936,6 +936,7 @@ class ChefController extends Controller
 
         $ownerId = $this->getOwnerId();
         $date = $request->get('date', now()->format('Y-m-d'));
+        $currentStaff = $this->getCurrentStaff();
 
         // Check if current user is accountant (should see all orders across all owners)
         $isSuperAdmin = $this->isSuperAdminRole();

@@ -214,8 +214,14 @@
         <div class="row">
           <div class="col-md-4 mb-3">
             <a href="{{ route('accountant.reconciliations') }}" class="btn btn-outline-primary btn-block p-3">
-              <i class="fa fa-exchange fa-2x mb-2"></i><br>
-              RECONCILIATIONS
+              <i class="fa fa-beer fa-2x mb-2"></i><br>
+              BAR RECONCILIATIONS
+            </a>
+          </div>
+          <div class="col-md-4 mb-3">
+            <a href="{{ route('accountant.food.reconciliation') }}" class="btn btn-warning btn-block p-3">
+              <i class="fa fa-cutlery fa-2x mb-2 d-block"></i>
+              FOOD RECONCILIATIONS
             </a>
           </div>
           <div class="col-md-4 mb-3">
@@ -224,16 +230,10 @@
               ISSUE PETTY CASH
             </a>
           </div>
-          <div class="col-md-4 mb-3">
-            <a href="{{ route('reports.stock-receipts') }}" class="btn btn-outline-dark btn-block p-3">
-              <i class="fa fa-file-text-o fa-2x mb-2"></i><br>
-              REPORTS (RECEIPTS)
-            </a>
-          </div>
         </div>
         <div class="row">
           <div class="col-md-4 mb-3">
-            <a href="{{ route('bar.counter.counter-stock') }}" class="btn btn-outline-info btn-block p-3">
+            <a href="{{ route('bar.counter.counter-stock') }}" class="btn btn-outline-primary btn-block p-3" style="border-color: #6c757d; color: #6c757d;">
               <i class="fa fa-glass fa-2x mb-2"></i><br>
               COUNTER STOCK
             </a>
@@ -244,6 +244,14 @@
               WAREHOUSE STOCK
             </a>
           </div>
+          <div class="col-md-4 mb-3">
+            <a href="{{ route('reports.stock-receipts') }}" class="btn btn-outline-dark btn-block p-3">
+              <i class="fa fa-file-text-o fa-2x mb-2"></i><br>
+              STOCK RECEIPTS
+            </a>
+          </div>
+        </div>
+        <div class="row">
           <div class="col-md-4 mb-3">
             <a href="{{ route('reports.stock-transfers') }}" class="btn btn-outline-secondary btn-block p-3">
               <i class="fa fa-truck fa-2x mb-2"></i><br>
