@@ -97,7 +97,7 @@ class CounterReconciliationController extends Controller
                 },
             ])
             ->get()
-            ->map(function ($waiter) use ($ownerId, $date, $isAccountant, $location, $bar_shift) {
+            ->map(function ($waiter) use ($ownerId, $date, $isAccountant, $isSuperAdmin, $location, $bar_shift) {
                 $ordersQuery = BarOrder::query()
                     ->where('waiter_id', $waiter->id)
                     ->when($location && $location !== 'all', function ($q) use ($location) {
