@@ -143,11 +143,19 @@
               <select class="form-control @error('role_id') is-invalid @enderror" name="role_id" id="role_id" required>
                 <option value="">Select Role</option>
                 @if(auth()->check() && auth()->user()->isAdmin())
-                  <option value="super_admin" {{ old('role_id') == 'super_admin' ? 'selected' : '' }}>⭐ Super Admin</option>
+                  @php
+                    $saRole = \App\Models\Role::where('name', 'Super Admin')->orWhere('slug', 'super-admin')->first();
+                  @endphp
+                  @if($saRole)
+                    <option value="{{ $saRole->id }}" {{ old('role_id') == $saRole->id ? 'selected' : '' }}>⭐ Super Admin</option>
+                  @endif
                   <optgroup label="── All Owner Roles ──">
                 @endif
                 @if($roles->count() > 0)
                   @foreach($roles as $role)
+                    @if(auth()->check() && auth()->user()->isAdmin() && (strtolower($role->name) == 'super admin' || $role->slug == 'super-admin'))
+                      @continue
+                    @endif
                     <option value="{{ $role->id }}" {{ old('role_id') == $role->id ? 'selected' : '' }}>
                       {{ $role->name }}
                       @if($role->description)
