@@ -60,7 +60,7 @@ class StaffController extends Controller
 
         // Get roles: Super Admin sees ALL roles; owners only see their own
         if ($isAdmin) {
-            $roles = \App\Models\Role::where('is_active', true)->with('user')->get();
+            $roles = \App\Models\Role::where('is_active', true)->with('owner')->get();
         } else {
             $roles = $user->ownedRoles()->where('is_active', true)->get();
 
