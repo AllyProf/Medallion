@@ -72,7 +72,7 @@ class StaffController extends Controller
             }
         }
 
-        return view('staff.create', compact('roles', 'businessTypes'));
+        return view('staff.create', compact('roles', 'businessTypes', 'isAdmin'));
     }
 
     /**
