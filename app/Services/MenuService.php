@@ -23,7 +23,7 @@ class MenuService
      */
     protected const COMMON_SLUGS = [
         'dashboard', 'sales', 'products', 'customers', 'staff', 
-        'hr', 'reports', 'marketing', 'settings', 'accountant-parent', 'stock-audit', 'counter-reconciliation', 'chef-reconciliation', 'targets', 'common-purchase-requests', 'bar-food-menu'
+        'hr', 'reports', 'marketing', 'settings', 'accountant-parent', 'stock-audit', 'counter-reconciliation', 'chef-reconciliation', 'targets', 'common-purchase-requests', 'bar-food-menu', 'bar-stock-mgmt'
     ];
 
     /**
@@ -59,8 +59,12 @@ class MenuService
         }
 
         // Role detection for exceptions
-        $roleName = strtolower($staffRole->name ?? '');
-        $roleSlug = strtolower($staffRole->slug ?? '');
+        $roleName = strtolower(trim($staffRole->name ?? ''));
+        $roleSlug = strtolower(trim($staffRole->slug ?? ''));
+        if (in_array($roleName, ['super admin', 'super administrator']) || in_array($roleSlug, ['super-admin', 'superadmin'])) {
+            $staffRole->is_super_admin_virtual = true;
+        }
+
         $isChef = in_array($roleName, ['chef', 'head chef', 'cook']) || $roleSlug === 'chef';
         $isCounter = in_array($roleName, ['counter', 'bar counter', 'waiter', 'counter supervisor']) || in_array($roleSlug, ['counter', 'waiter']);
         
@@ -168,13 +172,20 @@ class MenuService
             // Business-specific menus come after, grouped by business_type_id
             return 1000 + ($menu->business_type_id ?? 0) * 100 + ($menu->sort_order ?? 0);
         })->values();
+        
+        // De-duplicate menus by slug to prevent repeat items from multiple business types
+        // but keep placeholders (they have unique dynamic IDs)
+        $finalMenus = $finalMenus->unique(function($menu) {
+            return $menu->slug ?? $menu->id;
+        })->values();
 
         // Inject Food Reconciliation right after Counter Reconciliation for Accountants/Managers
         $roleName = strtolower($staffRole->name ?? '');
         $roleSlug = strtolower($staffRole->slug ?? '');
-        $isAccountantOrAdmin = in_array($roleName, ['accountant', 'manager', 'admin', 'finance', 'account']);
+        $isAccountantOrAdmin = in_array($roleName, ['accountant', 'manager', 'admin', 'finance', 'account', 'general manager', 'administrator']) || 
+                               in_array($roleSlug, ['accountant', 'manager', 'admin', 'finance', 'account', 'general-manager', 'super-admin']);
         
-        if ($isAccountantOrAdmin) {
+        if ($this->isSuperAdminRole($staffRole)) {
             $newFinalMenus = collect();
             foreach ($finalMenus as $menu) {
                 $newFinalMenus->push($menu);
@@ -244,8 +255,8 @@ class MenuService
                     return true;
                 }
 
-                // Super Admin virtual role: show all manager-relevant common menus
-                if (!empty($staffRole->is_super_admin_virtual)) {
+                // Super Admin role: show all manager-relevant common menus
+                if ($this->isSuperAdminRole($staffRole)) {
                     // Hide generic/non-operational menus not relevant to admin daily operations
                     $adminHiddenSlugs = [
                         'sales',
@@ -254,15 +265,17 @@ class MenuService
                         'settings',
                         'restaurant-management',
                         'daily-master-sheet',
+                        'chef-reconciliation', // Redundant for Super Admin
+                        'bar-reconciliation',  // Redundant for Super Admin
                     ];
                     if (in_array($menu->slug, $adminHiddenSlugs)) return false;
                     return true;
                 }
 
                 
-                // Show Counter Reconciliation for Counter and Accountant
+                // Show Counter Reconciliation for Counter, Accountant and Manager
                 if ($menu->slug === 'counter-reconciliation') {
-                    return $isCounter || $isAccountant;
+                    return $isCounter || $isAccountant || in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin']);
                 }
                 
                 // Hide Financial Reconciliation for Counter staff (they use Counter Reconciliation)
@@ -380,8 +393,10 @@ class MenuService
             ->values();
             
         // Inject Food-related items for Accountants/Managers under the accountant-parent menu
-        $roleName = strtolower($staffRole->name ?? '');
-        $isAccountantOrAdmin = in_array($roleName, ['accountant', 'manager', 'admin', 'finance', 'account']);
+        $roleName = strtolower(trim($staffRole->name ?? ''));
+        $roleSlug = strtolower(trim($staffRole->slug ?? ''));
+        $isAccountantOrAdmin = in_array($roleName, ['accountant', 'manager', 'admin', 'finance', 'account', 'general manager', 'administrator']) || 
+                               in_array($roleSlug, ['accountant', 'manager', 'admin', 'finance', 'account', 'general-manager', 'super-admin']);
         
         if ($isAccountantOrAdmin && $parentMenu->slug === 'accountant-parent') {
             $foodHistoryChild = (object)[
@@ -397,7 +412,7 @@ class MenuService
             ];
             $children->push($foodHistoryChild);
             
-            $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array(strtolower($staffRole->slug ?? ''), ['manager', 'admin']);
+            $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin', 'general-manager', 'super-admin']);
             if ($isManager) {
                 $receiveProfitsChild = (object)[
                     'id' => 'mock_receive_profits_child',
@@ -435,8 +450,11 @@ class MenuService
                 return false;
             }
 
-            // Super Admin virtual role: show all children
-            if (!empty($staffRole->is_super_admin_virtual)) {
+            // Super Admin role: show all children except redundant 'bar-reconciliation'
+            if ($this->isSuperAdminRole($staffRole)) {
+                if ($child->slug === 'bar-reconciliation') {
+                    return false;
+                }
                 return true;
             }
 
@@ -542,7 +560,8 @@ class MenuService
                 'accountant.daily-master-sheet.history',
                 'accountant.daily-master-sheet',
                 'purchase-requests.index',
-                'accountant.food.reconciliation'
+                'accountant.food.reconciliation',
+                'accountant.staff-shortages'
             ]
         ];
 
@@ -1280,6 +1299,31 @@ class MenuService
                 ' . e($menu->name) . '
             </div>
         </li>';
+    }
+    /**
+     * Check if a staff role is a Super Admin
+     */
+    private function isSuperAdminRole($staffRole)
+    {
+        // 1. Check staff role if provided
+        if ($staffRole) {
+            $roleName = strtolower(trim($staffRole->name ?? ''));
+            $roleSlug = strtolower(trim($staffRole->slug ?? ''));
+            
+            if (in_array($roleName, ['super admin', 'super administrator', 'super_admin']) || 
+                in_array($roleSlug, ['super-admin', 'superadmin', 'super_admin']) ||
+                !empty($staffRole->is_super_admin_virtual)) {
+                return true;
+            }
+        }
+
+        // 2. Fallback to authenticated root user
+        $user = auth()->user();
+        if (!$user) return false;
+
+        return $user->role === 'admin' || 
+               $user->role === 'super_admin' || 
+               (method_exists($user, 'hasRole') && ($user->hasRole('super-admin') || $user->hasRole('super_admin')));
     }
 }
 

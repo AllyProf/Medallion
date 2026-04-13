@@ -24,12 +24,12 @@ class CounterReconciliationController extends Controller
      */
     public function reconciliation(Request $request)
     {
-        // Allow counter staff, accountants, and anyone with bar_orders view permission
         $currentStaff = $this->getCurrentStaff();
-        $roleSlug = strtolower(trim($currentStaff->role->slug ?? ''));
+        $isSuperAdmin = $this->isSuperAdminRole();
+        $roleSlug = $currentStaff ? strtolower(trim($currentStaff->role->slug ?? '')) : '';
         $isCounterOrAccountant = in_array($roleSlug, ['counter', 'accountant']);
 
-        if (! $isCounterOrAccountant && ! $this->hasPermission('bar_orders', 'view')) {
+        if (!$isSuperAdmin && !$isCounterOrAccountant && !$this->hasPermission('bar_orders', 'view')) {
             abort(403, 'You do not have permission to view reconciliations.');
         }
 
@@ -72,14 +72,16 @@ class CounterReconciliationController extends Controller
                 $q->where('location_branch', $location);
             });
 
-        // If not accountant, filter by owner
-        if (! $isAccountant) {
+        // If not accountant and not super admin, filter by owner
+        if (!$isAccountant && !$isSuperAdmin) {
             $waitersQuery->where('user_id', $ownerId);
         }
 
-        $bar_shift = \App\Models\BarShift::where('user_id', $ownerId)
+        $bar_shift = \App\Models\BarShift::when(!$isSuperAdmin, function($q) use ($ownerId) {
+                return $q->where('user_id', $ownerId);
+            })
             ->where('status', 'open')
-            ->when($currentStaff && ! $isAccountant, function ($q) use ($currentStaff) {
+            ->when($currentStaff && !$isAccountant && !$isSuperAdmin, function ($q) use ($currentStaff) {
                 $q->where('staff_id', $currentStaff->id);
             })
             ->first();
@@ -105,7 +107,7 @@ class CounterReconciliationController extends Controller
                     });
 
                 // If not accountant, filter by owner
-                if (! $isAccountant) {
+                if (!$isAccountant && !$isSuperAdmin) {
                     $ordersQuery->where('user_id', $ownerId);
                 }
 
@@ -348,12 +350,14 @@ class CounterReconciliationController extends Controller
             $handoverQuery = FinancialHandover::where('user_id', $ownerId)
                 ->where('handover_type', 'staff_to_accountant');
 
-            if ($isAccountant) {
+            if ($isAccountant || $isSuperAdmin) {
                 // Accountant sees handovers where they are recipients for this date
                 $handoverQuery->whereDate('handover_date', $date);
             } else {
                 // Staff sees their own handovers
-                $handoverQuery->where('accountant_id', $currentStaff->id);
+                if ($currentStaff) {
+                    $handoverQuery->where('accountant_id', $currentStaff->id);
+                }
 
                 if ($handoverShiftId) {
                     // If looking at an active shift, prioritize that shift's handover
@@ -555,7 +559,7 @@ class CounterReconciliationController extends Controller
         $currentStaff = $this->getCurrentStaff();
         $isAccountant = $currentStaff && strtolower($currentStaff->role->slug ?? '') === 'accountant';
 
-        if (! $isAccountant && ! $this->hasPermission('bar_orders', 'edit')) {
+        if (!$isAccountant && !$isSuperAdmin && !$this->hasPermission('bar_orders', 'edit')) {
             return response()->json(['error' => 'You do not have permission to verify reconciliations.'], 403);
         }
 
@@ -595,7 +599,7 @@ class CounterReconciliationController extends Controller
         $currentStaff = $this->getCurrentStaff();
         $isAccountant = $currentStaff && strtolower($currentStaff->role->slug ?? '') === 'accountant';
 
-        if (! $isAccountant && ! $this->hasPermission('bar_orders', 'edit')) {
+        if (!$isAccountant && !$isSuperAdmin && !$this->hasPermission('bar_orders', 'edit')) {
             return response()->json(['error' => 'You do not have permission to mark orders as paid.'], 403);
         }
 
@@ -613,7 +617,7 @@ class CounterReconciliationController extends Controller
 
         // Verify waiter belongs to owner (unless accountant)
         $waiterQuery = Staff::where('id', $validated['waiter_id']);
-        if (! $isAccountant) {
+        if (!$isAccountant && !$isSuperAdmin) {
             $waiterQuery->where('user_id', $ownerId);
         }
         $waiter = $waiterQuery->first();
@@ -635,7 +639,7 @@ class CounterReconciliationController extends Controller
             });
 
         // If not accountant, filter by owner
-        if (! $isAccountant) {
+        if (!$isAccountant && !$isSuperAdmin) {
             $ordersQuery->where('user_id', $ownerId);
         }
 
@@ -656,7 +660,7 @@ class CounterReconciliationController extends Controller
 
         // REQUIRE ACTIVE SHIFT
         $activeShift = $this->getCurrentShift();
-        if (! $activeShift && ! $isAccountant) {
+        if (!$activeShift && !$isAccountant && !$isSuperAdmin) {
             return response()->json(['error' => 'Please open a shift before reconciling waiters.'], 403);
         }
 
@@ -666,7 +670,7 @@ class CounterReconciliationController extends Controller
             ->where('waiter_id', $waiter->id);
 
         // If not accountant, filter by owner
-        if (! $isAccountant) {
+        if (!$isAccountant && !$isSuperAdmin) {
             $expectedOrdersQuery->where('user_id', $ownerId);
         }
 
@@ -758,7 +762,7 @@ class CounterReconciliationController extends Controller
                     ->with(['items', 'orderPayments']);
 
                 // If not accountant, filter by owner
-                if (! $isAccountant) {
+                if (!$isAccountant && !$isSuperAdmin) {
                     $allOrdersWithPaymentsQuery->where('user_id', $ownerId);
                 }
 
@@ -788,7 +792,7 @@ class CounterReconciliationController extends Controller
                 ->whereHas('items') // Only bar orders
                 ->with(['items', 'orderPayments']);
 
-            if (! $isAccountant) {
+            if (!$isAccountant && !$isSuperAdmin) {
                 $barOrdersQuery->where('user_id', $ownerId);
             }
             $barOrders = $barOrdersQuery->get();
@@ -926,7 +930,7 @@ class CounterReconciliationController extends Controller
         $currentStaff = $this->getCurrentStaff();
         $isAccountant = $currentStaff && strtolower($currentStaff->role->slug ?? '') === 'accountant';
 
-        if (! $isAccountant && ! $this->hasPermission('bar_orders', 'view')) {
+        if (!$isAccountant && !$isSuperAdmin && !$this->hasPermission('bar_orders', 'view')) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -938,7 +942,7 @@ class CounterReconciliationController extends Controller
         $isAccountant = $currentStaff && strtolower($currentStaff->role->name ?? '') === 'accountant';
 
         // Verify waiter belongs to owner (unless accountant)
-        if (! $isAccountant && $waiter->user_id !== $ownerId) {
+        if (!$isAccountant && !$isSuperAdmin && $waiter->user_id !== $ownerId) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -962,7 +966,7 @@ class CounterReconciliationController extends Controller
             ->where('waiter_id', $waiter->id);
 
         // If not accountant, filter by owner
-        if (! $isAccountant) {
+        if (!$isAccountant && !$isSuperAdmin) {
             $ordersQuery->where('user_id', $ownerId);
         }
 
@@ -1020,13 +1024,19 @@ class CounterReconciliationController extends Controller
         $totalAmount = array_sum($breakdown);
 
         // Find an active shift before validating
-        $activeShift = \App\Models\BarShift::where('staff_id', $staff->id)
-            ->where('status', 'open')
-            ->first();
+        $activeShift = null;
+        if ($staff) {
+            $activeShift = \App\Models\BarShift::where('staff_id', $staff->id)
+                ->where('status', 'open')
+                ->first();
+        }
 
         // Check if already exists for this specific shift (Preferred) or date
+        $isSuperAdmin = $this->isSuperAdminRole();
         $existingQuery = FinancialHandover::where('user_id', $ownerId)
-            ->where('accountant_id', $staff->id)
+            ->when($staff, function($q) use ($staff) {
+                return $q->where('accountant_id', $staff->id);
+            })
             ->where('handover_type', 'staff_to_accountant');
 
         if ($activeShift) {
@@ -1190,12 +1200,11 @@ class CounterReconciliationController extends Controller
     public function foodReconciliation(Request $request)
     {
         $currentStaff = $this->getCurrentStaff();
-        if (! $currentStaff) {
-            abort(403);
-        }
+        $isSuperAdmin = $this->isSuperAdminRole();
 
-        $roleSlug = strtolower(trim($currentStaff->role->slug ?? ''));
-        if ($roleSlug !== 'accountant' && ! $this->hasPermission('bar_orders', 'view')) {
+        // Allow Super Admin, Accountant, or anyone with permissions
+        $roleSlug = $currentStaff ? strtolower(trim($currentStaff->role->slug ?? '')) : '';
+        if (!$isSuperAdmin && $roleSlug !== 'accountant' && !$this->hasPermission('bar_orders', 'view')) {
             abort(403, 'Permission denied.');
         }
 
@@ -1203,20 +1212,24 @@ class CounterReconciliationController extends Controller
         $date = $request->get('date', now()->format('Y-m-d'));
 
         // Calculate Opening Cash (Bf) - Money left in drawer from previous days
-        $previousHandover = \App\Models\FinancialHandover::where('user_id', $ownerId)
-            ->where('department', 'food')
+        $previousHandover = \App\Models\FinancialHandover::where('department', 'food')
             ->where('handover_type', 'staff_to_accountant')
             ->whereDate('handover_date', '<', $date)
+            ->when(!$isSuperAdmin, function($q) use ($ownerId) {
+                return $q->where('user_id', $ownerId);
+            })
             ->orderBy('handover_date', 'desc')
             ->first();
 
         $openingCash = 0;
         if ($previousHandover) {
             // Check if this profit was ever submitted to the boss
-            $wasSubmittedToBoss = \App\Models\FinancialHandover::where('user_id', $ownerId)
-                ->where('department', 'food')
+            $wasSubmittedToBoss = \App\Models\FinancialHandover::where('department', 'food')
                 ->where('handover_type', 'accountant_to_owner')
                 ->whereDate('handover_date', $previousHandover->handover_date)
+                ->when(!$isSuperAdmin, function($q) use ($ownerId) {
+                    return $q->where('user_id', $ownerId);
+                })
                 ->exists();
 
             if (! $wasSubmittedToBoss) {
@@ -1231,7 +1244,7 @@ class CounterReconciliationController extends Controller
         $location = session('active_location');
 
         // Get Waiters (or anyone who has food orders today)
-        $waiters = Staff::where('is_active', true)
+        $waitersQuery = Staff::where('is_active', true)
             ->where(function ($query) use ($date, $location) {
                 // Role check
                 $query->whereHas('role', function ($q) {
@@ -1257,7 +1270,14 @@ class CounterReconciliationController extends Controller
             })
             ->when($location && $location !== 'all', function ($q) use ($location) {
                 $q->where('location_branch', $location);
-            })
+            });
+
+        // If not super admin, filter by owner
+        if (!$isSuperAdmin) {
+            $waitersQuery->where('user_id', $ownerId);
+        }
+
+        $waiters = $waitersQuery
             ->with(['role', 'dailyReconciliations' => function ($q) use ($date) {
                 $q->where('reconciliation_date', $date)
                     ->where('reconciliation_type', 'food');
@@ -1337,9 +1357,11 @@ class CounterReconciliationController extends Controller
             });
 
         // Get Chef's Handover
-        $chefHandover = FinancialHandover::where('user_id', $ownerId)
-            ->where('department', 'food')
+        $chefHandover = FinancialHandover::where('department', 'food')
             ->whereDate('handover_date', $date)
+            ->when(!$isSuperAdmin, function($q) use ($ownerId) {
+                return $q->where('user_id', $ownerId);
+            })
             ->first();
 
         // When today's food handover is already verified by accountant, lock the page
@@ -1356,25 +1378,34 @@ class CounterReconciliationController extends Controller
             ['name' => 'Chef', 'user_id' => $ownerId],
             ['slug' => 'chef', 'description' => 'Kitchen Chef']
         );
-        $dummyChef = \App\Models\Staff::firstOrCreate(
-            ['role_id' => $chefRole->id, 'user_id' => $ownerId],
-            [
+        $dummyChef = \App\Models\Staff::where('email', "chef-{$ownerId}@mauzolink.com")
+            ->orWhere(function($q) use ($chefRole, $ownerId) {
+                $q->where('role_id', $chefRole->id)->where('user_id', $ownerId);
+            })
+            ->first();
+
+        if (!$dummyChef) {
+            $dummyChef = \App\Models\Staff::create([
+                'role_id' => $chefRole->id,
+                'user_id' => $ownerId,
                 'full_name' => 'John Chef',
                 'staff_id' => \App\Models\Staff::generateStaffId($ownerId),
                 'phone_number' => '0777777777',
-                'email' => 'chef@example.com',
+                'email' => "chef-{$ownerId}@mauzolink.com",
                 'is_active' => true,
                 'salary_paid' => 0.00,
                 'password' => bcrypt('password'),
-            ]
-        );
+            ]);
+        }
 
         // Get ONLY Chef Staff as requested
-        $chefs = Staff::where('user_id', $ownerId)
+        $chefs = Staff::where('is_active', true)
             ->whereHas('role', function ($q) {
                 $q->where('slug', 'chef')->orWhere('name', 'LIKE', '%chef%');
             })
-            ->where('is_active', true)
+            ->when(!$isSuperAdmin, function($q) use ($ownerId) {
+                return $q->where('user_id', $ownerId);
+            })
             ->get();
         // Keep $chef for backward compatibility of selected value
         $chef = $chefs->first();
@@ -1382,7 +1413,9 @@ class CounterReconciliationController extends Controller
         $totalFoodSalesToday = $foodShiftClosedForToday ? 0 : $waiters->sum('food_sales');
 
         // Ledger check
-        $ledger = DailyCashLedger::where('user_id', $ownerId)
+        $ledger = DailyCashLedger::when(!$isSuperAdmin, function($q) use ($ownerId) {
+                return $q->where('user_id', $ownerId);
+            })
             ->whereDate('ledger_date', $date)
             ->first();
 
@@ -1407,8 +1440,12 @@ class CounterReconciliationController extends Controller
         $date = $request->get('date', now()->format('Y-m-d'));
         $ownerId = $this->getOwnerId();
 
+        $isSuperAdmin = $this->isSuperAdminRole();
+
         $orders = BarOrder::where('waiter_id', $waiter->id)
-            ->where('user_id', $ownerId)
+            ->when(!$isSuperAdmin, function($q) use ($ownerId) {
+                return $q->where('user_id', $ownerId);
+            })
             ->whereDate('created_at', $date)
             ->whereHas('kitchenOrderItems', function ($sq) {
                 $sq->where('status', '!=', 'cancelled');
@@ -1452,10 +1489,15 @@ class CounterReconciliationController extends Controller
         $date = $validated['date'];
         $waiter = Staff::findOrFail($validated['waiter_id']);
 
+        $isSuperAdmin = $this->isSuperAdminRole();
+
         DB::beginTransaction();
         try {
             // Logic to calculate food sales (repeated from dashboard for security)
             $orders = BarOrder::where('waiter_id', $waiter->id)
+                ->when(!$isSuperAdmin, function($q) use ($ownerId) {
+                    return $q->where('user_id', $ownerId);
+                })
                 ->whereDate('created_at', $date)
                 ->whereHas('kitchenOrderItems', function ($sq) {
                     $sq->where('status', '!=', 'cancelled');

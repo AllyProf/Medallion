@@ -24,8 +24,16 @@ class FoodMenuController extends Controller
         }
 
         $ownerId = $this->getOwnerId();
-        $foodItems = FoodItem::where('user_id', $ownerId)
-            ->with('extras')
+        $isSuperAdmin = $this->isSuperAdminRole();
+
+        $query = FoodItem::query();
+        
+        // Super admin sees all items, others only their own
+        if (!$isSuperAdmin && $ownerId) {
+            $query->where('user_id', $ownerId);
+        }
+
+        $foodItems = $query->with('extras')
             ->orderBy('sort_order')
             ->paginate(50);
 
@@ -171,7 +179,7 @@ class FoodMenuController extends Controller
                 foreach ($request->extras as $extraData) {
                     if (isset($extraData['id']) && $extraData['id']) {
                         $extra = FoodItemExtra::find($extraData['id']);
-                        if ($extra && $extra->food_item_id == $foodItem->id) {
+                        if ($extra && $extra->food_item_id == $food->id) {
                             $extra->update([
                                 'name' => $extraData['name'],
                                 'price' => $extraData['price'],
@@ -181,7 +189,7 @@ class FoodMenuController extends Controller
                         }
                     } else {
                         $newExtra = FoodItemExtra::create([
-                            'food_item_id' => $foodItem->id,
+                            'food_item_id' => $food->id,
                             'name' => $extraData['name'],
                             'price' => $extraData['price'],
                             'is_available' => true,
@@ -220,8 +228,8 @@ class FoodMenuController extends Controller
 
         $food = FoodItem::findOrFail($request->id);
         
-        // Ensure user owns this item
-        if ($food->user_id !== $this->getOwnerId()) {
+        // Ensure user owns this item (Super Admin bypasses this)
+        if (!$this->isSuperAdminRole() && $food->user_id !== $this->getOwnerId()) {
             return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
         }
 

@@ -938,8 +938,8 @@ class ChefController extends Controller
         $date = $request->get('date', now()->format('Y-m-d'));
 
         // Check if current user is accountant (should see all orders across all owners)
-        $currentStaff = $this->getCurrentStaff();
-        $isAccountant = $currentStaff && strtolower($currentStaff->role->name ?? '') === 'accountant';
+        $isSuperAdmin = $this->isSuperAdminRole();
+        $isAccountant = $isSuperAdmin || ($currentStaff && strtolower($currentStaff->role->name ?? '') === 'accountant');
 
         // Get all waiters with their food order sales for the date
         $waitersQuery = \App\Models\Staff::query()
@@ -948,8 +948,8 @@ class ChefController extends Controller
                 $q->where('name', 'Waiter');
             });
         
-        // If not accountant, filter by owner
-        if (!$isAccountant) {
+        // If not accountant and not super admin, filter by owner
+        if (!$isAccountant && !$isSuperAdmin) {
             $waitersQuery->where('user_id', $ownerId);
         }
         
@@ -965,7 +965,7 @@ class ChefController extends Controller
                     ->where('waiter_id', $waiter->id);
                 
                 // If not accountant, filter by owner
-                if (!$isAccountant) {
+                if (!$isAccountant && !$isSuperAdmin) {
                     $ordersQuery->where('user_id', $ownerId);
                 }
                 
@@ -1147,12 +1147,12 @@ class ChefController extends Controller
         ]);
 
         // Check if current user is accountant
-        $currentStaff = $this->getCurrentStaff();
-        $isAccountant = $currentStaff && strtolower($currentStaff->role->name ?? '') === 'accountant';
+        $isSuperAdmin = $this->isSuperAdminRole();
+        $isAccountant = $isSuperAdmin || ($currentStaff && strtolower($currentStaff->role->name ?? '') === 'accountant');
 
         // Verify waiter belongs to owner (unless accountant)
         $waiterQuery = Staff::where('id', $validated['waiter_id']);
-        if (!$isAccountant) {
+        if (!$isAccountant && !$isSuperAdmin) {
             $waiterQuery->where('user_id', $ownerId);
         }
         $waiter = $waiterQuery->first();
@@ -1172,7 +1172,7 @@ class ChefController extends Controller
             ->with('kitchenOrderItems');
         
         // If not accountant, filter by owner
-        if (!$isAccountant) {
+        if (!$isAccountant && !$isSuperAdmin) {
             $ordersQuery->where('user_id', $ownerId);
         }
         
@@ -1181,7 +1181,7 @@ class ChefController extends Controller
         // Calculate expected amount (total food sales for this waiter on this date)
         $expectedOrdersQuery = BarOrder::query()
             ->where('waiter_id', $waiter->id);
-        if (!$isAccountant) {
+        if (!$isAccountant && !$isSuperAdmin) {
             $expectedOrdersQuery->where('user_id', $ownerId);
         }
         $expectedAmount = $expectedOrdersQuery
@@ -1244,7 +1244,7 @@ class ChefController extends Controller
                     ->with(['kitchenOrderItems', 'orderPayments']);
                 
                 // If not accountant, filter by owner
-                if (!$isAccountant) {
+                if (!$isAccountant && !$isSuperAdmin) {
                     $allOrdersWithPaymentsQuery->where('user_id', $ownerId);
                 }
                 
@@ -1364,11 +1364,11 @@ class ChefController extends Controller
         $date = $request->get('date', now()->format('Y-m-d'));
 
         // Check if current user is accountant
-        $currentStaff = $this->getCurrentStaff();
-        $isAccountant = $currentStaff && strtolower($currentStaff->role->name ?? '') === 'accountant';
+        $isSuperAdmin = $this->isSuperAdminRole();
+        $isAccountant = $isSuperAdmin || ($currentStaff && strtolower($currentStaff->role->name ?? '') === 'accountant');
 
         // Verify waiter belongs to owner (unless accountant)
-        if (!$isAccountant && $waiter->user_id !== $ownerId) {
+        if (!$isAccountant && !$isSuperAdmin && $waiter->user_id !== $ownerId) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -1378,7 +1378,7 @@ class ChefController extends Controller
             ->whereHas('kitchenOrderItems'); // Only orders with food items
         
         // If not accountant, filter by owner
-        if (!$isAccountant) {
+        if (!$isAccountant && !$isSuperAdmin) {
             $ordersQuery->where('user_id', $ownerId);
         }
         
@@ -1601,9 +1601,9 @@ class ChefController extends Controller
         $totalCollected = array_sum($breakdown);
 
         // Determine who is performing the handover
-        $roleSlug = strtolower($staff->role->slug ?? '');
-        $isAccountant = $roleSlug === 'accountant';
-        $performerId = $staff->id;
+        $isSuperAdmin = $this->isSuperAdminRole();
+        $isAccountant = $isSuperAdmin || ($staff && strtolower($staff->role->slug ?? '') === 'accountant');
+        $performerId = $staff ? $staff->id : null;
         
         if ($isAccountant && $request->has('chef_id')) {
             $performerId = $request->chef_id;
