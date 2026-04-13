@@ -57,6 +57,9 @@ class StaffController extends Controller
         $businessTypes = $user->enabledBusinessTypes()->get();
 
         $isAdmin = $this->isSuperAdminRole();
+        
+        // Repair and Deduplicate roles before loading the page (Fixes missing Super Admin and duplicate Chefs)
+        $this->repairAndDeduplicateRoles();
 
         // Get roles: Super Admin sees ALL distinct roles; owners only see their own
         if ($isAdmin) {
@@ -129,6 +132,9 @@ class StaffController extends Controller
                 return back()->with('error', 'Staff registration is only available for Free and Pro plans.');
             }
         }
+
+        // Ensure roles are repaired before storing
+        $this->repairAndDeduplicateRoles();
 
         // If role_id is 'super_admin' string, replace it with the actual ID
         if ($request->input('role_id') === 'super_admin') {
@@ -426,10 +432,15 @@ class StaffController extends Controller
 
         // Create default roles that don't exist yet
         foreach ($suggestedRoles as $roleSuggestion) {
-            $roleNameLower = strtolower($roleSuggestion['name']);
+            $roleNameLower = strtolower(trim($roleSuggestion['name']));
             
-            // Check if role already exists
-            if ($existingRoles->has($roleNameLower)) {
+            // Check if role already exists (Strict check across all business types)
+            $existingCount = Role::where('user_id', $ownerId)
+                ->whereRaw('LOWER(TRIM(name)) = ?', [$roleNameLower])
+                ->where('is_active', true)
+                ->count();
+
+            if ($existingCount > 0) {
                 continue; // Skip if role already exists
             }
 
@@ -698,5 +709,64 @@ class StaffController extends Controller
         }
 
         $this->smsService->sendSms($staff->phone_number, $message);
+    }
+
+    /**
+     * Repair missing Super Admin role and deduplicate existing active roles
+     */
+    private function repairAndDeduplicateRoles()
+    {
+        $ownerId = $this->getOwnerId();
+        if (!$ownerId) return;
+
+        // 1. Ensure Super Admin role exists
+        $superAdmin = \App\Models\Role::where(function($q) {
+                $q->where('name', 'LIKE', 'Super Admin%')
+                  ->orWhere('name', 'LIKE', 'SuperAdmin%')
+                  ->orWhere('slug', 'LIKE', 'super-admin%')
+                  ->orWhere('slug', 'LIKE', 'superadmin%')
+                  ->orWhere('slug', '=', 'admin');
+            })
+            ->where('is_active', true)
+            ->first();
+
+        if (!$superAdmin) {
+            \Log::info('REPAIR: Creating missing Super Admin role for owner ' . $ownerId);
+            $superAdmin = \App\Models\Role::create([
+                'user_id' => $ownerId,
+                'name' => 'Super Admin',
+                'slug' => 'super-admin-' . $ownerId . '-' . time(),
+                'description' => 'Full system administrator with the highest level of access.',
+                'is_system_role' => false,
+                'is_active' => true,
+            ]);
+            
+            // Assign some base permissions if possible
+            $managerSuggestion = \App\Services\RoleSuggestionService::getSuggestedRolesForBusinessType('restaurant')[0] ?? null;
+            if ($managerSuggestion) {
+                $permissionIds = \App\Services\RoleSuggestionService::getPermissionIdsForRole($managerSuggestion);
+                if (!empty($permissionIds)) {
+                    $superAdmin->permissions()->sync($permissionIds);
+                }
+            }
+        }
+
+        // 2. Deduplicate roles (Keep the oldest one for each name, deactivate others)
+        $roles = \App\Models\Role::where('user_id', $ownerId)
+            ->where('is_active', true)
+            ->whereNotIn('id', [$superAdmin->id]) // Don't deactivate the Super Admin we just ensured
+            ->orderBy('id', 'asc')
+            ->get();
+
+        $seenNames = [];
+        foreach ($roles as $role) {
+            $nameLower = strtolower(trim($role->name));
+            if (isset($seenNames[$nameLower])) {
+                \Log::info('DEDUPLICATION: Deactivating duplicate role ID ' . $role->id . ' (' . $role->name . ')');
+                $role->update(['is_active' => false]);
+            } else {
+                $seenNames[$nameLower] = $role->id;
+            }
+        }
     }
 }
