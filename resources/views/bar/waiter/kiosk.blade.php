@@ -6,7 +6,7 @@
 <style>
 /* Reset and Fullscreen */
 .app-header, .app-sidebar { display: none !important; }
-.app-content { margin: 0 !important; padding: 0 !important; overflow: hidden; }
+.app-content { margin: 0 !important; padding: 0 !important; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 /* Colors */
 :root {
   --bg-main: #f5f6fa;
@@ -796,7 +796,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         $('#m-unit-text').text(d.unitLabel === 'btl' ? 'Bottle' : 'Piece');
         $('#m-portion-text').text(d.portionLabel || 'Tot');
         
-        $('#m-price-display').text('TSh ' + parseFloat(d.price).toLocaleString());
+        $('#m-price-display').text('TSh ' + parseFloat(d.price).toLocaleString(undefined, {maximumFractionDigits: 0}));
         $('#m-quantity').val(1);
         
         const available = d.type === 'drink' ? d.available : 9999;
@@ -835,7 +835,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                             <input type="checkbox" class="custom-control-input m-extra-cb" id="extra_${idx}" data-name="${ext.name}" data-price="${ext.price}">
                             <label class="custom-control-label" for="extra_${idx}" style="color:var(--text-main); width:100%; cursor:pointer;">
                                 <span>${ext.name}</span>
-                                <span style="float:right; color:var(--accent-green); font-weight:bold;">+TSh ${parseFloat(ext.price).toLocaleString()}</span>
+                                <span style="float:right; color:var(--accent-green); font-weight:bold;">+TSh ${parseFloat(ext.price).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
                             </label>
                         </div>
                     `;
@@ -855,7 +855,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             $('.m-extra-cb:checked').each(function() {
                 extrasTotal += parseFloat($(this).data('price'));
             });
-            $('#m-price-display').text('TSh ' + (basePrice + extrasTotal).toLocaleString());
+            $('#m-price-display').text('TSh ' + (basePrice + extrasTotal).toLocaleString(undefined, {maximumFractionDigits: 0}));
         });
 
         $('#addItemModal').modal('show');
@@ -937,7 +937,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         $(this).parent().addClass('active').siblings().removeClass('active');
         const sellType = $(this).val();
         const price = sellType === 'tot' ? parseFloat($('#m-price-tot').val()) : parseFloat($('#m-price').val());
-        $('#m-price-display').text('TSh ' + price.toLocaleString());
+        $('#m-price-display').text('TSh ' + price.toLocaleString(undefined, {maximumFractionDigits: 0}));
         
         const availableBottles = parseFloat($('#m-id').data('available')) || 0;
         const totalTots = parseFloat($('#m-total-tots').val()) || 1;
@@ -948,9 +948,9 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             const openTots = parseInt($('#m-open-tots').val()) || 0;
             const totalPortions = Math.floor(availableBottles * totalTots) + openTots;
             const pLabel = portionLabel === 'Glass' ? 'Glasses' : portionLabel + 's';
-            $('#m-stock-display').html('<i class="fa fa-glass"></i> Stock: ' + totalPortions.toLocaleString() + ' ' + pLabel);
+            $('#m-stock-display').html('<i class="fa fa-glass"></i> Stock: ' + totalPortions.toLocaleString(undefined, {maximumFractionDigits: 0}) + ' ' + pLabel);
         } else {
-            $('#m-stock-display').html('<i class="fa fa-database"></i> Stock: ' + availableBottles.toLocaleString() + ' ' + unitLabel + 's');
+            $('#m-stock-display').html('<i class="fa fa-database"></i> Stock: ' + availableBottles.toLocaleString(undefined, {maximumFractionDigits: 0}) + ' ' + unitLabel + 's');
         }
     });
 
@@ -1091,7 +1091,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                         ${item.notes ? `<div style="font-size:0.7rem; color:var(--accent-yellow); font-style:italic;">Note: ${item.notes}</div>` : ''}
                     </td>
                     <td>${item.variant || '-'} ${item.sell_type === 'tot' ? '<small>(' + (item.portion_label || 'Shot') + ')</small>' : ''}</td>
-                    <td>${item.price.toLocaleString()}</td>
+                    <td>${item.price.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
                     <td>
                         <div class="qty-controls">
                             <button class="qty-btn minus" onclick="updateQty(${idx}, 'sub')"><i class="fa fa-minus"></i></button>
@@ -1109,7 +1109,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             `);
         });
 
-        $('#cart-total-display').text('Grand Total : ' + total.toLocaleString());
+        $('#cart-total-display').text('Grand Total : ' + total.toLocaleString(undefined, {maximumFractionDigits: 0}));
     }
 
     // Toast Notification helper (Renamed to avoid conflict with layout's Toast)
@@ -1213,10 +1213,10 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                 <div style="flex:1; min-width:0; color:#ffffff; text-align:left;">
                     <span style="font-weight:600;">${item.quantity}× ${item.name}</span>${variantBit}
                 </div>
-                <span style="color:#8ef0a0; white-space:nowrap; font-weight:700;">TSh ${rowTotal.toLocaleString()}</span>
+                <span style="color:#8ef0a0; white-space:nowrap; font-weight:700;">TSh ${rowTotal.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
             </div>`;
         });
-        itemsSummary += `</div><div style="text-align:right; font-size:1.2rem; font-weight:bold; margin-top:12px; color:#ffd666;">Total: TSh ${total.toLocaleString()}</div>`;
+        itemsSummary += `</div><div style="text-align:right; font-size:1.2rem; font-weight:bold; margin-top:12px; color:#ffd666;">Total: TSh ${total.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>`;
 
         Swal.fire({
             title: 'Confirm Order Placement',
@@ -1450,10 +1450,10 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                         <div class="prod-title">${v.product_name}</div>
                         <div style="font-weight:normal; color:#aaa; font-size:0.75rem;">${v.variant ? '(' + v.variant + ')' : '&nbsp;'}</div>
                         <div class="prod-price d-flex flex-column">
-                            <span style="font-size: 0.85rem;">TSh ${v.selling_price.toLocaleString()} <small class="text-muted">(${v.unit === 'btl' ? 'Btl' : 'Full'})</small></span>
+                            <span style="font-size: 0.85rem;">TSh ${v.selling_price.toLocaleString(undefined, {maximumFractionDigits: 0})} <small class="text-muted">(${v.unit === 'btl' ? 'Btl' : 'Full'})</small></span>
                             ${v.can_sell_in_tots && v.selling_price_per_tot > 0 ? 
                                 `<small style="font-size: 0.7rem; color: var(--accent-green); font-weight: bold; margin-top: 1px;">
-                                    TSh ${v.selling_price_per_tot.toLocaleString()} <span style="color: var(--text-muted); font-weight: normal;">(${v.portion_label || 'Glass'})</span>
+                                    TSh ${v.selling_price_per_tot.toLocaleString(undefined, {maximumFractionDigits: 0})} <span style="color: var(--text-muted); font-weight: normal;">(${v.portion_label || 'Glass'})</span>
                                 </small>` : '' 
                             }
                         </div>
@@ -1487,7 +1487,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     <div class="prod-info">
                         <div class="prod-title">${f.name}</div>
                         <div style="font-weight:normal; color:#aaa; font-size:0.75rem;">${f.variant_name ? '(' + f.variant_name + ')' : '&nbsp;'}</div>
-                        <div class="prod-price">TSh ${f.price.toLocaleString()}</div>
+                        <div class="prod-price">TSh ${f.price.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
                     </div>
                 </div>
             `);
@@ -1594,7 +1594,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     let itemName = item.product_variant ? (item.product_variant.display_name || item.product_variant.product?.name) : 'Drink';
                     itemHtml += `<div style="display:flex; justify-content:space-between; font-size:0.85rem; border-bottom:1px solid var(--bg-main); padding:4px 0; color:var(--text-muted);">
                         <span>${item.quantity}x ${itemName}</span>
-                        <span>TSh ${parseFloat(item.total_price).toLocaleString()}</span>
+                        <span>TSh ${parseFloat(item.total_price).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
                     </div>`;
                 });
             }
@@ -1612,7 +1612,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     const lineStyle = foodOff ? 'opacity:0.75;text-decoration:line-through;' : '';
                     itemHtml += `<div style="display:flex; justify-content:space-between; font-size:0.85rem; border-bottom:1px solid var(--bg-main); padding:4px 0; color:var(--text-muted);${lineStyle}">
                         <span>${item.quantity}x ${item.food_item_name} ${statusLabel}${removeFoodBtn}</span>
-                        <span>TSh ${parseFloat(item.total_price).toLocaleString()}</span>
+                        <span>TSh ${parseFloat(item.total_price).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
                     </div>`;
                 });
             }
@@ -1629,7 +1629,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                             </div>
                             <div class="text-right">
                                 <span class="badge" style="background:${brColor}; color:#fff; font-size:0.85rem; padding:5px 10px;">${order.status.toUpperCase()}</span>
-                                <h5 class="mt-2 text-success">TSh ${parseFloat(order.total_amount).toLocaleString()}</h5>
+                                <h5 class="mt-2 text-success">TSh ${parseFloat(order.total_amount).toLocaleString(undefined, {maximumFractionDigits: 0})}</h5>
                             </div>
                         </div>
                         <div class="mt-2" style="background:var(--bg-input); padding:8px; border-radius:4px;">
@@ -1701,7 +1701,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             container.append(`
                 <div class="history-stats">
                     <div class="history-stat-box">
-                        <div class="history-stat-val">TSh ${parseFloat(stats.total_sales).toLocaleString()}</div>
+                        <div class="history-stat-val">TSh ${parseFloat(stats.total_sales).toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
                         <div class="history-stat-label">Today's Sales</div>
                     </div>
                     <div class="history-stat-box">
@@ -1797,7 +1797,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                             ${payMethodHtml}
                         </div>
                         <div class="text-right" style="margin-right:12px;">
-                            <div class="font-weight-bold text-success">TSh ${parseFloat(order.total_amount).toLocaleString()}</div>
+                            <div class="font-weight-bold text-success">TSh ${parseFloat(order.total_amount).toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
                             <div class="d-flex flex-column align-items-end" style="gap:4px;">
                                 <span class="badge" style="background:${statusColor}; color:#fff; font-size:0.65rem; width:fit-content;">${order.status.toUpperCase()}</span>
                                 <span class="badge" style="background:${order.payment_status === 'paid' ? 'var(--accent-green)' : '#dc3545'}; color:#fff; font-size:0.65rem; width:fit-content;">${(order.payment_status || 'unpaid').toUpperCase()}</span>

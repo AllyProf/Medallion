@@ -458,19 +458,20 @@ class DashboardController extends Controller
                     'type'          => 'drink',
                 ]);
 
-                // Food items — grouped by food_item_name (matches Accountant dashboard)
+                // Food items — grouped by their actual food category
                 $foodDishes = \App\Models\KitchenOrderItem::whereHas('order', function($q) use ($ownerId) {
                         $q->where('user_id', $ownerId)
                           ->where('status', '!=', 'cancelled')
                           ->whereMonth('created_at', now()->month)
                           ->whereYear('created_at', now()->year);
                     })
-                    ->where('status', '!=', 'cancelled')
-                    ->selectRaw('food_item_name as category, SUM(quantity) as total_sold, SUM(total_price) as total_revenue')
-                    ->groupBy('food_item_name')
+                    ->leftJoin('food_items', 'kitchen_order_items.food_item_id', '=', 'food_items.id')
+                    ->where('kitchen_order_items.status', '!=', 'cancelled')
+                    ->selectRaw('IFNULL(food_items.category, "Meals") as category_name, SUM(kitchen_order_items.quantity) as total_sold, SUM(kitchen_order_items.total_price) as total_revenue')
+                    ->groupByRaw('IFNULL(food_items.category, "Meals")')
                     ->get()
                     ->map(fn($item) => (object)[
-                        'category'      => $item->category ?? 'Food',
+                        'category'      => $item->category_name,
                         'total_sold'    => (int) $item->total_sold,
                         'total_revenue' => (float) $item->total_revenue,
                         'type'          => 'food',
