@@ -72,9 +72,10 @@ class StaffController extends Controller
             }
         }
 
-        // Always inject the Super Admin role at the top if it exists and isn't already in $roles
-        $superAdminRole = \App\Models\Role::where('name', 'Super Admin')
-            ->orWhere('slug', 'super-admin')
+        // Always inject the Super Admin role at the top if it exists
+        $superAdminRole = \App\Models\Role::where(function($q) {
+                $q->where('name', 'Super Admin')->orWhere('slug', 'super-admin');
+            })
             ->where('is_active', true)
             ->first();
 

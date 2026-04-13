@@ -142,16 +142,16 @@
               <label>Staff Role <span class="text-danger">*</span></label>
               <select class="form-control @error('role_id') is-invalid @enderror" name="role_id" id="role_id" required>
                 <option value="">Select Role</option>
-                @if(isset($superAdminRole) && $superAdminRole)
-                  <option value="{{ $superAdminRole->id }}" {{ old('role_id') == $superAdminRole->id ? 'selected' : '' }}>⭐ Super Admin</option>
-                  <optgroup label="── All Roles ──">
+                @if(!empty($superAdminRole))
+                  <option value="{{ $superAdminRole->id }}" {{ (old('role_id') == $superAdminRole->id) ? 'selected' : '' }}>⭐ Super Admin</option>
+                  <optgroup label="── Other Roles ──">
                 @endif
                 @foreach($roles->filter(fn($r) => strtolower($r->name) !== 'super admin' && $r->slug !== 'super-admin') as $role)
                   <option value="{{ $role->id }}" {{ old('role_id') == $role->id ? 'selected' : '' }}>
                     {{ $role->name }}@if($role->description) - {{ $role->description }}@endif
                   </option>
                 @endforeach
-                @if(isset($superAdminRole) && $superAdminRole)
+                @if(!empty($superAdminRole))
                   </optgroup>
                 @endif
               </select>
