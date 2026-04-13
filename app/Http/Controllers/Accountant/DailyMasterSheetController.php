@@ -178,7 +178,7 @@ class DailyMasterSheetController extends Controller
             ->whereDate('issue_date', $date)
             ->where('status', 'issued')
             ->where('purpose', 'NOT LIKE', '[FOOD]%');
-        if (auth()->user()->role !== 'admin') {
+        if (!$isAdmin) {
             $pettyCashListQuery->where('user_id', $ownerId);
         }
         $pettyCashList = $pettyCashListQuery->get();
