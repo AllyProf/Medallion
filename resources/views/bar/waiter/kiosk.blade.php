@@ -1450,10 +1450,10 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                         <div class="prod-title">${v.product_name}</div>
                         <div style="font-weight:normal; color:#aaa; font-size:0.75rem;">${v.variant ? '(' + v.variant + ')' : '&nbsp;'}</div>
                         <div class="prod-price d-flex flex-column">
-                            <span style="font-size: 0.85rem;">TSh ${v.selling_price.toLocaleString(undefined, {maximumFractionDigits: 0})} <small class="text-muted">(${v.unit === 'btl' ? 'Btl' : 'Full'})</small></span>
+                            <span style="font-size: 0.85rem;">TSh ${parseFloat(v.selling_price).toLocaleString(undefined, {maximumFractionDigits: 0})} <small class="text-muted">(${v.unit === 'btl' ? 'Btl' : 'Full'})</small></span>
                             ${v.can_sell_in_tots && v.selling_price_per_tot > 0 ? 
                                 `<small style="font-size: 0.7rem; color: var(--accent-green); font-weight: bold; margin-top: 1px;">
-                                    TSh ${v.selling_price_per_tot.toLocaleString(undefined, {maximumFractionDigits: 0})} <span style="color: var(--text-muted); font-weight: normal;">(${v.portion_label || 'Glass'})</span>
+                                    TSh ${parseFloat(v.selling_price_per_tot).toLocaleString(undefined, {maximumFractionDigits: 0})} <span style="color: var(--text-muted); font-weight: normal;">(${v.portion_label || 'Glass'})</span>
                                 </small>` : '' 
                             }
                         </div>
@@ -1487,7 +1487,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     <div class="prod-info">
                         <div class="prod-title">${f.name}</div>
                         <div style="font-weight:normal; color:#aaa; font-size:0.75rem;">${f.variant_name ? '(' + f.variant_name + ')' : '&nbsp;'}</div>
-                        <div class="prod-price">TSh ${f.price.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
+                        <div class="prod-price">TSh ${parseFloat(f.price).toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
                     </div>
                 </div>
             `);
