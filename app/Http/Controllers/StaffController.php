@@ -93,7 +93,14 @@ class StaffController extends Controller
             'is_admin_user' => (auth()->check() && auth()->user()->isAdmin())
         ]);
 
-        return view('staff.create', compact('roles', 'businessTypes', 'isAdmin', 'superAdminRole'));
+        // FULL SERVER ROLE AUDIT (Helpful for identifying the correct Super Admin ID)
+        \Log::info('SERVER ROLE AUDIT: Listing all active roles', [
+            'audit' => \App\Models\Role::where('is_active', true)->get(['id', 'name', 'slug'])->toArray()
+        ]);
+
+        $debugRoles = \App\Models\Role::where('is_active', true)->get(['id', 'name', 'slug']);
+
+        return view('staff.create', compact('roles', 'businessTypes', 'isAdmin', 'superAdminRole', 'debugRoles'));
     }
 
     /**
@@ -361,11 +368,6 @@ class StaffController extends Controller
             'super_admin_id' => $superAdminRole->id ?? 'N/A',
             'super_admin_name' => $superAdminRole->name ?? 'N/A',
             'total_roles_returned' => $allRoles->count()
-        ]);
-
-        // FULL SERVER ROLE AUDIT (Helpful for identifying the correct Super Admin ID)
-        \Log::info('SERVER ROLE AUDIT: Listing all active roles', [
-            'audit' => Role::where('is_active', true)->get(['id', 'name', 'slug'])->toArray()
         ]);
         
         // Filter roles that match suggested role names for this business type
