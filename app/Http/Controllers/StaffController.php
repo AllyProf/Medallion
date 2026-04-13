@@ -84,11 +84,8 @@ class StaffController extends Controller
             ->where('is_active', true)
             ->first();
 
-        // If not found by query, try find by ID 16 as last resort
-        if (!$superAdminRole) {
-            $superAdminRole = \App\Models\Role::find(16);
-        }
-
+        // REMOVED ID 16 FALLBACK (Caused Chef collision on server)
+        
         \Log::info('StaffController@create: Debug Role Info', [
             'found_super_admin' => $superAdminRole ? true : false,
             'super_admin_id' => $superAdminRole->id ?? 'N/A',
@@ -364,6 +361,11 @@ class StaffController extends Controller
             'super_admin_id' => $superAdminRole->id ?? 'N/A',
             'super_admin_name' => $superAdminRole->name ?? 'N/A',
             'total_roles_returned' => $allRoles->count()
+        ]);
+
+        // FULL SERVER ROLE AUDIT (Helpful for identifying the correct Super Admin ID)
+        \Log::info('SERVER ROLE AUDIT: Listing all active roles', [
+            'audit' => Role::where('is_active', true)->get(['id', 'name', 'slug'])->toArray()
         ]);
         
         // Filter roles that match suggested role names for this business type
