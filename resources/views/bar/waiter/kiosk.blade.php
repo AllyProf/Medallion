@@ -110,7 +110,11 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 /* Left Sidebar (Categories) */
 .pos-sidebar { width: 230px; background-color: var(--bg-surface); border-right: 2px solid var(--border-dark); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .cat-header { background-color: var(--accent-green); color: white; padding: 15px; font-weight: bold; text-align: center; font-size: 1.1rem; border-bottom: 1px solid var(--border-color); cursor: pointer; flex-shrink: 0; }
-.cat-list { flex: 1; overflow-y: auto; min-height: 0; }
+.cat-list { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
+.cat-list::-webkit-scrollbar { width: 4px; }
+.cat-list::-webkit-scrollbar-track { background: var(--bg-darker); }
+.cat-list::-webkit-scrollbar-thumb { background: var(--accent-green); border-radius: 4px; }
+.cat-list::-webkit-scrollbar-thumb:hover { background: #1e9e4c; }
 .cat-item { padding: 14px 20px; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 12px; font-size: 0.9rem; color: var(--text-main); }
 .cat-item i { width: 20px; text-align: center; font-size: 1.1rem; }
 .cat-item:hover, .cat-item.active { background-color: var(--bg-card); border-left: 4px solid var(--accent-green); padding-left: 16px; color: var(--text-main); font-weight: bold; }
