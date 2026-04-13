@@ -44,7 +44,7 @@ class StaffController extends Controller
         
         // For staff members or Super Admin, skip plan check
         // Only check plan for regular users (owners) who are not platform admins
-        if (!session('is_staff') && auth()->user()->role !== 'admin') {
+        if (!session('is_staff') && !(auth()->check() && auth()->user()->isAdmin())) {
             // Check if user's plan allows staff registration (Free or Pro only)
             $plan = $user->currentPlan();
             if (!$plan || !in_array($plan->slug, ['free', 'pro'])) {
@@ -86,7 +86,7 @@ class StaffController extends Controller
         
         // For staff members or Super Admin, skip plan check
         // Only check plan for regular users (owners) who are not platform admins
-        if (!session('is_staff') && auth()->user()->role !== 'admin') {
+        if (!session('is_staff') && !(auth()->check() && auth()->user()->isAdmin())) {
             // Check if user's plan allows staff registration
             $plan = $user->currentPlan();
             if (!$plan || !in_array($plan->slug, ['free', 'pro'])) {
@@ -123,7 +123,7 @@ class StaffController extends Controller
         // Verify role belongs to the owner (Super Admins can use any role)
         $role = Role::findOrFail($validated['role_id']);
         $ownerId = $this->getOwnerId();
-        if (auth()->user()->role !== 'admin' && $role->user_id !== $ownerId) {
+        if (!(auth()->check() && auth()->user()->isAdmin()) && $role->user_id !== $ownerId) {
             return back()->with('error', 'Invalid role selected.');
         }
 
@@ -403,7 +403,7 @@ class StaffController extends Controller
         
         $ownerId = $this->getOwnerId();
         $staffQuery = Staff::query()->with(['role', 'businessType']);
-        if (auth()->user()->role !== 'admin') {
+        if (!(auth()->check() && auth()->user()->isAdmin())) {
             $staffQuery->where('user_id', $ownerId);
         }
         $staff = $staffQuery->findOrFail($id);
@@ -430,7 +430,7 @@ class StaffController extends Controller
         
         $ownerId = $this->getOwnerId();
         $staffQuery = Staff::where('user_id', $ownerId);
-        if ($user->role === 'admin') {
+        if (auth()->check() && auth()->user()->isAdmin()) {
             $staffQuery = Staff::query();
         }
         $staff = $staffQuery->findOrFail($id);
@@ -463,7 +463,7 @@ class StaffController extends Controller
         
         $ownerId = $this->getOwnerId();
         $staffQuery = Staff::where('user_id', $ownerId);
-        if ($user->role === 'admin') {
+        if (auth()->check() && auth()->user()->isAdmin()) {
             $staffQuery = Staff::query();
         }
         $staff = $staffQuery->findOrFail($id);
@@ -497,7 +497,7 @@ class StaffController extends Controller
         // Verify role belongs to the owner (Super Admin can use any role)
         $role = Role::findOrFail($validated['role_id']);
         $ownerId = $this->getOwnerId();
-        if (auth()->user()->role !== 'admin' && $role->user_id !== $ownerId) {
+        if (!(auth()->check() && auth()->user()->isAdmin()) && $role->user_id !== $ownerId) {
             return back()->with('error', 'Invalid role selected.');
         }
 
@@ -566,7 +566,7 @@ class StaffController extends Controller
         
         $ownerId = $this->getOwnerId();
         $staffQuery = Staff::where('user_id', $ownerId);
-        if ($user->role === 'admin') {
+        if (auth()->check() && auth()->user()->isAdmin()) {
             $staffQuery = Staff::query();
         }
         $staff = $staffQuery->findOrFail($id);

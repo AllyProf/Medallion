@@ -26,27 +26,23 @@
                 <p class="small text-muted mb-3">Load brands by distributor to keep your inventory un-mixed and easy to receive.</p>
                 
                 <div class="mb-3">
-                    <span class="smallest font-weight-bold text-uppercase text-muted d-block border-bottom pb-1 mb-2">Soft Drinks & Water Distributors</span>
-                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="bonite_soda">Bonite (Coca-Cola)</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="sbc_soda">SBC (Pepsi)</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="azam_soda">Azam Bakhresa</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="drinking_water">Drinking Water</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="energy_soft">Energizers</button>
+                    <span class="smallest font-weight-bold text-uppercase text-muted d-block border-bottom pb-1 mb-2">Sodas, Water &amp; Energizers</span>
+                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="soda_water">Soda &amp; Water</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="energizers">Energizers</button>
                 </div>
 
                 <div class="mb-3">
-                    <span class="smallest font-weight-bold text-uppercase text-muted d-block border-bottom pb-1 mb-2">Beer Distributors (Brewers)</span>
-                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="tbl_beers">TBL (Kili/Safari/Castle)</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="sbl_beers">SBL (Serengeti/Guinness)</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="heineken_others">Heineken & Premium</button>
+                    <span class="smallest font-weight-bold text-uppercase text-muted d-block border-bottom pb-1 mb-2">Beer Bottles &amp; Cans</span>
+                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="lager_bottles">Lager Bottles</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="beer_cans">Beer Cans</button>
                 </div>
 
                 <div class="mb-0">
-                    <span class="smallest font-weight-bold text-uppercase text-muted d-block border-bottom pb-1 mb-2">Spirits & Wine Portfolio</span>
-                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="konyagi_spirits">Konyagi / TBL Spirits</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="diageo_spirits">Diageo / SBL Portfolio</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="premium_whisky">Premium Whiskeys</button>
-                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="wine_portfolio">Wine Collection</button>
+                    <span class="smallest font-weight-bold text-uppercase text-muted d-block border-bottom pb-1 mb-2">Spirits &amp; Wine Portfolio</span>
+                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="spirits">Spirits (Whisky/Cognac)</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="gin_local">Gin &amp; Local Spirits</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="wine_champagne">Wine &amp; Champagne</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm m-1 bulk-load-btn" data-brand="house_wines">Local / House Wines</button>
                 </div>
             </div>
             <div class="col-md-5">
@@ -79,12 +75,14 @@
                     <div class="form-group mb-0">
                         <label class="small font-weight-bold text-uppercase text-muted">Core Category</label>
                         <select class="form-control form-control-lg border-primary" name="category" id="activeCategory" required>
-                          <option value="Beers" {{ old('category') === 'Beers' ? 'selected' : '' }}>Beers</option>
-                          <option value="Spirits" {{ old('category') === 'Spirits' ? 'selected' : '' }}>Spirits</option>
-                          <option value="Wines" {{ old('category') === 'Wines' ? 'selected' : '' }}>Wines</option>
-                          <option value="Soft Drinks" {{ old('category') === 'Soft Drinks' ? 'selected' : '' }}>Soft Drinks</option>
-                          <option value="Water" {{ old('category') === 'Water' ? 'selected' : '' }}>Water</option>
-                          <option value="Energies" {{ old('category') === 'Energies' ? 'selected' : '' }}>Energies</option>
+                          <option value="SODA & WATER" {{ old('category') === 'SODA & WATER' ? 'selected' : '' }}>SODA &amp; WATER</option>
+                          <option value="ENERGIZER" {{ old('category') === 'ENERGIZER' ? 'selected' : '' }}>⚡ ENERGIZER</option>
+                          <option value="BEERS / LAGER (BOTTLES)" {{ old('category') === 'BEERS / LAGER (BOTTLES)' ? 'selected' : '' }}>🍺 BEERS / LAGER (BOTTLES)</option>
+                          <option value="BEER CANS" {{ old('category') === 'BEER CANS' ? 'selected' : '' }}>🍺 BEER CANS</option>
+                          <option value="SPIRITS" {{ old('category') === 'SPIRITS' ? 'selected' : '' }}>🥃 SPIRITS</option>
+                          <option value="GIN & LOCAL SPIRITS" {{ old('category') === 'GIN & LOCAL SPIRITS' ? 'selected' : '' }}>🍸 GIN &amp; LOCAL SPIRITS</option>
+                          <option value="WINE & CHAMPAGNE" {{ old('category') === 'WINE & CHAMPAGNE' ? 'selected' : '' }}>🍷 WINE &amp; CHAMPAGNE</option>
+                          <option value="LOCAL / HOUSE WINES" {{ old('category') === 'LOCAL / HOUSE WINES' ? 'selected' : '' }}>🍷 LOCAL / HOUSE WINES</option>
                         </select>
                     </div>
                 </div>
@@ -169,137 +167,187 @@
     });
 
     const productLibrary = {
-        "bonite_soda": {
-            brand: "Bonite (Coca-Cola)",
-            category: "Soft Drinks",
+        "soda_water": {
+            brand: "Soda & Water",
+            category: "SODA & WATER",
             flavors: [
-                { name: "Coca-Cola Classic", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
-                { name: "Coke Zero", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
-                { name: "Sprite", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
-                { name: "Fanta Orange", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
-                { name: "Fanta Pineapple", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
-                { name: "Fanta Blackcurrant", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
-                { name: "Stoney Tangawizi", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
-                { name: "Novida Pineapple", size: 300, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
-                { name: "Krest Tonic Water", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 }
-            ]
-        },
-        "sbc_soda": {
-            brand: "SBC (Pepsi)",
-            category: "Soft Drinks",
-            flavors: [
-                { name: "Pepsi Cola", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
-                { name: "Mirinda Orange", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
-                { name: "Mirinda Fruity", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
-                { name: "7Up", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
-                { name: "Mountain Dew", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 }
-            ]
-        },
-        "azam_soda": {
-            brand: "Azam Bakhresa",
-            category: "Soft Drinks",
-            flavors: [
-                { name: "Azam Cola", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
-                { name: "Azam Orange", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
-                { name: "Azam Malt", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
-                { name: "Azam Embe", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 }
-            ]
-        },
-        "drinking_water": {
-            brand: "Drinking Water",
-            category: "Water",
-            flavors: [
+                { name: "Bonite Soda", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
                 { name: "M/Water Big", size: 1.5, unit: "L", sell: "bottle", pkg: "Carton", pkg_qty: 12 },
                 { name: "M/Water Small", size: 500, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
                 { name: "Hill Sparkling Water", size: 750, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 12 },
-                { name: "Sayona Twist", size: 350, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 }
+                { name: "Ceres Juice", size: 200, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Bavaria Chupa", size: 330, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 24 },
+                { name: "Bavaria Can", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Baltika", size: 500, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 12 }
             ]
         },
-        "energy_soft": {
+        "energizers": {
             brand: "Energizers",
-            category: "Energies",
+            category: "ENERGIZER",
             flavors: [
-                { name: "Red Bull Energy", size: 250, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
-                { name: "Mo Energy", size: 250, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
-                { name: "Dragon Energy", size: 500, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
-                { name: "Monster Energy", size: 500, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 }
+                { name: "Red Bull", size: 250, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Grand Malta", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 }
             ]
         },
-        "tbl_beers": {
-            brand: "TBL (Tanzania Breweries)",
-            category: "Beers",
+        "lager_bottles": {
+            brand: "Lager Beer (Bottles)",
+            category: "BEERS / LAGER (BOTTLES)",
             flavors: [
-                { name: "Kilimanjaro Lager", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
-                { name: "Safari Lager", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
-                { name: "Castle Lager", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
-                { name: "Castle Lite Bottle", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
-                { name: "Balimi Extra", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
-                { name: "Flying Fish Can", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
-                { name: "Brutal Fruit Apple", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 }
-            ]
-        },
-        "sbl_beers": {
-            brand: "SBL (Serengeti Breweries)",
-            category: "Beers",
-            flavors: [
-                { name: "Serengeti Lager", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
+                { name: "Castle Lite", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
+                { name: "Kilimanjaro Ndogo", size: 300, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
+                { name: "Kilimanjaro Kubwa", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
+                { name: "Kilimanjaro Lite", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
+                { name: "Safari Ndogo", size: 300, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
+                { name: "Safari Kubwa", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
+                { name: "Serengeti Lager Ndogo", size: 300, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
+                { name: "Serengeti Lager Kubwa", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
                 { name: "Serengeti Lite", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
-                { name: "Guinness Smooth Bottle", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
                 { name: "Serengeti Lemon", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
-                { name: "Pilsner Lager", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 }
+                { name: "Castle Lager", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
+                { name: "Fly Fish", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Guinness Kubwa", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
+                { name: "Guinness Smooth", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
+                { name: "Smirnoff Black Ice", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Smirnoff Black Guarana", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Smirnoff Black Pineapple", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Heineken", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Windhoek", size: 440, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Brutal Apple Ruby", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Hanson Dry", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
+                { name: "Hanson Lite", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
+                { name: "Goldberg", size: 500, unit: "ml", sell: "bottle", pkg: "Crate", pkg_qty: 25 },
+                { name: "Stella", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Corona", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 }
             ]
         },
-        "heineken_others": {
-            brand: "Premium Imports",
-            category: "Beers",
+        "beer_cans": {
+            brand: "Beer Cans",
+            category: "BEER CANS",
             flavors: [
-                { name: "Heineken Can", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
-                { name: "Desperado Can", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
-                { name: "Windhoek Can", size: 440, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 }
+                { name: "Kilimanjaro Can", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Castle Lite Can", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Redd's Can", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Safari Can", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Savanna", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Desperado", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 },
+                { name: "Flying Fish Can", size: 330, unit: "ml", sell: "bottle", pkg: "Carton", pkg_qty: 24 }
             ]
         },
-        "konyagi_spirits": {
-            brand: "Konyagi / TBL Spirits",
-            category: "Spirits",
+        "spirits": {
+            brand: "Spirits",
+            category: "SPIRITS",
             flavors: [
-                { name: "Konyagi Premium Gin", size: 500, unit: "ml", sell: "mixed", tots: 16 },
-                { name: "Konyagi Small", size: 250, unit: "ml", sell: "bottle" },
-                { name: "Safari Gin", size: 750, unit: "ml", sell: "mixed", tots: 25 },
-                { name: "Valeur Brandy", size: 750, unit: "ml", sell: "mixed", tots: 25 },
-                { name: "Zanzi Cream", size: 750, unit: "ml", sell: "mixed", tots: 25 }
+                { name: "Hennessy VSOP 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Hennessy VS 1L", size: 1000, unit: "ml", sell: "mixed", tots: 33 },
+                { name: "Hennessy VS 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Hennessy VS 200ml", size: 200, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Martell VSOP", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Martell VS", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Red Label 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Black Label 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Red Label 375ml", size: 375, unit: "ml", sell: "mixed", tots: 12 },
+                { name: "Black Label 375ml", size: 375, unit: "ml", sell: "mixed", tots: 12 },
+                { name: "Jack Daniel's 1L", size: 1000, unit: "ml", sell: "mixed", tots: 33 },
+                { name: "Jack Daniel's 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Jack Daniel's 375ml", size: 375, unit: "ml", sell: "mixed", tots: 12 },
+                { name: "Jack Daniel's 200ml", size: 200, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Jack Daniel's Honey 1L", size: 1000, unit: "ml", sell: "mixed", tots: 33 },
+                { name: "Jack Daniel's Honey 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Jack Daniel's Honey 375ml", size: 375, unit: "ml", sell: "mixed", tots: 12 },
+                { name: "Jack Daniel's Honey 200ml", size: 200, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Ballantine's 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Ballantine's 375ml", size: 375, unit: "ml", sell: "mixed", tots: 12 },
+                { name: "Ballantine's 200ml", size: 200, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Singleton 12 yrs", size: 700, unit: "ml", sell: "mixed", tots: 23 },
+                { name: "Singleton 15 yrs", size: 700, unit: "ml", sell: "mixed", tots: 23 },
+                { name: "Black & White 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Black & White 200ml", size: 200, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Jägermeister 1L", size: 1000, unit: "ml", sell: "mixed", tots: 33 },
+                { name: "Jägermeister 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Jägermeister 350ml", size: 350, unit: "ml", sell: "mixed", tots: 11 },
+                { name: "Jägermeister 200ml", size: 200, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Absolut Vodka 1L", size: 1000, unit: "ml", sell: "mixed", tots: 33 },
+                { name: "Absolut Vodka 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Absolut Vodka 350ml", size: 350, unit: "ml", sell: "mixed", tots: 11 },
+                { name: "Absolut Vodka 200ml", size: 200, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Magic Moments Green Apple 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Magic Moments Chocolate 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Jameson 1L", size: 1000, unit: "ml", sell: "mixed", tots: 33 },
+                { name: "Jameson 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Jameson 375ml", size: 375, unit: "ml", sell: "mixed", tots: 12 },
+                { name: "Jameson 200ml", size: 200, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Jameson Black Barrel 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "J & B 1L", size: 1000, unit: "ml", sell: "mixed", tots: 33 },
+                { name: "J & B 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "J & B 200ml", size: 200, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Grants 1L", size: 1000, unit: "ml", sell: "mixed", tots: 33 },
+                { name: "Grants 750ml Glass", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Camino Tequila", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Famous Grouse 350ml", size: 350, unit: "ml", sell: "mixed", tots: 11 },
+                { name: "Olmeca Tequila 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 }
             ]
         },
-        "diageo_spirits": {
-            brand: "Diageo / SBL Portfolio",
-            category: "Spirits",
+        "gin_local": {
+            brand: "Gin & Local Spirits",
+            category: "GIN & LOCAL SPIRITS",
             flavors: [
-                { name: "Johnnie Walker Black Label", size: 750, unit: "ml", sell: "mixed", tots: 25 },
-                { name: "Johnnie Walker Red Label", size: 750, unit: "ml", sell: "mixed", tots: 25 },
-                { name: "Smirnoff Vodka", size: 750, unit: "ml", sell: "mixed", tots: 25 },
-                { name: "Gilbeys Gin", size: 750, unit: "ml", sell: "mixed", tots: 25 },
-                { name: "Chrome Gin", size: 750, unit: "ml", sell: "mixed", tots: 25 }
+                { name: "Gordons 200ml", size: 200, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Gordons 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Konyagi 200ml", size: 200, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Konyagi 500ml", size: 500, unit: "ml", sell: "mixed", tots: 16 },
+                { name: "Konyagi 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Hanson Choice 200ml", size: 200, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Hanson Choice 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "Highlife 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "K-Vant 750ml", size: 750, unit: "ml", sell: "mixed", tots: 25 },
+                { name: "K-Vant 200ml", size: 200, unit: "ml", sell: "bottle", pkg: "Piece" }
             ]
         },
-        "premium_whisky": {
-            brand: "Global Premium Spirits",
-            category: "Spirits",
+        "wine_champagne": {
+            brand: "Wine & Champagne",
+            category: "WINE & CHAMPAGNE",
             flavors: [
-                { name: "Hennesy V.S.O.P", size: 750, unit: "ml", sell: "mixed", tots: 25 },
-                { name: "Jack Daniel No.7", size: 750, unit: "ml", sell: "mixed", tots: 25 },
-                { name: "Jaggermaster", size: 700, unit: "ml", sell: "mixed", tots: 23 },
-                { name: "Absolute Vodka", size: 750, unit: "ml", sell: "mixed", tots: 25 },
-                { name: "Amarula Cream", size: 750, unit: "ml", sell: "mixed", tots: 25 }
+                { name: "Martin Champagne 750ml", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Moët Nectar Imperial", size: 750, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Moët Rosé", size: 750, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Provetto Rosé", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Provetto Brut", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Non-Alcoholic Champagne", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Four Cousins Sweet Red 750ml", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Four Cousins White 750ml", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Drostdy Hof Red Claret 700ml", size: 700, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Drostdy Hof Red Claret 375ml", size: 375, unit: "ml", sell: "mixed", tots: 3 },
+                { name: "Drostdy Hof CRI White 700ml", size: 700, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Drostdy Hof CRI White 375ml", size: 375, unit: "ml", sell: "mixed", tots: 3 },
+                { name: "Pearly Bay Dry Red", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Pearly Bay Dry White", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Pearly Bay Sweet White", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Pearly Bay Sweet Red", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Pearly Bay Sweet Rosé", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "KWV Merlot", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "KWV Chardonnay", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Lions Hill Sweet Red", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Lions Hill Dry White", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Lions Hill Dry Red", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Lions Hill Sweet White", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Robertson Sweet Red 750ml", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Robertson Sweet White 750ml", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Nederburg Merlot 750ml", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Calvet Merlot 750ml", size: 750, unit: "ml", sell: "mixed", tots: 5 }
             ]
         },
-        "wine_portfolio": {
-            brand: "Wine Collection",
-            category: "Wines",
+        "house_wines": {
+            brand: "Local / House Wines",
+            category: "LOCAL / HOUSE WINES",
             flavors: [
-                { name: "Dodoma Red (Dry)", size: 750, unit: "ml", sell: "mixed", tots: 5 },
-                { name: "4th Street Red Sweet", size: 750, unit: "ml", sell: "mixed", tots: 5 },
-                { name: "Robertson Sweet Red", size: 750, unit: "ml", sell: "bottle" },
-                { name: "Lions Hill Selection", size: 750, unit: "ml", sell: "mixed", tots: 5 },
-                { name: "Drostdney Hoff Claret", size: 700, unit: "ml", sell: "mixed", tots: 5 }
+                { name: "Spear Wine Image 250ml", size: 250, unit: "ml", sell: "bottle", pkg: "Piece" },
+                { name: "Dompo 750ml", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Dompo Ndogo", size: 375, unit: "ml", sell: "mixed", tots: 3 },
+                { name: "Altar Wine", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Presidential Noble", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "Dodoma Wine", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "TZEE 750ml", size: 750, unit: "ml", sell: "mixed", tots: 5 },
+                { name: "TZEE 200ml", size: 200, unit: "ml", sell: "bottle", pkg: "Piece" }
             ]
         },
     };
