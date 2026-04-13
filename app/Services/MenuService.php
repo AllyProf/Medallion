@@ -113,6 +113,13 @@ class MenuService
                             return false;
                         }
 
+                        // Prevent duplicate 'Food Reconciliation' or 'Chef Reconciliation' items
+                        // since they are already handled in the common menus section
+                        if (in_array($menu->slug, ['chef-reconciliation', 'food-reconciliation']) || 
+                            in_array(strtolower(trim($menu->name)), ['food reconciliation', 'chef reconciliation'])) {
+                            return false;
+                        }
+
                         // Unified filtering for Manager and Super Admin roles
                         $isManager = in_array(strtolower($staffRole->name ?? ''), ['manager', 'general manager', 'administrator']) || 
                                      in_array(strtolower($staffRole->slug ?? ''), ['manager', 'admin']) ||

@@ -330,6 +330,20 @@ class StaffController extends Controller
         $allRoles = Role::where('user_id', $user->id)
             ->where('is_active', true)
             ->get();
+            
+        // EXTREMELY IMPORTANT: Always include the Super Admin role in the AJAX response
+        // if the requester has permission. This prevents the role from disappearing from the 
+        // dropdown when business types are changed or initialized via AJAX.
+        $superAdminRole = Role::where(function($q) {
+                $q->where('name', 'LIKE', 'Super Admin%')
+                  ->orWhere('slug', 'LIKE', 'super-admin%');
+            })
+            ->where('is_active', true)
+            ->first();
+
+        if ($superAdminRole && !$allRoles->contains('id', $superAdminRole->id)) {
+            $allRoles->push($superAdminRole);
+        }
         
         // Filter roles that match suggested role names for this business type
         // Use case-insensitive matching and trim whitespace
