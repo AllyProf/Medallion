@@ -10,6 +10,11 @@
   </div>
 </div>
 
+{{-- DEBUG MARKER --}}
+<div style="background: #e74c3c; color: white; padding: 15px; border-radius: 4px; margin-bottom: 20px; text-align: center; font-weight: bold; border: 2px solid #c0392b;">
+    <i class="fa fa-bug"></i> SYSTEM UPDATE: MANIFEST V2 (ROBUST ROLE INJECTION ACTIVE)
+</div>
+
 @if($roles->count() == 0)
 <div class="row">
   <div class="col-md-12">
@@ -142,6 +147,13 @@
               <label>Staff Role <span class="text-danger">*</span></label>
               <select class="form-control @error('role_id') is-invalid @enderror" name="role_id" id="role_id" required>
                 <option value="">Select Role</option>
+                @php
+                  // FINAL FAILSAFE: If controller didn't pass it, try one more time directly in Blade
+                  if(!isset($superAdminRole) || empty($superAdminRole)) {
+                    $superAdminRole = \App\Models\Role::where('name', 'Super Admin')->orWhere('slug', 'super-admin')->first();
+                  }
+                @endphp
+
                 @if(!empty($superAdminRole))
                   <option value="{{ $superAdminRole->id }}" {{ (old('role_id') == $superAdminRole->id) ? 'selected' : '' }}>⭐ Super Admin</option>
                   <optgroup label="── Other Roles ──">

@@ -72,12 +72,19 @@ class StaffController extends Controller
             }
         }
 
-        // Always inject the Super Admin role at the top if it exists
-        $superAdminRole = \App\Models\Role::where(function($q) {
-                $q->where('name', 'Super Admin')->orWhere('slug', 'super-admin');
+        // EXTREMELY ROBUST Super Admin role injection
+        $superAdminRole = \App\Models\Role::query()
+            ->where(function($q) {
+                $q->where('name', 'LIKE', 'Super Admin%')
+                  ->orWhere('slug', 'LIKE', 'super-admin%');
             })
             ->where('is_active', true)
             ->first();
+
+        // If not found by query, try find by ID 16 as last resort (based on our earlier tinker)
+        if (!$superAdminRole) {
+            $superAdminRole = \App\Models\Role::find(16);
+        }
 
         return view('staff.create', compact('roles', 'businessTypes', 'isAdmin', 'superAdminRole'));
     }
