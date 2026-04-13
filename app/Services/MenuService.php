@@ -204,34 +204,6 @@ class MenuService
             return $menu->slug ?? $menu->id;
         })->values();
 
-        // Inject Food Reconciliation right after Counter Reconciliation for Accountants/Managers
-        $roleName = strtolower($staffRole->name ?? '');
-        $roleSlug = strtolower($staffRole->slug ?? '');
-        $isAccountantOrAdmin = in_array($roleName, ['accountant', 'manager', 'admin', 'finance', 'account', 'general manager', 'administrator']) || 
-                               in_array($roleSlug, ['accountant', 'manager', 'admin', 'finance', 'account', 'general-manager', 'super-admin']);
-        
-        if ($this->isSuperAdminRole($staffRole)) {
-            $newFinalMenus = collect();
-            foreach ($finalMenus as $menu) {
-                $newFinalMenus->push($menu);
-                if ($menu->slug === 'counter-reconciliation') {
-                    $foodReconMenu = (object)[
-                        'id' => 'mock_food_recon',
-                        'name' => 'Food Reconciliation',
-                        'slug' => 'food-reconciliation',
-                        'icon' => 'fa-cutlery',
-                        'route' => 'accountant.food.reconciliation',
-                        'parent_id' => null,
-                        'children' => collect(),
-                        'full_url' => route('accountant.food.reconciliation'),
-                        'is_placeholder' => false,
-                    ];
-                    $newFinalMenus->push($foodReconMenu);
-                }
-            }
-            $finalMenus = $newFinalMenus;
-        }
-
         // Specific override for Counter role as per user request: Redirect Warehouse Stock to Available Transfers
         if ($isCounter) {
             foreach ($finalMenus as $menu) {
