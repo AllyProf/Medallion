@@ -10,11 +10,6 @@
   </div>
 </div>
 
-{{-- DEBUG MARKER --}}
-<div style="background: #e74c3c; color: white; padding: 15px; border-radius: 4px; margin-bottom: 20px; text-align: center; font-weight: bold; border: 2px solid #c0392b;">
-    <i class="fa fa-bug"></i> SYSTEM UPDATE: MANIFEST V2 (ROBUST ROLE INJECTION ACTIVE)
-</div>
-
 @if($roles->count() == 0)
 <div class="row">
   <div class="col-md-12">
