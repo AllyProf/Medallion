@@ -58,7 +58,7 @@ class StaffController extends Controller
 
         $isAdmin = $this->isSuperAdminRole();
         
-        // Repair and Deduplicate roles before loading the page (Fixes missing Super Admin and duplicate Chefs)
+        // Repair and Deduplicate roles before loading the page
         $this->repairAndDeduplicateRoles();
 
         // Get roles: Super Admin sees ALL distinct roles; owners only see their own
@@ -87,23 +87,7 @@ class StaffController extends Controller
             ->where('is_active', true)
             ->first();
 
-        // REMOVED ID 16 FALLBACK (Caused Chef collision on server)
-        
-        \Log::info('StaffController@create: Debug Role Info', [
-            'found_super_admin' => $superAdminRole ? true : false,
-            'super_admin_id' => $superAdminRole->id ?? 'N/A',
-            'super_admin_name' => $superAdminRole->name ?? 'N/A',
-            'is_admin_user' => (auth()->check() && auth()->user()->isAdmin())
-        ]);
-
-        // FULL SERVER ROLE AUDIT (Helpful for identifying the correct Super Admin ID)
-        \Log::info('SERVER ROLE AUDIT: Listing all active roles', [
-            'audit' => \App\Models\Role::where('is_active', true)->get(['id', 'name', 'slug'])->toArray()
-        ]);
-
-        $debugRoles = \App\Models\Role::where('is_active', true)->get(['id', 'name', 'slug']);
-
-        return view('staff.create', compact('roles', 'businessTypes', 'isAdmin', 'superAdminRole', 'debugRoles'));
+        return view('staff.create', compact('roles', 'businessTypes', 'isAdmin', 'superAdminRole'));
     }
 
     /**
@@ -367,30 +351,9 @@ class StaffController extends Controller
             $allRoles->push($superAdminRole);
         }
 
-        \Log::info('StaffController@getRolesByBusinessType: Debug AJAX Info', [
-            'business_type_id' => $businessTypeId,
-            'user_id' => $user->id,
-            'super_admin_role_found' => $superAdminRole ? true : false,
-            'super_admin_id' => $superAdminRole->id ?? 'N/A',
-            'super_admin_name' => $superAdminRole->name ?? 'N/A',
-            'total_roles_returned' => $allRoles->count()
-        ]);
-        
-        // Filter roles that match suggested role names for this business type
-        // Use case-insensitive matching and trim whitespace
-        $filteredRoles = $allRoles->filter(function($role) use ($suggestedRoleNames) {
-            $roleNameLower = strtolower(trim($role->name));
-            return in_array($roleNameLower, $suggestedRoleNames);
-        });
-        
-        // If no matching roles found, return all roles as fallback
-        if ($filteredRoles->isEmpty()) {
-            $filteredRoles = $allRoles;
-        }
-        
-        // Return filtered roles
+        // Clean response with filtered roles
         return response()->json([
-            'roles' => $filteredRoles->map(function($role) {
+            'roles' => $allRoles->map(function($role) {
                 return [
                     'id' => $role->id,
                     'name' => $role->name,

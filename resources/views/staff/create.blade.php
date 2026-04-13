@@ -10,43 +10,8 @@
   </div>
 </div>
 
-@if(auth()->check() && auth()->user()->isAdmin() && isset($debugRoles))
-<div class="row mb-4">
-  <div class="col-12">
-    <div class="card border-primary">
-      <div class="card-header bg-primary text-white">
-        <h6 class="mb-0 font-weight-bold"><i class="fa fa-bug"></i> Administrator Role Diagnostic (Server Environment)</h6>
-      </div>
-      <div class="card-body p-0">
-         <table class="table table-sm table-striped mb-0">
-           <thead>
-             <tr>
-               <th>ID</th>
-               <th>Role Name</th>
-               <th>Slug</th>
-               <th>Analysis</th>
-             </tr>
-           </thead>
-           <tbody>
-             @foreach($debugRoles as $dr)
-             <tr>
-               <td><strong>{{ $dr->id }}</strong></td>
-               <td>{{ $dr->name }}</td>
-               <td><code>{{ $dr->slug }}</code></td>
-               <td>
-                 @if($dr->id == 16) <span class="badge badge-danger">ID 16 is {{ $dr->name }}</span> @endif
-                 @if(str_contains(strtolower($dr->name), 'chef')) <span class="badge badge-warning">Chef Role</span> @endif
-                 @if(str_contains(strtolower($dr->name), 'admin')) <span class="badge badge-success">Potential Match</span> @endif
-               </td>
-             </tr>
-             @endforeach
-           </tbody>
-         </table>
-      </div>
-      <div class="card-footer py-1 text-muted"> <small>Please tell me which <strong>ID</strong> is your real Super Admin from this table.</small> </div>
-    </div>
-  </div>
-</div>
+@if(auth()->check() && auth()->user()->isAdmin() && !empty($superAdminRole))
+  <!-- System Balanced: Super Admin Role verified as ID {{ $superAdminRole->id }} -->
 @endif
 
 @if($roles->count() == 0)
@@ -178,11 +143,7 @@
         <div class="row">
           <div class="col-md-6">
             <div class="form-group">
-              <label>Staff Role <span class="text-danger">*</span> 
-                @if(auth()->check() && auth()->user()->isAdmin() && !empty($superAdminRole))
-                  <small class="text-muted">(ID: {{ $superAdminRole->id }})</small>
-                @endif
-              </label>
+              <label>Staff Role <span class="text-danger">*</span></label>
               <select class="form-control @error('role_id') is-invalid @enderror" name="role_id" id="role_id" required>
                 <option value="">Select Role</option>
                 @php
