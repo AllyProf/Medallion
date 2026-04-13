@@ -122,14 +122,14 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 .product-search-bar { flex-shrink: 0; padding: 15px; border-bottom: 2px solid var(--border-dark); background-color: var(--bg-surface); }
 .product-search-bar input { width: 100%; background-color: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-main); padding: 10px 15px; border-radius: 4px; outline: none; font-size: 0.9rem; }
 .product-search-bar input::placeholder { color: var(--text-muted); }
-.product-grid { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 15px; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); grid-auto-rows: 230px; gap: 12px; align-content: start; min-height: 0; }
+.product-grid { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 15px; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; align-content: start; min-height: 0; }
 
-.prod-card { height: 100%; background-color: var(--bg-card); border-radius: 6px; overflow: hidden; cursor: pointer; border: 1px solid var(--border-color); display: flex; flex-direction: column; transition: border 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+.prod-card { height: 100%; min-height: 220px; background-color: var(--bg-card); border-radius: 6px; overflow: hidden; cursor: pointer; border: 1px solid var(--border-color); display: flex; flex-direction: column; transition: border 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
 .prod-card:hover { border-color: var(--accent-green); }
 .prod-img { flex-shrink: 0; height: 110px; background-color: var(--bg-darker); width: 100%; object-fit: cover; border-bottom: 1px solid var(--border-color); }
-.prod-info { padding: 10px 8px; text-align: center; }
+.prod-info { padding: 10px 8px; text-align: center; display: flex; flex-direction: column; flex: 1; }
 .prod-title { font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; color: var(--text-main); line-height: 1.3; }
-.prod-price { font-size: 0.9rem; color: var(--accent-green); font-weight: bold; margin-top: 5px; display: block; }
+.prod-price { font-size: 0.9rem; color: var(--accent-green); font-weight: bold; margin-top: auto; display: block; padding-top: 5px; }
 
 /* Right Sidebar (Cart) */
 .pos-cart { width: 380px; background-color: var(--bg-surface); border-left: 2px solid var(--border-dark); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
