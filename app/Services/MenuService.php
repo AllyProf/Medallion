@@ -441,8 +441,8 @@ class MenuService
             ];
             $children->push($foodHistoryChild);
             
-            // Inject Receive Profits for Managers/Accountants and Super Admins
-            if ($isManager || $isAccountant || $isSuperAdmin) {
+            // Inject Receive Profits for Managers and Super Admins only (NOT accountants)
+            if ($isManager || $isSuperAdmin) {
                 $receiveProfitsChild = (object)[
                     'id' => 'mock_receive_profits_child',
                     'name' => 'Receive Profits',
