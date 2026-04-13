@@ -72,19 +72,29 @@ class StaffController extends Controller
             }
         }
 
-        // EXTREMELY ROBUST Super Admin role injection
+        // EXTREMELY ROBUST Super Admin role injection (Fuzzy Matching)
         $superAdminRole = \App\Models\Role::query()
             ->where(function($q) {
                 $q->where('name', 'LIKE', 'Super Admin%')
-                  ->orWhere('slug', 'LIKE', 'super-admin%');
+                  ->orWhere('name', 'LIKE', 'SuperAdmin%')
+                  ->orWhere('slug', 'LIKE', 'super-admin%')
+                  ->orWhere('slug', 'LIKE', 'superadmin%')
+                  ->orWhere('slug', '=', 'admin');
             })
             ->where('is_active', true)
             ->first();
 
-        // If not found by query, try find by ID 16 as last resort (based on our earlier tinker)
+        // If not found by query, try find by ID 16 as last resort
         if (!$superAdminRole) {
             $superAdminRole = \App\Models\Role::find(16);
         }
+
+        \Log::info('StaffController@create: Debug Role Info', [
+            'found_super_admin' => $superAdminRole ? true : false,
+            'super_admin_id' => $superAdminRole->id ?? 'N/A',
+            'super_admin_name' => $superAdminRole->name ?? 'N/A',
+            'is_admin_user' => (auth()->check() && auth()->user()->isAdmin())
+        ]);
 
         return view('staff.create', compact('roles', 'businessTypes', 'isAdmin', 'superAdminRole'));
     }
@@ -332,11 +342,13 @@ class StaffController extends Controller
             ->get();
             
         // EXTREMELY IMPORTANT: Always include the Super Admin role in the AJAX response
-        // if the requester has permission. This prevents the role from disappearing from the 
-        // dropdown when business types are changed or initialized via AJAX.
+        // Use FUZZY MATCHING to ensure it is found regardless of naming variations on the server
         $superAdminRole = Role::where(function($q) {
                 $q->where('name', 'LIKE', 'Super Admin%')
-                  ->orWhere('slug', 'LIKE', 'super-admin%');
+                  ->orWhere('name', 'LIKE', 'SuperAdmin%')
+                  ->orWhere('slug', 'LIKE', 'super-admin%')
+                  ->orWhere('slug', 'LIKE', 'superadmin%')
+                  ->orWhere('slug', '=', 'admin');
             })
             ->where('is_active', true)
             ->first();
@@ -344,6 +356,15 @@ class StaffController extends Controller
         if ($superAdminRole && !$allRoles->contains('id', $superAdminRole->id)) {
             $allRoles->push($superAdminRole);
         }
+
+        \Log::info('StaffController@getRolesByBusinessType: Debug AJAX Info', [
+            'business_type_id' => $businessTypeId,
+            'user_id' => $user->id,
+            'super_admin_role_found' => $superAdminRole ? true : false,
+            'super_admin_id' => $superAdminRole->id ?? 'N/A',
+            'super_admin_name' => $superAdminRole->name ?? 'N/A',
+            'total_roles_returned' => $allRoles->count()
+        ]);
         
         // Filter roles that match suggested role names for this business type
         // Use case-insensitive matching and trim whitespace

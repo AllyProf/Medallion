@@ -139,7 +139,11 @@
         <div class="row">
           <div class="col-md-6">
             <div class="form-group">
-              <label>Staff Role <span class="text-danger">*</span></label>
+              <label>Staff Role <span class="text-danger">*</span> 
+                @if(auth()->check() && auth()->user()->isAdmin() && !empty($superAdminRole))
+                  <small class="text-muted">(ID: {{ $superAdminRole->id }})</small>
+                @endif
+              </label>
               <select class="form-control @error('role_id') is-invalid @enderror" name="role_id" id="role_id" required>
                 <option value="">Select Role</option>
                 @php
