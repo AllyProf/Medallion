@@ -58,9 +58,11 @@ class StaffController extends Controller
 
         $isAdmin = auth()->check() && auth()->user()->isAdmin();
 
-        // Get roles: Super Admin sees ALL roles; owners only see their own
+        // Get roles: Super Admin sees ALL distinct roles; owners only see their own
         if ($isAdmin) {
-            $roles = \App\Models\Role::where('is_active', true)->with('owner')->get();
+            $roles = \App\Models\Role::where('is_active', true)->get()->unique(function ($item) {
+                return strtolower(trim($item->name));
+            });
         } else {
             $roles = $user->ownedRoles()->where('is_active', true)->get();
 
@@ -445,7 +447,13 @@ class StaffController extends Controller
         $businessTypes = $user->enabledBusinessTypes()->get();
         
         // Get user's roles for dropdown
-        $roles = $user->ownedRoles()->where('is_active', true)->get();
+        if (auth()->check() && auth()->user()->isAdmin()) {
+            $roles = \App\Models\Role::where('is_active', true)->get()->unique(function ($item) {
+                return strtolower(trim($item->name));
+            });
+        } else {
+            $roles = $user->ownedRoles()->where('is_active', true)->get();
+        }
 
         return view('staff.edit', compact('staff', 'roles', 'businessTypes'));
     }

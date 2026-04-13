@@ -130,9 +130,6 @@
                   @foreach($roles as $role)
                     <option value="{{ $role->id }}" {{ old('role_id', $staff->role_id) == $role->id ? 'selected' : '' }}>
                       {{ $role->name }}
-                      @if(auth()->check() && auth()->user()->isAdmin() && $role->owner)
-                        (Owner: {{ $role->owner->name }})
-                      @endif
                       @if($role->description)
                         - {{ $role->description }}
                       @endif
