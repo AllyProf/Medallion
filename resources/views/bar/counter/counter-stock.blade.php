@@ -3,6 +3,7 @@
 @section('title', 'Counter Stock')
 
 @section('content')
+@php $unitLabel = 'btl'; @endphp
 <div class="app-title">
   <div>
     <h1><i class="fa fa-cubes"></i> Counter Stock</h1>
@@ -207,7 +208,7 @@
                     @endif
                     <button class="btn btn-sm btn-outline-primary btn-set-threshold" 
                             title="Set Low Stock Alert"
-                            onclick="openThresholdModal({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}')">
+                            onclick="openThresholdModal({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}', '{{ $unitLabel }}')">
                         <i class="fa fa-bell-o"></i> Alert
                     </button>
                   </div>
@@ -286,7 +287,7 @@
                              </span>
                           </td>
                           <td class="text-center">
-                              <button class="btn btn-sm btn-outline-info" onclick="openThresholdModal({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}')">
+                              <button class="btn btn-sm btn-outline-info" onclick="openThresholdModal({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}', '{{ $unitLabel }}')">
                                   <i class="fa fa-bell-o"></i> Alert
                               </button>
                           </td>
@@ -463,11 +464,12 @@
 <script>
 var _currentThresholdId = null;
 
-function openThresholdModal(id, name) {
+function openThresholdModal(id, name, unit = 'btl') {
   _currentThresholdId = id;
   const wrapper = $(`.product-card-wrapper[data-item-id="${id}"]`).first();
   const saved = wrapper.attr('data-threshold') || 10;
   $('#threshold-product-name').text(name);
+  $('#threshold-unit-display').text(unit + (unit.endsWith('s') ? '' : 's'));
   $('#threshold-value').val(saved);
   $('#thresholdModal').modal('show');
 }
