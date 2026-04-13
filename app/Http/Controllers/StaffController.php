@@ -102,6 +102,14 @@ class StaffController extends Controller
             }
         }
 
+        // If role_id is 'super_admin' string, replace it with the actual ID
+        if ($request->input('role_id') === 'super_admin') {
+            $superAdminRole = \App\Models\Role::where('name', 'Super Admin')->orWhere('slug', 'super-admin')->first();
+            if ($superAdminRole) {
+                $request->merge(['role_id' => $superAdminRole->id]);
+            }
+        }
+
         // Validate request
         $validated = $request->validate([
             'full_name' => 'required|string|max:255',
