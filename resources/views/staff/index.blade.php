@@ -136,13 +136,28 @@
                   </td>
                   <td>
                     @if($member->role)
-                      <span class="badge badge-info badge-pill px-3 py-1">{{ $member->role->name }}</span>
+                      @php
+                        $rName = strtolower($member->role->name);
+                        $badgeClass = 'badge-info';
+                        if (str_contains($rName, 'admin')) $badgeClass = 'badge-danger';
+                        elseif (str_contains($rName, 'manager')) $badgeClass = 'badge-warning';
+                        elseif (str_contains($rName, 'waiter')) $badgeClass = 'badge-primary';
+                        elseif (str_contains($rName, 'counter') || str_contains($rName, 'cashier')) $badgeClass = 'badge-success';
+                      @endphp
+                      <span class="badge {{ $badgeClass }} badge-pill px-3 py-1">{{ $member->role->name }}</span>
                     @else
                       <span class="badge badge-secondary badge-pill px-3 py-1">No Role</span>
                     @endif
                   </td>
                   <td class="text-center">
-                    <span class="badge badge-light border px-3 py-1 font-weight-bold" style="letter-spacing: 2px;">{{ $member->pin ?? '----' }}</span>
+                    @php
+                      $isWaiter = $member->role && stripos($member->role->name, 'waiter') !== false;
+                    @endphp
+                    @if($isWaiter)
+                      <span class="badge badge-light border px-3 py-1 font-weight-bold" style="letter-spacing: 2px;">{{ $member->pin ?? '----' }}</span>
+                    @else
+                      <span class="text-muted">-</span>
+                    @endif
                   </td>
                   <td>
                     <span class="text-secondary">

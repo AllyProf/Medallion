@@ -63,7 +63,15 @@
               <th width="40%">Role:</th>
               <td>
                 @if($staff->role)
-                  <span class="badge badge-info">{{ $staff->role->name }}</span>
+                  @php
+                    $rName = strtolower($staff->role->name);
+                    $badgeClass = 'badge-info';
+                    if (str_contains($rName, 'admin')) $badgeClass = 'badge-danger';
+                    elseif (str_contains($rName, 'manager')) $badgeClass = 'badge-warning';
+                    elseif (str_contains($rName, 'waiter')) $badgeClass = 'badge-primary';
+                    elseif (str_contains($rName, 'counter') || str_contains($rName, 'cashier')) $badgeClass = 'badge-success';
+                  @endphp
+                  <span class="badge {{ $badgeClass }}">{{ $staff->role->name }}</span>
                 @else
                   <span class="badge badge-secondary">No Role</span>
                 @endif
