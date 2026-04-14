@@ -125,7 +125,7 @@ class MenuService
                                      in_array(strtolower($staffRole->slug ?? ''), ['manager', 'admin']) ||
                                      !empty($staffRole->is_super_admin_virtual);
 
-                        if ($isManager) {
+                        if ($isManager && !$isSuperAdmin) {
                             $hiddenSlugs = [
                                 'restaurant-management', 
                                 'manager-master-sheet-root',
@@ -220,6 +220,61 @@ class MenuService
             }
         }
 
+        // Append Super Admin System Controls for staff with Super Admin roles
+        if ($isSuperAdmin) {
+            $superAdminMenu = (object)[
+                'id'          => 'super_admin_parent',
+                'name'        => 'Super Admin',
+                'slug'        => 'super-admin-parent',
+                'icon'        => 'fa-shield',
+                'route'       => null,
+                'parent_id'   => null,
+                'is_placeholder' => false,
+                'sort_order'  => 2000,
+                'children'    => collect([
+                    (object)[
+                        'id'        => 'admin_accounts',
+                        'name'      => 'Account Management',
+                        'slug'      => 'admin-accounts',
+                        'icon'      => 'fa-key',
+                        'route'     => 'admin.security.accounts',
+                        'full_url'  => route('admin.security.accounts'),
+                        'parent_id' => 'super_admin_parent',
+                    ],
+                    (object)[
+                        'id'        => 'admin_logs',
+                        'name'      => 'Activity Logs',
+                        'slug'      => 'admin-logs',
+                        'icon'      => 'fa-list-alt',
+                        'route'     => 'admin.security.logs',
+                        'full_url'  => route('admin.security.logs'),
+                        'parent_id' => 'super_admin_parent',
+                    ],
+                    (object)[
+                        'id'        => 'admin_sessions',
+                        'name'      => 'Active Sessions',
+                        'slug'      => 'admin-sessions',
+                        'icon'      => 'fa-users',
+                        'route'     => 'admin.security.sessions',
+                        'full_url'  => route('admin.security.sessions'),
+                        'parent_id' => 'super_admin_parent',
+                    ],
+                ]),
+            ];
+
+            $separator = (object)[
+                'id'          => 'admin_controls_separator',
+                'name'        => 'SYSTEM CONTROLS',
+                'slug'        => 'super-admin-controls-sep',
+                'icon'        => 'fa-cogs',
+                'is_placeholder' => true,
+                'sort_order'  => 1999,
+            ];
+
+            $finalMenus->push($separator);
+            $finalMenus->push($superAdminMenu);
+        }
+
         return $this->removeDisabledMenus($finalMenus);
     }
 
@@ -258,24 +313,8 @@ class MenuService
                     return true;
                 }
 
-                // Super Admin role: show only necessary manager-relevant common menus
+                // Super Admin role: bypass common menu filtering to show all platform options
                 if ($this->isSuperAdminRole($staffRole)) {
-                    // Hide generic/non-operational menus not relevant to admin daily operations
-                    $adminHiddenSlugs = [
-                        'sales',
-                        'products',
-                        'customers',
-                        'settings',
-                        'restaurant-management',
-                        'daily-master-sheet',
-                        'bar-reconciliation',        // Redundant for Super Admin
-                        'bar-sales-orders',           // Hide root Sales & Orders
-                        'manager-master-sheet-root',  // Hide root Master Sheet (integrated in Reconciliation)
-                        'bar-ops-settings',           // Hide root Operations & Settings
-                        'targets',                    // Hide root Sales Targets
-                        'hr',                         // Hide Human Resources per request
-                    ];
-                    if (in_array($menu->slug, $adminHiddenSlugs)) return false;
                     return true;
                 }
 

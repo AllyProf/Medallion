@@ -149,7 +149,7 @@
                 if ($staff && $staff->role) {
                     $roleName = strtolower(trim($staff->role->name ?? ''));
                     $roleSlug = strtolower(trim($staff->role->slug ?? ''));
-                    if ($roleName === 'manager' || $roleSlug === 'manager' || $staff->role->hasPermission('branch_management', 'view')) {
+                    if ($roleName === 'manager' || $roleSlug === 'manager' || $roleSlug === 'super-admin' || $roleName === 'super admin' || $staff->role->hasPermission('branch_management', 'view')) {
                         $isManager = true;
                     }
                 }
@@ -662,7 +662,7 @@
                 $sidebarStaffObj = \App\Models\Staff::with('role')->find(session('staff_id'));
                 if ($sidebarStaffObj && $sidebarStaffObj->role) {
                     $sidebarRoleName = strtolower(trim($sidebarStaffObj->role->name ?? ''));
-                    if (in_array($sidebarRoleName, ['manager', 'admin'])) {
+                    if (in_array($sidebarRoleName, ['manager', 'admin', 'super admin']) || $sidebarStaffObj->role->slug === 'super-admin') {
                         $isManagerForSidebar = true;
                     }
                 }
@@ -708,7 +708,7 @@
         @php
           $sidebarStaff = session('is_staff') ? \App\Models\Staff::with('role')->find(session('staff_id')) : null;
           $sidebarRole  = $sidebarStaff ? strtolower(trim($sidebarStaff->role->name ?? '')) : '';
-          $isAccountant = in_array($sidebarRole, ['accountant', 'manager', 'admin', 'finance', 'account']);
+          $isAccountant = in_array($sidebarRole, ['accountant', 'manager', 'admin', 'finance', 'account', 'super admin']) || ($sidebarStaff && $sidebarStaff->role && $sidebarStaff->role->slug === 'super-admin');
           $isWaiter = ($sidebarRole === 'waiter');
           $isOwner = (Auth::check() && !Auth::user()->isAdmin() && !session('is_staff'));
         @endphp

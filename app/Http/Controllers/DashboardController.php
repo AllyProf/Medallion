@@ -65,6 +65,11 @@ class DashboardController extends Controller
                     return redirect()->route('marketing.dashboard');
                 }
 
+                // Super Admin staff see the manager dashboard (Manager View)
+                if ($this->isSuperAdminRole()) {
+                    $roleName = 'manager';
+                }
+
                 // If URL doesn't include the role, redirect to include it (only for staff)
                 if (!$role || $role !== $roleSlug) {
                     return redirect()->route('dashboard.role', ['role' => $roleSlug]);
@@ -75,7 +80,7 @@ class DashboardController extends Controller
             $statistics = [];
             $ownerId  = $owner->id;
 
-            if ($roleName === 'manager' || (auth()->check() && auth()->user()->role === 'admin')) {
+            if ($roleName === 'manager' || $roleName === 'super admin' || $roleSlug === 'super-admin' || (auth()->check() && auth()->user()->role === 'admin')) {
                 $location = session('active_location');
 
                 // Ensure today's ledger exists for the manager's trend chart
