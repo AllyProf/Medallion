@@ -130,7 +130,6 @@ class MenuService
                                 'restaurant-management', 
                                 'manager-master-sheet-root',
                                 'bar-sales-orders',
-                                'bar-ops-settings',
                                 'targets',
                                 'hr'
                             ];
@@ -327,7 +326,6 @@ class MenuService
                         'bar-reconciliation',        // Redundant for Super Admin
                         'bar-sales-orders',           // Hide root Sales & Orders
                         'manager-master-sheet-root',  // Hide root Master Sheet (integrated in Reconciliation)
-                        'bar-ops-settings',           // Hide root Operations & Settings
                     ];
                     if (in_array($menu->slug, $adminHiddenSlugs)) return false;
                     return true;
