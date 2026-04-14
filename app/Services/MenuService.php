@@ -102,7 +102,7 @@ class MenuService
                     ->whereNotIn('menu_items.id', $allCommonMenuIds->toArray())
                     ->orderBy('business_type_menu_items.sort_order')
                     ->get()
-                    ->filter(function($menu) use ($businessTypeNames, $businessTypeSlugs, $isCounter, $staffRole) {
+                    ->filter(function($menu) use ($businessTypeNames, $businessTypeSlugs, $isCounter, $staffRole, $isSuperAdmin) {
                         // Filter out menu items with business type names or slugs
                         if (in_array($menu->name, $businessTypeNames) || in_array($menu->slug ?? '', $businessTypeSlugs)) {
                             return false;
