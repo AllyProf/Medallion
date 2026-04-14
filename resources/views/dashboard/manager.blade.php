@@ -413,7 +413,17 @@
           ticks: { font: { size: 10 } },
           grid: { drawOnChartArea: false }
         }
+      },
+      animation: {
+        duration: 1000,
+        easing: 'easeOutQuart'
+      },
+      hover: {
+        mode: 'index',
+        intersect: false,
+        includeInvisible: true
       }
+    }
     }
   });
 
@@ -455,7 +465,11 @@
             }
           }
         },
-        cutout: '70%'
+        cutout: '70%',
+        animation: {
+          duration: 1200,
+          easing: 'easeOutQuart'
+        }
       }
     });
   }
