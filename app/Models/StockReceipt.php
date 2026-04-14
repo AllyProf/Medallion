@@ -35,8 +35,8 @@ class StockReceipt extends Model
     ];
 
     protected $casts = [
-        'quantity_received' => 'integer',
-        'total_units' => 'integer',
+        'quantity_received' => 'decimal:2',
+        'total_units' => 'decimal:2',
         'buying_price_per_unit' => 'decimal:2',
         'selling_price_per_unit' => 'decimal:2',
         'selling_price_per_tot' => 'decimal:2',

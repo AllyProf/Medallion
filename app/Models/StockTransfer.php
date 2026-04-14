@@ -26,8 +26,8 @@ class StockTransfer extends Model
     ];
 
     protected $casts = [
-        'quantity_requested' => 'integer',
-        'total_units' => 'integer',
+        'quantity_requested' => 'decimal:2',
+        'total_units' => 'decimal:2',
         'approved_at' => 'datetime',
         'verified_at' => 'datetime',
     ];

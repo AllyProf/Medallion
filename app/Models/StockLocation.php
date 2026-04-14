@@ -20,7 +20,7 @@ class StockLocation extends Model
     ];
 
     protected $casts = [
-        'quantity' => 'integer',
+        'quantity' => 'decimal:2',
         'average_buying_price' => 'decimal:2',
         'selling_price' => 'decimal:2',
         'selling_price_per_tot' => 'decimal:2',
