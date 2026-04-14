@@ -418,6 +418,7 @@ class CounterController extends Controller
 
         $pendingOrders = BarOrder::where('user_id', $ownerId)
             ->whereNotNull('waiter_id')
+            ->whereHas('items')
             ->where('status', 'pending')
             ->count();
 
