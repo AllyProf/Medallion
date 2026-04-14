@@ -36,12 +36,13 @@ class CounterReconciliationController extends Controller
         $ownerId = $this->getOwnerId();
         $date = $request->get('date', now()->format('Y-m-d'));
 
-        // Check if current user is accountant (should see all orders across all owners)
-        $currentStaff = $this->getCurrentStaff();
+        // Management role detection
         $isAccountant = $currentStaff && (
             strtolower($currentStaff->role->slug ?? '') === 'accountant' ||
             strtolower($currentStaff->role->name ?? '') === 'accountant'
         );
+        $isManager = $currentStaff && in_array(strtolower($currentStaff->role->slug ?? ''), ['manager', 'admin', 'general-manager']);
+        $isManagementRole = $isAccountant || $isManager || $isSuperAdmin;
 
         // Get location from session (branch switcher)
         $location = session('active_location');
@@ -371,8 +372,8 @@ class CounterReconciliationController extends Controller
             $todayHandover = $handoverQuery->orderBy('created_at', 'desc')->first();
         }
 
-        // Accountant should not see any waiter data until they receive a handover
-        if ($isAccountant && ! $todayHandover) {
+        // Management roles (Accountant/Manager/Admin) should not see any waiter data until they receive a handover
+        if ($isManagementRole && ! $todayHandover) {
             $waiters = collect([]);
         }
 
@@ -522,6 +523,8 @@ class CounterReconciliationController extends Controller
             'expectedBreakdowns',
             'accountantLedger',
             'isAccountant',
+            'isManager',
+            'isManagementRole',
             'currentStaff',
             'ledger',
             'expenses',

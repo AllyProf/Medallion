@@ -79,7 +79,7 @@
   $totalCollections = $waiters->sum('cash_collected') + $waiters->sum('mobile_money_collected');
 @endphp
 
-@if($isAccountant && $todayHandover)
+@if($isManagementRole && $todayHandover)
 <!-- Consolidated Financial Hub -->
 <div class="row mb-4">
   {{-- 1. Sales & Collections --}}
@@ -145,7 +145,7 @@
 </div>
 @endif
 
-@if($isAccountant && !$todayHandover)
+@if($isManagementRole && !$todayHandover)
   <div class="row">
     <div class="col-md-12">
       <div class="tile text-center border-warning py-5 mb-4 shadow-sm" style="border-radius: 12px; border-top: 5px solid #ffc107;">
@@ -168,7 +168,7 @@
 @endif
 
 
-@if(!$isAccountant || $todayHandover)
+@if(!$isManagementRole || $todayHandover)
 <!-- Waiters List -->
 
 <div class="row">
