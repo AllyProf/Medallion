@@ -49,13 +49,16 @@ class StockReceiptSmsService
         $sentCount = 0;
         $failedCount = 0;
 
-        // roles to notify: manager, accountant, counter
-        $rolesToNotify = ['manager', 'accountant', 'counter'];
+        // Roles to notify: manager, accountant, stock-keeper
+        $rolesToNotify = ['manager', 'accountant', 'stock-keeper'];
 
         $staffToNotify = Staff::where('user_id', $ownerId)
             ->where('is_active', true)
             ->whereHas('role', function($query) use ($rolesToNotify) {
-                $query->whereIn('slug', $rolesToNotify);
+                $query->whereIn('slug', $rolesToNotify)
+                      ->orWhere('slug', 'like', 'super-admin%')
+                      ->orWhere('slug', 'like', 'superadmin%')
+                      ->orWhere('name', 'like', 'Super Admin%');
             })
             ->with('role')
             ->get();
