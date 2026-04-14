@@ -222,7 +222,15 @@ trait HandlesStaffPermissions
         $powerRoles = ['manager', 'accountant', 'finance officer', 'finance', 'super admin', 'super administrator', 'super_admin'];
         $powerSlugs = ['manager', 'accountant', 'super-admin', 'superadmin', 'super_admin'];
 
-        return in_array($roleName, $powerRoles) || in_array($roleSlug, $powerSlugs);
+        $isPower = in_array($roleName, $powerRoles) || in_array($roleSlug, $powerSlugs);
+        
+        \Log::info('Power User Check details', [
+            'role_name' => $roleName,
+            'role_slug' => $roleSlug,
+            'is_power' => $isPower
+        ]);
+
+        return $isPower;
     }
 
     /**
