@@ -622,6 +622,7 @@ $(document).ready(function() {
                                     const p = (item.packaging || 'pkg').toLowerCase();
                                     if(p.includes('crate')) return 'crt';
                                     if(p.includes('carton')) return 'ctn';
+                                    if(p.includes('outer')) return 'otr';
                                     if(p.includes('piece')) return 'pc';
                                     return p.substring(0,3);
                                 })()}s)

@@ -389,6 +389,7 @@
                           <option value="Piece" ${prefilled && prefilled.pkg === 'Piece' ? 'selected' : ''}>Pc/Bottle</option>
                           <option value="Carton" ${prefilled && prefilled.pkg === 'Carton' ? 'selected' : ''}>Carton</option>
                           <option value="Crate" ${prefilled && prefilled.pkg === 'Crate' ? 'selected' : ''}>Crate</option>
+                          <option value="Outer" ${prefilled && prefilled.pkg === 'Outer' ? 'selected' : ''}>Outer</option>
                         </select>
                     </div>
                     <div class="col-4 pkg-units-container ${prefilled && prefilled.pkg_qty > 1 ? '' : 'd-none'}">
@@ -420,7 +421,7 @@
     window.togglePackageUnits = function(select) {
         const row = select.closest('tr');
         const container = row.querySelector('.pkg-units-container');
-        if (select.value === 'Carton' || select.value === 'Crate') {
+        if (select.value === 'Carton' || select.value === 'Crate' || select.value === 'Outer') {
             container.classList.remove('d-none');
         } else {
             container.classList.add('d-none');

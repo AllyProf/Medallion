@@ -28,7 +28,7 @@ class ProductHelper
 
         // 1. Determine if the variant name is a true identity (e.g., "Fanta Orange")
         $strippedV = preg_replace('/\b\d+(\.\d+)?\s*(ml|l|g|kg|pcs|btl)?\b/i', '', $vSpec);
-        $strippedV = preg_replace('/\b(piece|pieces|pcs|crate|carton|box|bottle|btl|unit|pkg|package|ctn)\b/i', '', $strippedV);
+        $strippedV = preg_replace('/\b(piece|pieces|pcs|crate|carton|box|bottle|btl|unit|pkg|package|ctn|outer)\b/i', '', $strippedV);
         $strippedV = trim(preg_replace('/[-\s]+/', ' ', $strippedV), ' -');
         
         $genericDescriptors = ['dry', 'sweet', 'red', 'white', 'rose', 'light', 'dark', 'extra', 'premium', 'classic', 'original', 'regular', 'special', 'medium', 'semi', 'brut', 'demi', 'sec'];

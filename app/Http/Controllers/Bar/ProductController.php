@@ -163,7 +163,7 @@ class ProductController extends Controller
             'variants.*.unit' => 'required|string|max:20',
             'variants.*.selling_type' => 'required|string|in:bottle,glass,mixed',
             'variants.*.total_tots' => 'nullable|integer|min:1',
-            'variants.*.packaging' => 'required|string|in:Piece,Carton,Crate',
+            'variants.*.packaging' => 'required|string|in:Piece,Carton,Crate,Outer',
             'variants.*.items_per_package' => 'nullable|integer|min:1',
         ]);
 
@@ -366,7 +366,7 @@ class ProductController extends Controller
             'variants.*.unit' => 'required|string|max:20',
             'variants.*.selling_type' => 'required|string|in:bottle,glass,mixed',
             'variants.*.total_tots' => 'nullable|integer|min:1',
-            'variants.*.packaging' => 'required|string|in:Piece,Carton,Crate',
+            'variants.*.packaging' => 'required|string|in:Piece,Carton,Crate,Outer',
             'variants.*.items_per_package' => 'nullable|integer|min:1',
             'variants.*.buying_price_per_unit' => 'nullable|numeric|min:0',
             'variants.*.selling_price_per_unit' => 'nullable|numeric|min:0',

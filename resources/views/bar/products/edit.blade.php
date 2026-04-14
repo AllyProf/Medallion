@@ -124,10 +124,11 @@
                                     <option value="Piece" {{ $variant->packaging == 'Piece' ? 'selected' : '' }}>Piece / Bottle</option>
                                     <option value="Carton" {{ $variant->packaging == 'Carton' ? 'selected' : '' }}>Carton</option>
                                     <option value="Crate" {{ $variant->packaging == 'Crate' ? 'selected' : '' }}>Crate</option>
+                                    <option value="Outer" {{ $variant->packaging == 'Outer' ? 'selected' : '' }}>Outer</option>
                                 </select>
                             </div>
                         </div>
-                        <div class="col-md-4 items-per-package-container {{ in_array($variant->packaging, ['Carton', 'Crate']) ? '' : 'd-none' }}">
+                        <div class="col-md-4 items-per-package-container {{ in_array($variant->packaging, ['Carton', 'Crate', 'Outer']) ? '' : 'd-none' }}">
                             <div class="form-group">
                                 <label class="control-label">Items in Package <span class="text-danger">*</span></label>
                                 <div class="input-group">
@@ -300,7 +301,7 @@
         const item = select.closest('.variant-item');
         const itemsContainer = item.querySelector('.items-per-package-container');
         const itemsInput = itemsContainer.querySelector('input');
-        if (select.value === 'Carton' || select.value === 'Crate') {
+        if (select.value === 'Carton' || select.value === 'Crate' || select.value === 'Outer') {
             itemsContainer.classList.remove('d-none');
             itemsInput.setAttribute('required', 'required');
         } else {
@@ -349,7 +350,7 @@
                 <div class="col-md-5"><div class="form-group"><label class="control-label">Size *</label><div class="input-group"><input type="number" class="form-control" name="variants[${newIndex}][measurement]" value="500" required><div class="input-group-append"><select class="form-control" name="variants[${newIndex}][unit]"><option value="ml">ml</option><option value="L">L</option><option value="PCS">PCS</option></select></div></div></div></div>
             </div>
             <div class="row mt-3">
-                <div class="col-md-4"><div class="form-group"><label class="control-label">Packaging *</label><select class="form-control packaging-select" name="variants[${newIndex}][packaging]"><option value="Piece">Piece</option><option value="Carton">Carton</option><option value="Crate">Crate</option></select></div></div>
+                <div class="col-md-4"><div class="form-group"><label class="control-label">Packaging *</label><select class="form-control packaging-select" name="variants[${newIndex}][packaging]"><option value="Piece">Piece</option><option value="Carton">Carton</option><option value="Crate">Crate</option><option value="Outer">Outer</option></select></div></div>
                 <div class="col-md-4 items-per-package-container d-none"><div class="form-group"><label class="control-label">Items *</label><input type="number" class="form-control" name="variants[${newIndex}][items_per_package]" value="1"></div></div>
                 <div class="col-md-4"><div class="form-group"><label class="control-label">Format *</label><select class="form-control selling-type-select" name="variants[${newIndex}][selling_type]"><option value="bottle">Bottle</option><option value="glass">Glass</option><option value="mixed">Mixed</option></select></div></div>
                 <div class="col-md-4 servings-container d-none"><div class="form-group"><label class="control-label">Shots *</label><input type="number" class="form-control" name="variants[${newIndex}][total_tots]" placeholder="e.g. 30"></div></div>
