@@ -272,11 +272,11 @@ class StaffController extends Controller
             }
         }
 
-        // 1. Site-Wide Platform Admin (Sees EVERYONE on the platform)
-        if ($this->isSiteAdmin()) {
+        // 1. Platform-Wide Visibility (Site Admin, Global Managers, Super Admins)
+        if ($this->isSiteAdmin() || $this->isSuperAdminRole()) {
             $staff = Staff::with(['role', 'businessType'])->orderBy('created_at', 'desc')->get();
         } 
-        // 2. Business Power User (Manager/Accountant/Owner - Sees ALL staff for their business)
+        // 2. Business Power User (Owners/Accountants - Sees ALL staff for their business)
         else if ($this->isBusinessPowerUser()) {
             $staff = Staff::where('user_id', $ownerId)
                 ->with(['role', 'businessType'])
