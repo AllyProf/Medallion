@@ -424,7 +424,6 @@
         includeInvisible: true
       }
     }
-    }
   });
 
   // ── Category Distribution Chart ──
