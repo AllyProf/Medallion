@@ -410,9 +410,15 @@ $(document).ready(function() {
             const looseQty = cleanNum(item.loose_received);
             const conv = cleanNum(item.conversion_qty) || 1;
             
-            const units = (pkgQty * conv) + looseQty;
-            const truePkgQty = pkgQty + (looseQty / conv);
-            const lineGross = truePkgQty * buyPrice; // BUY PRICE is per Package (Crate/Carton) as per request
+             const units = (pkgQty * conv) + looseQty;
+             const truePkgQty = pkgQty + (looseQty / conv);
+             
+             let lineGross = 0;
+             if (item.buying_price_mode === 'unit') {
+                 lineGross = units * buyPrice;
+             } else {
+                 lineGross = truePkgQty * buyPrice;
+             }
             
             let lineDisc = 0;
             if (discType === 'percent') {
@@ -649,12 +655,14 @@ $(document).ready(function() {
                         <input type="number" class="form-control font-weight-bold item-loose" data-index="${index}" value="${item.loose_received || ''}" min="0" placeholder="0">
                     </td>
                     <td class="px-2">
-                        <input type="number" class="form-control item-buy-price font-weight-bold" data-index="${index}" value="${item.buying_price_per_unit}" step="0.01">
-                        <div class="smallest font-weight-bold text-muted mt-1" style="font-size: 9px; text-transform: uppercase;">
-                            Per ${item.packaging || 'Pkg'}
+                        <input type="number" class="form-control item-buy-price font-weight-bold" data-index="${index}" value="${item.buying_price_per_unit || ''}" step="0.01">
+                        <div class="d-flex justify-content-between mt-1">
+                            <span class="badge toggle-price-mode cursor-pointer ${item.buying_price_mode === 'unit' ? 'badge-info' : 'badge-dark'}" data-index="${index}" style="font-size: 9px; cursor: pointer; padding: 2px 4px;" title="Click to toggle between Price per Package or Price per Individual Unit">
+                                <i class="fa fa-refresh"></i> ${item.buying_price_mode === 'unit' ? 'Mode: Per Unit' : 'Mode: Per ' + (item.packaging || 'Pkg')}
+                            </span>
                         </div>
-                        <div class="smallest text-muted" style="font-size: 9px;">
-                            Last: TSh ${Math.round(item.last_known_buy).toLocaleString()}
+                        <div class="smallest text-muted mt-1" style="font-size: 9px;">
+                            Last: TSh ${Math.round(item.last_known_buy || 0).toLocaleString()}
                         </div>
                     </td>
                     <td class="px-2">
@@ -729,6 +737,7 @@ $(document).ready(function() {
                                 selling_price_per_tot: item.selling_price_per_tot || 0,
                                 quantity_received: 0,
                                 loose_received: 0,
+                                buying_price_mode: 'pkg',
                                 existing_quantity: item.existing_quantity || 0,
                                 expiry_date: '',
                                 discount_type: 'fixed',
@@ -775,6 +784,13 @@ $(document).ready(function() {
         updateSummaries();
     });
 
+    $(document).on('click', '.toggle-price-mode', function() {
+        const idx = $(this).attr('data-index');
+        receiptItems[idx].buying_price_mode = receiptItems[idx].buying_price_mode === 'unit' ? 'pkg' : 'unit';
+        renderTable();
+        updateSummaries();
+    });
+
     $(document).on('click', '.toggle-dual', function() {
         // if(isBulkEnabled()) return; // Controlled by bulk switch -> Removed to allow item level override
         const idx = $(this).attr('data-index');
@@ -816,6 +832,7 @@ $(document).ready(function() {
                     selling_price_per_tot: variant.selling_price_per_tot || 0,
                     quantity_received: 0,
                     loose_received: 0,
+                    buying_price_mode: 'pkg',
                     existing_quantity: variant.existing_quantity || 0,
                     expiry_date: '',
                     discount_type: 'fixed',
@@ -945,6 +962,7 @@ $(document).ready(function() {
                     formData.append(`items[${index}][quantity_received]`, item.quantity_received); 
                     formData.append(`items[${index}][loose_received]`, item.loose_received || 0); 
                     formData.append(`items[${index}][buying_price_per_unit]`, item.buying_price_per_unit);
+                    formData.append(`items[${index}][buying_price_mode]`, item.buying_price_mode || 'pkg');
                     formData.append(`items[${index}][selling_price_per_unit]`, item.selling_price_per_unit);
                     formData.append(`items[${index}][selling_price_per_tot]`, item.selling_price_per_tot || 0);
                     formData.append(`items[${index}][expiry_date]`, item.expiry_date || '');

@@ -174,6 +174,7 @@ class StockReceiptController extends Controller
             'items.*.quantity_received' => 'required|numeric|min:0',
             'items.*.loose_received' => 'nullable|numeric|min:0',
             'items.*.buying_price_per_unit' => 'required|numeric|min:0',
+            'items.*.buying_price_mode' => 'nullable|string|in:pkg,unit',
             'items.*.selling_price_per_unit' => 'required|numeric|min:0',
             'items.*.selling_price_per_tot' => 'nullable|numeric|min:0',
             'items.*.discount_type' => 'nullable|string|in:fixed,percent',
@@ -219,12 +220,19 @@ class StockReceiptController extends Controller
                 $totalUnits = ($packagesOnly * $itemsPerPackage) + $looseOnly;
                 $numPackages = $packagesOnly + ($looseOnly / $itemsPerPackage);
 
-                // User now enters Price per Package (Crate/Carton)
-                $buyingPricePerPackage = $item['buying_price_per_unit']; 
-                $totalBuyingCost = $numPackages * $buyingPricePerPackage;
+                $inputPrice = $item['buying_price_per_unit'];
+                $priceMode = $item['buying_price_mode'] ?? 'pkg';
+                $totalBuyingCost = 0;
+
+                if ($priceMode === 'unit') {
+                    $totalBuyingCost = $totalUnits * $inputPrice;
+                } else {
+                    // Per package mode (standard)
+                    $totalBuyingCost = $numPackages * $inputPrice;
+                }
                 
                 // Actual unit buying price for stock valuation and DB storage
-                $actualUnitBuyingPrice = $totalUnits > 0 ? ($totalBuyingCost / $totalUnits) : $buyingPricePerPackage;
+                $actualUnitBuyingPrice = $totalUnits > 0 ? ($totalBuyingCost / $totalUnits) : $inputPrice;
                 
                 // Calculate smart selling value (following frontend logic: use tot revenue if available)
                 $bottleSellingValue = $totalUnits * $item['selling_price_per_unit'];
