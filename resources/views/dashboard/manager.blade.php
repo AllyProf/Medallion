@@ -414,10 +414,7 @@
           grid: { drawOnChartArea: false }
         }
       },
-      animation: {
-        duration: 1000,
-        easing: 'easeOutQuart'
-      },
+      animation: false,
       hover: {
         mode: 'index',
         intersect: false,
@@ -465,10 +462,7 @@
           }
         },
         cutout: '70%',
-        animation: {
-          duration: 1200,
-          easing: 'easeOutQuart'
-        }
+        animation: false
       }
     });
   }
