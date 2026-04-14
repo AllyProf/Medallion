@@ -272,14 +272,22 @@ class StaffController extends Controller
             }
         }
 
-        // Super Admin sees ALL staff across ALL locations
-        if ($this->isSuperAdminRole()) {
+        // 1. Site-Wide Platform Admin (Sees EVERYONE on the platform)
+        if ($this->isSiteAdmin()) {
             $staff = Staff::with(['role', 'businessType'])->orderBy('created_at', 'desc')->get();
-        } else {
+        } 
+        // 2. Business Power User (Manager/Accountant/Owner - Sees ALL staff for their business)
+        else if ($this->isBusinessPowerUser()) {
+            $staff = Staff::where('user_id', $ownerId)
+                ->with(['role', 'businessType'])
+                ->orderBy('created_at', 'desc')
+                ->get();
+        }
+        // 3. Regular Staff (Sees staff for their business, restricted by current branch/location)
+        else {
             $staffQuery = Staff::where('user_id', $ownerId)
                 ->with(['role', 'businessType']);
                 
-            // Filter by active location if context is set
             if (session('active_location')) {
                 $staffQuery->where('location_branch', session('active_location'));
             }

@@ -185,12 +185,55 @@ trait HandlesStaffPermissions
             ->where('status', 'open')
             ->first();
     }
+
     /**
-     * Check if the current user/staff has a Super Admin role
+     * Check if the current user is a Platform-Wide Site Admin (AllyProf/Medallion Owner)
+     */
+    protected function isSiteAdmin()
+    {
+        if (session('is_staff')) return false;
+
+        $user = Auth::user();
+        if (!$user) return false;
+
+        return $user->role === 'admin';
+    }
+
+    /**
+     * Check if current user/staff has a high-level business role (Manager, Super Admin, Owner)
+     */
+    protected function isBusinessPowerUser()
+    {
+        // 1. Owners are always power users
+        if (!session('is_staff') && Auth::check()) {
+            return true;
+        }
+
+        // 2. Staff check
+        $staff = $this->getCurrentStaff();
+        if (!$staff) return false;
+
+        $role = $staff->role;
+        if (!$role) return false;
+
+        $roleName = strtolower(trim($role->name ?? ''));
+        $roleSlug = strtolower(trim($role->slug ?? ''));
+
+        $powerRoles = ['manager', 'accountant', 'finance officer', 'finance', 'super admin', 'super administrator', 'super_admin'];
+        $powerSlugs = ['manager', 'accountant', 'super-admin', 'superadmin', 'super_admin'];
+
+        return in_array($roleName, $powerRoles) || in_array($roleSlug, $powerSlugs);
+    }
+
+    /**
+     * Check if the current user/staff has a Super Admin role (for specialized UI elements)
      */
     protected function isSuperAdminRole()
     {
-        // 1. Check if logged in via a staff session
+        // Platform Admin check
+        if ($this->isSiteAdmin()) return true;
+
+        // Staff check
         if (session('is_staff')) {
             $staff = $this->getCurrentStaff();
             if (!$staff) return false;
@@ -201,19 +244,12 @@ trait HandlesStaffPermissions
             $roleName = strtolower(trim($role->name ?? ''));
             $roleSlug = strtolower(trim($role->slug ?? ''));
             
-            return in_array($roleName, ['super admin', 'super administrator', 'super_admin']) || 
+            return in_array($roleName, ['super admin', 'super administrator', 'super_admin', 'superadmin']) || 
                    in_array($roleSlug, ['super-admin', 'superadmin', 'super_admin']) ||
                    !empty($role->is_super_admin_virtual);
         }
 
-        // 2. Check root user if not a staff session
-        $user = Auth::user();
-        if (!$user) return false;
-
-        return $user->role === 'admin' || 
-               $user->role === 'super_admin' || 
-               $user->hasRole('super-admin') || 
-               $user->hasRole('super_admin');
+        return false;
     }
 }
 
