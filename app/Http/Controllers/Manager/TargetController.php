@@ -43,13 +43,21 @@ class TargetController extends Controller
             ->with('staff')
             ->get();
 
-        // Get ONLY Waiters for daily targets
-        $waiters = Staff::where('user_id', $ownerId)
-            ->where('is_active', true)
-            ->whereHas('role', function($q) {
-                $q->where('slug', 'waiter');
-            })
-            ->get();
+        // Get ONLY Waiters for daily targets (Tiered Visibility)
+        if ($this->isSiteAdmin() || $this->isSuperAdminRole()) {
+            $waiters = Staff::where('is_active', true)
+                ->whereHas('role', function($q) {
+                    $q->where('slug', 'waiter');
+                })
+                ->get();
+        } else {
+            $waiters = Staff::where('user_id', $ownerId)
+                ->where('is_active', true)
+                ->whereHas('role', function($q) {
+                    $q->where('slug', 'waiter');
+                })
+                ->get();
+        }
 
         // Real-time progress data
         $progress = $this->calculateProgress($ownerId, $month, $year, $date);
@@ -108,13 +116,21 @@ class TargetController extends Controller
         ]);
     
         if ($validated['staff_id'] === 'all') {
-            // Get all active waiters
-            $waiters = Staff::where('user_id', $ownerId)
-                ->where('is_active', true)
-                ->whereHas('role', function($q) {
-                    $q->where('slug', 'waiter');
-                })
-                ->get();
+            // Get all active waiters (Platform-wide if Global Admin)
+            if ($this->isSiteAdmin() || $this->isSuperAdminRole()) {
+                $waiters = Staff::where('is_active', true)
+                    ->whereHas('role', function($q) {
+                        $q->where('slug', 'waiter');
+                    })
+                    ->get();
+            } else {
+                $waiters = Staff::where('user_id', $ownerId)
+                    ->where('is_active', true)
+                    ->whereHas('role', function($q) {
+                        $q->where('slug', 'waiter');
+                    })
+                    ->get();
+            }
     
             foreach ($waiters as $waiter) {
                 SalesTarget::updateOrCreate(
@@ -142,8 +158,12 @@ class TargetController extends Controller
 
         // Actual Bar Sales this month
         $actualBar = OrderItem::whereHas('order', function($q) use ($ownerId, $startOfMonth, $endOfMonth, $location) {
-                $q->where('user_id', $ownerId)
-                  ->where('status', '!=', 'cancelled')
+                // Tiered visibility for actual sales
+                if (!$this->isSiteAdmin() && !$this->isSuperAdminRole()) {
+                    $q->where('user_id', $ownerId);
+                }
+                
+                $q->where('status', '!=', 'cancelled')
                   ->whereBetween('created_at', [$startOfMonth, $endOfMonth]);
                 
                 if ($location) {
@@ -162,8 +182,12 @@ class TargetController extends Controller
 
         // Actual Food Sales this month
         $actualFood = KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $startOfMonth, $endOfMonth, $location) {
-                $q->where('user_id', $ownerId)
-                  ->where('status', '!=', 'cancelled')
+                // Tiered visibility for actual sales
+                if (!$this->isSiteAdmin() && !$this->isSuperAdminRole()) {
+                    $q->where('user_id', $ownerId);
+                }
+                
+                $q->where('status', '!=', 'cancelled')
                   ->whereBetween('created_at', [$startOfMonth, $endOfMonth]);
                 
                 if ($location) {
@@ -182,9 +206,12 @@ class TargetController extends Controller
 
         // Staff Daily Performance
         $staffPerformances = [];
-        $staffOrdersQuery = BarOrder::where('user_id', $ownerId)
-            ->whereDate('created_at', $date)
-            ->where('status', '!=', 'cancelled');
+        $staffOrdersQuery = BarOrder::where('status', '!=', 'cancelled')
+            ->whereDate('created_at', $date);
+
+        if (!$this->isSiteAdmin() && !$this->isSuperAdminRole()) {
+            $staffOrdersQuery->where('user_id', $ownerId);
+        }
         
         if ($location) {
             $staffOrdersQuery->where(function($q) use ($location) {
