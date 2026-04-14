@@ -25,6 +25,29 @@
                     </a>
                 </div>
 
+                <!-- Real-time Filter Section -->
+                <div class="row mb-4">
+                    <div class="col-md-8">
+                        <div class="input-group">
+                            <div class="input-group-prepend">
+                                <span class="input-group-text bg-primary text-white"><i class="fa fa-search"></i></span>
+                            </div>
+                            <input type="text" id="food-search" class="form-control form-control-lg" placeholder="Search by food name or variant..." style="border-left: none;">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <select id="category-filter" class="form-control form-control-lg">
+                            <option value="all">All Categories</option>
+                            @php
+                                $categories = $foodItems->pluck('category')->unique()->filter()->sort();
+                            @endphp
+                            @foreach($categories as $cat)
+                                <option value="{{ $cat }}">{{ \Illuminate\Support\Str::title($cat) }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+
                 <div class="tile-body">
                     @if(session('success'))
                         <div class="alert alert-success">{{ session('success') }}</div>
@@ -43,9 +66,9 @@
                                     <th>Actions</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody id="food-table-body">
                                 @forelse($foodItems as $item)
-                                    <tr>
+                                    <tr class="food-row" data-name="{{ strtolower($item->name . ' ' . ($item->variant_name ?? '')) }}" data-category="{{ $item->category ?? 'uncategorized' }}">
                                         <td>
                                             @if($item->image)
                                                 <img src="{{ asset('storage/' . $item->image) }}" width="60" class="rounded">
@@ -113,7 +136,10 @@
                                         </td>
                                     </tr>
                                 @empty
-                                    <tr>
+                                    <tr id="empty-results" style="display: none;">
+                                        <td colspan="8" class="text-center">No menus found matching your criteria.</td>
+                                    </tr>
+                                    <tr id="initial-empty">
                                         <td colspan="8" class="text-center">No menus registered yet.</td>
                                     </tr>
                                 @endforelse
@@ -212,5 +238,42 @@
             }
         });
     });
+
+    // Real-time Filtering Logic
+    const foodSearch = $('#food-search');
+    const categoryFilter = $('#category-filter');
+    const foodRows = $('.food-row');
+    const emptyResults = $('#empty-results');
+
+    function performFilter() {
+        const searchTerm = foodSearch.val().toLowerCase().trim();
+        const selectedCategory = categoryFilter.val();
+        let visibleCount = 0;
+
+        foodRows.each(function() {
+            const row = $(this);
+            const name = row.data('name').toLowerCase();
+            const category = row.data('category');
+
+            const matchesSearch = name.includes(searchTerm);
+            const matchesCategory = selectedCategory === 'all' || category === selectedCategory;
+
+            if (matchesSearch && matchesCategory) {
+                row.show();
+                visibleCount++;
+            } else {
+                row.hide();
+            }
+        });
+
+        if (visibleCount === 0 && foodRows.length > 0) {
+            emptyResults.show();
+        } else {
+            emptyResults.hide();
+        }
+    }
+
+    foodSearch.on('input', performFilter);
+    categoryFilter.on('change', performFilter);
 </script>
 @endpush

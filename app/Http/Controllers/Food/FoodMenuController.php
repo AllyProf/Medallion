@@ -35,7 +35,7 @@ class FoodMenuController extends Controller
 
         $foodItems = $query->with('extras')
             ->orderBy('sort_order')
-            ->paginate(50);
+            ->paginate(200);
 
         return view('bar.food.index', compact('foodItems'));
     }
