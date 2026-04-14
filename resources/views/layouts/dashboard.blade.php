@@ -338,8 +338,7 @@
                 }
                 
                 // Generate full URL
-                // Generate full URL
-                $menu->full_url = $menu->route ? route($menu->route) : '#';
+                $menu->full_url = isset($menu->route) && $menu->route ? route($menu->route) : '#';
                 
                 // Check if this is a common menu or business-specific menu
                 $isCommonMenu = in_array($menu->slug, $commonMenuSlugs);
@@ -392,7 +391,7 @@
                         if (strpos($childIcon, 'fa ') === false) {
                           $childIcon = 'fa ' . (strpos($childIcon, 'fa-') === 0 ? $childIcon : 'fa-' . $childIcon);
                         }
-                        $child->full_url = $child->route ? route($child->route) : '#';
+                        $child->full_url = isset($child->route) && $child->route ? route($child->route) : '#';
                       @endphp
                       <li>
                         <a class="treeview-item {{ request()->routeIs($child->route ?? '') ? 'active' : '' }}" href="{{ $child->full_url }}">
@@ -528,7 +527,7 @@
                           $childIcon = 'fa ' . (strpos($childIcon, 'fa-') === 0 ? $childIcon : 'fa-' . $childIcon);
                         }
                         // Generate full URL for child menu
-                        $childFullUrl = $child->route ? route($child->route) : '#';
+                        $childFullUrl = isset($child->route) && $child->route ? route($child->route) : '#';
                         // Check if child has its own children (nested menus)
                         $childHasChildren = isset($child->children) && $child->children && $child->children->count() > 0;
                       @endphp
@@ -545,7 +544,7 @@
                                 if (strpos($grandchildIcon, 'fa ') === false) {
                                   $grandchildIcon = 'fa ' . (strpos($grandchildIcon, 'fa-') === 0 ? $grandchildIcon : 'fa-' . $grandchildIcon);
                                 }
-                                $grandchildFullUrl = $grandchild->route ? route($grandchild->route) : '#';
+                                $grandchildFullUrl = isset($grandchild->route) && $grandchild->route ? route($grandchild->route) : '#';
                               @endphp
                               <li>
                                 <a class="treeview-item {{ request()->routeIs($grandchild->route ?? '') ? 'active' : '' }}" href="{{ $grandchildFullUrl }}">
