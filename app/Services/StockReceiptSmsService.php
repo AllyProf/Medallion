@@ -41,9 +41,10 @@ class StockReceiptSmsService
             return false;
         }
 
-        $supplierName = $supplier->company_name;
-        $receivedByName = ($receivedBy->name ?? 'System');
-        $date = Carbon::parse($receipts->first()->received_date)->format('M d, Y');
+        $firstReceipt = $receipts->first();
+        $supplierName = $firstReceipt->supplier->company_name ?? 'Unknown Supplier';
+        $receivedByName = $firstReceipt->receivedBy->name ?? 'System';
+        $date = Carbon::parse($firstReceipt->received_date)->format('M d, Y');
         $itemCount = $receipts->count();
 
         $sentCount = 0;
@@ -63,24 +64,19 @@ class StockReceiptSmsService
             ->with('role')
             ->get();
 
+        // Pre-build default message for general notifications
+        $message = "STOCK RECEIVED - {$supplierName}\n\n";
+        $message .= "Batch: #{$receiptNumber}\n";
+        $message .= "Items: {$itemCount} products\n";
+        $message .= "Received By: {$receivedByName}\n";
+        $message .= "Date: {$date}\n";
+        $message .= "\nPlease verify the receipt in the dashboard.";
+
         foreach ($staffToNotify as $staff) {
             if ($staff->phone_number) {
                 $roleSlug = $staff->role->slug ?? '';
                 
                 // Build role-specific message
-                if ($roleSlug === 'counter') {
-                    $message = "STOCK ARRIVED - {$supplierName}\n\n";
-                    $message .= "Batch: #{$receiptNumber}\n";
-                    $message .= "Please request your station products from the stock keeper.\n";
-                    $message .= "Date: {$date}";
-                } else {
-                    // Manager and Accountant
-                    $message = "STOCK RECEIVED - {$supplierName}\n\n";
-                    $message .= "Batch: #{$receiptNumber}\n";
-                    $message .= "Items: {$itemCount} products\n";
-                    $message .= "Received By: {$receivedByName}\n";
-                    $message .= "Date: {$date}\n";
-                    $message .= "\nPlease verify the receipt in the dashboard.";
                 }
 
                 $result = $this->smsService->sendSms($staff->phone_number, $message);
