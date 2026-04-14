@@ -172,6 +172,7 @@ class StockReceiptController extends Controller
             'items' => 'required|array|min:1',
             'items.*.product_variant_id' => 'required|exists:product_variants,id',
             'items.*.quantity_received' => 'required|numeric|min:0',
+            'items.*.loose_received' => 'nullable|numeric|min:0',
             'items.*.buying_price_per_unit' => 'required|numeric|min:0',
             'items.*.selling_price_per_unit' => 'required|numeric|min:0',
             'items.*.selling_price_per_tot' => 'nullable|numeric|min:0',
@@ -211,9 +212,12 @@ class StockReceiptController extends Controller
 
                 // Calculate values
                 // quantity_received from frontend is the number of PACKAGES (crates/cartons)
-                $numPackages = $item['quantity_received'];
+                $packagesOnly = $item['quantity_received'];
+                $looseOnly = $item['loose_received'] ?? 0;
                 $itemsPerPackage = $productVariant->items_per_package ?? 1;
-                $totalUnits = $numPackages * $itemsPerPackage;
+                
+                $totalUnits = ($packagesOnly * $itemsPerPackage) + $looseOnly;
+                $numPackages = $packagesOnly + ($looseOnly / $itemsPerPackage);
 
                 // User now enters Price per Package (Crate/Carton)
                 $buyingPricePerPackage = $item['buying_price_per_unit']; 

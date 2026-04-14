@@ -149,8 +149,9 @@
                    <thead class="bg-light">
                        <tr>
                           <th class="border-top-0 px-3 py-2" style="font-size: 0.75rem;">PRODUCT & EXPIRE</th>
-                          <th class="border-top-0 px-2 py-2 text-center" width="90" style="font-size: 0.75rem;">QTY</th>
-                          <th class="border-top-0 px-2 py-2" width="130" style="font-size: 0.75rem;">BUYING COST</th>
+                           <th class="border-top-0 px-2 py-2 text-center" width="70" style="font-size: 0.75rem;">PKGS</th>
+                           <th class="border-top-0 px-2 py-2 text-center" width="70" style="font-size: 0.75rem;">LOOSE</th>
+                           <th class="border-top-0 px-2 py-2" width="130" style="font-size: 0.75rem;">BUYING COST</th>
                           <th class="border-top-0 px-2 py-2" width="150" style="font-size: 0.75rem;">RETAIL PRICE</th>
                           <th class="border-top-0 px-2 py-2" width="150" style="font-size: 0.75rem;">DISCOUNT</th>
                           <th class="border-top-0 px-2 py-2" width="40"></th>
@@ -406,10 +407,12 @@ $(document).ready(function() {
             const discType = item.discount_type || 'fixed';
 
             const pkgQty = cleanNum(item.quantity_received);
+            const looseQty = cleanNum(item.loose_received);
             const conv = cleanNum(item.conversion_qty) || 1;
             
-            const units = pkgQty * conv;
-            const lineGross = pkgQty * buyPrice; // BUY PRICE is per Package (Crate/Carton) as per request
+            const units = (pkgQty * conv) + looseQty;
+            const truePkgQty = pkgQty + (looseQty / conv);
+            const lineGross = truePkgQty * buyPrice; // BUY PRICE is per Package (Crate/Carton) as per request
             
             let lineDisc = 0;
             if (discType === 'percent') {
@@ -422,7 +425,7 @@ $(document).ready(function() {
 
             // Only count as "Bulk Package" if conversion > 1 (e.g. CRATE)
             if (conv > 1) {
-                actualPackages += pkgQty;
+                actualPackages += truePkgQty;
             }
             
             actualUnits += units;
@@ -449,8 +452,8 @@ $(document).ready(function() {
             
             // Only show units count if it differs from pkgQty (i.e. crate/case situation)
             const qtyDisplay = (conv > 1)
-                ? `${pkgQty} ${item.packaging} &bull; ${Math.round(units)} Units`
-                : `${pkgQty} ${item.packaging}`;
+                ? `${truePkgQty.toFixed(1)} ${item.packaging} &bull; ${Math.round(units)} Units`
+                : `${Math.round(units)} ${item.packaging}`;
 
             const totalLineBtlProfit = (sellPrice - avgCostPerUnit) * units;
             const totalLineTotProfit = (isDualSelling && sellTot > 0 && totalTotsPerUnit > 0)
@@ -640,7 +643,10 @@ $(document).ready(function() {
                         </div>
                     </td>
                     <td class="px-2">
-                        <input type="number" class="form-control font-weight-bold item-pkg" data-index="${index}" value="${item.quantity_received}" min="0" step="0.1" placeholder="0">
+                        <input type="number" class="form-control font-weight-bold item-pkg" data-index="${index}" value="${item.quantity_received || ''}" min="0" placeholder="0">
+                    </td>
+                    <td class="px-2">
+                        <input type="number" class="form-control font-weight-bold item-loose" data-index="${index}" value="${item.loose_received || ''}" min="0" placeholder="0">
                     </td>
                     <td class="px-2">
                         <input type="number" class="form-control item-buy-price font-weight-bold" data-index="${index}" value="${item.buying_price_per_unit}" step="0.01">
@@ -722,6 +728,7 @@ $(document).ready(function() {
                                 total_tots: item.total_tots || 0,
                                 selling_price_per_tot: item.selling_price_per_tot || 0,
                                 quantity_received: 0,
+                                loose_received: 0,
                                 existing_quantity: item.existing_quantity || 0,
                                 expiry_date: '',
                                 discount_type: 'fixed',
@@ -808,6 +815,7 @@ $(document).ready(function() {
                     total_tots: variant.total_tots || 0,
                     selling_price_per_tot: variant.selling_price_per_tot || 0,
                     quantity_received: 0,
+                    loose_received: 0,
                     existing_quantity: variant.existing_quantity || 0,
                     expiry_date: '',
                     discount_type: 'fixed',
@@ -825,7 +833,7 @@ $(document).ready(function() {
     }
     // ------------------------------------------------
 
-    $(document).on('input change', '.item-pkg, .item-buy-price, .item-sell-price, .item-sell-tot, .item-expiry, .item-discount-amount, .item-discount-type', function() {
+    $(document).on('input change', '.item-pkg, .item-loose, .item-buy-price, .item-sell-price, .item-sell-tot, .item-expiry, .item-discount-amount, .item-discount-type', function() {
         const idx = $(this).attr('data-index');
         const item = receiptItems[idx];
         if(!item) return;
@@ -835,6 +843,10 @@ $(document).ready(function() {
         
         if($(this).hasClass('item-pkg')) {
             item.quantity_received = cleanNum($(this).val());
+        }
+
+        if($(this).hasClass('item-loose')) {
+            item.loose_received = cleanNum($(this).val());
         }
         
         if($(this).hasClass('item-buy-price')) {
@@ -887,7 +899,7 @@ $(document).ready(function() {
         const myForm = this;
         const btn = $('#submitBtn');
         const oldHtml = btn.html();
-        const entriesToSubmit = receiptItems.filter(item => cleanNum(item.quantity_received) > 0);
+        const entriesToSubmit = receiptItems.filter(item => cleanNum(item.quantity_received) > 0 || cleanNum(item.loose_received) > 0);
 
         if(entriesToSubmit.length === 0) { 
             showToast('error', 'Please enter quantity for at least one item.');
@@ -931,6 +943,7 @@ $(document).ready(function() {
                 entriesToSubmit.forEach((item, index) => {
                     formData.append(`items[${index}][product_variant_id]`, item.product_variant_id);
                     formData.append(`items[${index}][quantity_received]`, item.quantity_received); 
+                    formData.append(`items[${index}][loose_received]`, item.loose_received || 0); 
                     formData.append(`items[${index}][buying_price_per_unit]`, item.buying_price_per_unit);
                     formData.append(`items[${index}][selling_price_per_unit]`, item.selling_price_per_unit);
                     formData.append(`items[${index}][selling_price_per_tot]`, item.selling_price_per_tot || 0);
