@@ -225,6 +225,63 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
     .history-stat-box { text-align: center; }
     .history-stat-val { font-size: 1.2rem; font-weight: bold; color: var(--accent-green); }
     .history-stat-label { font-size: 0.8rem; color: var(--text-muted); }
+    
+    /* ── Kiosk Extra Chips Grid ── */
+    #m-extras-list {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 10px !important;
+    }
+
+    .extra-chip {
+        background: var(--bg-input);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 12px 10px;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        justify-content: center;
+        transition: all 0.2s;
+        min-height: 70px;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .extra-chip.active {
+        background: rgba(40, 167, 69, 0.15);
+        border-color: var(--accent-green);
+        box-shadow: 0 0 10px rgba(40, 167, 69, 0.2);
+    }
+
+    .extra-chip.active::after {
+        content: '\f058';
+        font-family: FontAwesome;
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        color: var(--accent-green);
+        font-size: 0.9rem;
+    }
+
+    .extra-chip-name {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--text-main);
+        word-break: break-word;
+        line-height: 1.2;
+    }
+
+    .extra-chip-price {
+        font-size: 0.75rem;
+        margin-top: 5px;
+        font-weight: bold;
+    }
+
+    .price-free { color: var(--accent-yellow); text-transform: uppercase; }
+    .price-paid { color: var(--accent-green); }
 
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: var(--bg-main); }
@@ -650,8 +707,8 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 
                 <div id="m-extras-container" class="text-left mt-3" style="display: none;">
                     <label style="font-size:0.75rem; color:#aaa;">Add Extras</label>
-                    <div id="m-extras-list" style="display: flex; flex-direction: column; gap: 8px;">
-                        <!-- Extras injected here via JS -->
+                    <div id="m-extras-list">
+                        <!-- Extras chips injected here via JS -->
                     </div>
                 </div>
 
@@ -834,13 +891,14 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             if (extras.length > 0) {
                 let extrasHtml = '';
                 extras.forEach((ext, idx) => {
+                    const price = parseFloat(ext.price);
+                    const isFree = (price === 0);
+                    const priceLabel = isFree ? '<span class="price-free">Free</span>' : '<span class="price-paid">+TSh ' + price.toLocaleString() + '</span>';
+                    
                     extrasHtml += `
-                        <div class="custom-control custom-checkbox" style="background:var(--bg-input); padding: 8px 12px 8px 35px; border-radius: 4px; border: 1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
-                            <input type="checkbox" class="custom-control-input m-extra-cb" id="extra_${idx}" data-name="${ext.name}" data-price="${ext.price}">
-                            <label class="custom-control-label" for="extra_${idx}" style="color:var(--text-main); width:100%; cursor:pointer;">
-                                <span>${ext.name}</span>
-                                <span style="float:right; color:var(--accent-green); font-weight:bold;">+TSh ${parseFloat(ext.price).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
-                            </label>
+                        <div class="extra-chip m-extra-toggle" data-name="${ext.name}" data-price="${price}">
+                            <div class="extra-chip-name">${ext.name}</div>
+                            <div class="extra-chip-price">${priceLabel}</div>
                         </div>
                     `;
                 });
@@ -852,11 +910,13 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             }
         }
 
-        // Recalculate price when extras change
-        $(document).off('change', '.m-extra-cb').on('change', '.m-extra-cb', function() {
+        // Recalculate price when extras change (Using Chip Selection)
+        $(document).off('click', '.m-extra-toggle').on('click', '.m-extra-toggle', function() {
+            $(this).toggleClass('active');
+            
             let basePrice = parseFloat($('#m-price').val());
             let extrasTotal = 0;
-            $('.m-extra-cb:checked').each(function() {
+            $('.m-extra-toggle.active').each(function() {
                 extrasTotal += parseFloat($(this).data('price'));
             });
             $('#m-price-display').text('TSh ' + (basePrice + extrasTotal).toLocaleString(undefined, {maximumFractionDigits: 0}));
@@ -970,7 +1030,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         let selectedExtras = [];
         
         if (type === 'food') {
-            $('.m-extra-cb:checked').each(function() {
+            $('.m-extra-toggle.active').each(function() {
                 finalPrice += parseFloat($(this).data('price'));
                 selectedExtras.push($(this).data('name'));
             });
