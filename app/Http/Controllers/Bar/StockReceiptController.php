@@ -209,7 +209,7 @@ class StockReceiptController extends Controller
                     ->first();
 
                 if (!$productVariant) continue;
-                if ($item['quantity_received'] <= 0) continue;
+                if ($item['quantity_received'] <= 0 && ($item['loose_received'] ?? 0) <= 0) continue;
 
                 // Calculate values
                 // quantity_received from frontend is the number of PACKAGES (crates/cartons)
