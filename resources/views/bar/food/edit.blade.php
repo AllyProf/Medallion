@@ -113,24 +113,33 @@
 
                         <div id="extras-container">
                             @foreach($food->extras as $index => $extra)
-                                <div class="row extra-row mb-2">
+                                <div class="row extra-row mb-3 align-items-center bg-light p-2 rounded mx-0">
                                     <input type="hidden" name="extras[{{ $index }}][id]" value="{{ $extra->id }}">
-                                    <div class="col-md-5">
+                                    <div class="col-md-4">
+                                        <label class="small font-weight-bold text-uppercase text-muted mb-1">Extra Name</label>
                                         <input type="text" name="extras[{{ $index }}][name]" class="form-control"
                                             value="{{ $extra->name }}" required>
                                     </div>
-                                    <div class="col-md-3">
-                                        <input type="number" name="extras[{{ $index }}][price]" class="form-control"
-                                            value="{{ (int) $extra->price }}" required>
+                                    <div class="col-md-2">
+                                        <label class="small font-weight-bold text-uppercase text-muted mb-1">Price (TZS)</label>
+                                        <input type="number" name="extras[{{ $index }}][price]" class="form-control extra-price {{ (int)$extra->price == 0 ? 'bg-light' : '' }}"
+                                            value="{{ (int) $extra->price }}" {{ (int)$extra->price == 0 ? 'readonly' : '' }} required>
+                                    </div>
+                                    <div class="col-md-2 text-center pt-3">
+                                        <div class="custom-control custom-checkbox mt-2">
+                                            <input type="checkbox" class="custom-control-input is-free-toggle" id="free_check_edit_{{ $index }}" {{ (int)$extra->price == 0 ? 'checked' : '' }}>
+                                            <label class="custom-control-label font-weight-bold" for="free_check_edit_{{ $index }}">FREE</label>
+                                        </div>
                                     </div>
                                     <div class="col-md-2">
+                                        <label class="small font-weight-bold text-uppercase text-muted mb-1">Status</label>
                                         <select name="extras[{{ $index }}][is_available]" class="form-control">
                                             <option value="1" {{ $extra->is_available ? 'selected' : '' }}>Active</option>
                                             <option value="0" {{ !$extra->is_available ? 'selected' : '' }}>Inactive</option>
                                         </select>
                                     </div>
-                                    <div class="col-md-2">
-                                        <button type="button" class="btn btn-danger btn-block remove-extra">
+                                    <div class="col-md-2 pt-3">
+                                        <button type="button" class="btn btn-danger btn-block remove-extra mt-2 shadow-sm">
                                             <i class="fa fa-trash"></i>
                                         </button>
                                     </div>
@@ -157,21 +166,30 @@
 
                 $('#add-extra').click(function () {
                     const html = `
-                        <div class="row extra-row mb-2">
-                            <div class="col-md-5">
-                                <input type="text" name="extras[${extraIndex}][name]" class="form-control" placeholder="Extra Name" required>
-                            </div>
-                            <div class="col-md-3">
-                                <input type="number" name="extras[${extraIndex}][price]" class="form-control" placeholder="Price" required>
+                        <div class="row extra-row mb-3 align-items-center bg-light p-2 rounded mx-0 border-primary" style="border-left: 4px solid #009688;">
+                            <div class="col-md-4">
+                                <label class="small font-weight-bold text-uppercase text-muted mb-1">Extra Name</label>
+                                <input type="text" name="extras[${extraIndex}][name]" class="form-control" placeholder="e.g. Extra Sauce" required>
                             </div>
                             <div class="col-md-2">
+                                <label class="small font-weight-bold text-uppercase text-muted mb-1">Price (TZS)</label>
+                                <input type="number" name="extras[${extraIndex}][price]" class="form-control extra-price" placeholder="0" required>
+                            </div>
+                            <div class="col-md-2 text-center pt-3">
+                                <div class="custom-control custom-checkbox mt-2">
+                                    <input type="checkbox" class="custom-control-input is-free-toggle" id="free_check_new_${extraIndex}">
+                                    <label class="custom-control-label font-weight-bold" for="free_check_new_${extraIndex}">FREE</label>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="small font-weight-bold text-uppercase text-muted mb-1">Status</label>
                                 <select name="extras[${extraIndex}][is_available]" class="form-control">
                                     <option value="1">Active</option>
                                     <option value="0">Inactive</option>
                                 </select>
                             </div>
-                            <div class="col-md-2">
-                                <button type="button" class="btn btn-danger btn-block remove-extra">
+                            <div class="col-md-2 pt-3">
+                                <button type="button" class="btn btn-danger btn-block remove-extra mt-2 shadow-sm">
                                     <i class="fa fa-trash"></i>
                                 </button>
                             </div>
@@ -179,6 +197,16 @@
                     `;
                     $('#extras-container').append(html);
                     extraIndex++;
+                });
+
+                $(document).on('change', '.is-free-toggle', function () {
+                    const row = $(this).closest('.extra-row');
+                    const priceInput = row.find('.extra-price');
+                    if ($(this).is(':checked')) {
+                        priceInput.val(0).prop('readonly', true).addClass('bg-light');
+                    } else {
+                        priceInput.prop('readonly', false).removeClass('bg-light').focus();
+                    }
                 });
 
                 $(document).on('click', '.remove-extra', function () {
