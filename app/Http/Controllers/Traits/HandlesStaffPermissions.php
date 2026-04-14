@@ -165,4 +165,25 @@ trait HandlesStaffPermissions
 
         return false;
     }
+
+    /**
+     * Get the active/current shift for the staff or owner
+     */
+    protected function getCurrentShift()
+    {
+        $ownerId = $this->getOwnerId();
+        
+        // If logged in as staff, prioritizing their specific open shift
+        if (session('is_staff')) {
+            return \App\Models\BarShift::where('user_id', $ownerId)
+                ->where('staff_id', session('staff_id'))
+                ->where('status', 'open')
+                ->first();
+        }
+
+        // For owner/management, return the first open shift found for the business
+        return \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->first();
+    }
 }
