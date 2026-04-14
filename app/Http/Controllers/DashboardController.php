@@ -66,7 +66,7 @@ class DashboardController extends Controller
                 }
 
                 // Super Admin staff see the manager dashboard (Manager View)
-                if ($this->isSuperAdminRole()) {
+                if (in_array($roleName, ['super admin', 'super administrator', 'super_admin']) || in_array($roleSlug, ['super-admin', 'superadmin'])) {
                     $roleName = 'manager';
                 }
 
