@@ -314,8 +314,22 @@ class MenuService
                     return true;
                 }
 
-                // Super Admin role: bypass common menu filtering to show all platform options
+                // Super Admin role: show only necessary manager-relevant common menus
                 if ($this->isSuperAdminRole($staffRole)) {
+                    // Hide generic/non-operational menus not relevant to admin daily operations
+                    $adminHiddenSlugs = [
+                        'sales',
+                        'products',
+                        'customers',
+                        'settings',
+                        'restaurant-management',
+                        'daily-master-sheet',
+                        'bar-reconciliation',        // Redundant for Super Admin
+                        'bar-sales-orders',           // Hide root Sales & Orders
+                        'manager-master-sheet-root',  // Hide root Master Sheet (integrated in Reconciliation)
+                        'bar-ops-settings',           // Hide root Operations & Settings
+                    ];
+                    if (in_array($menu->slug, $adminHiddenSlugs)) return false;
                     return true;
                 }
 
@@ -407,7 +421,7 @@ class MenuService
         $roleSlug = strtolower($staffRole->slug ?? '');
         $isAccountant = in_array($roleName, ['accountant', 'finance manager', 'finance']) || in_array($roleSlug, ['accountant']);
         $isManager = in_array($roleName, ['manager', 'general manager', 'administrator']) || in_array($roleSlug, ['manager', 'admin', 'super-admin', 'general-manager']);
-        $isSuperAdmin = !empty($staffRole->is_super_admin_virtual) || $roleSlug === 'super-admin';
+        $isSuperAdmin = $this->isSuperAdminRole($staffRole);
 
         $children = $children->filter(function($child) use ($staffRole, $parentMenu, $isAccountant, $isManager, $isSuperAdmin) {
             // Hide 'Stock Levels' for administrative roles as requested
