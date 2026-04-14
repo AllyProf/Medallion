@@ -42,8 +42,8 @@ try {
         }
     }
 
-    // 2. Transfer Staff, Products, Food Items
-    $tables = ['staff', 'products', 'food_items']; // Handle ledgers separately
+    // 2. Transfer Staff, Products, Food Items, Business Types
+    $tables = ['staff', 'products', 'food_items', 'user_business_types']; // Handle ledgers separately
     foreach ($tables as $table) {
         if (Schema::hasTable($table)) {
             $count = DB::table($table)->where('user_id', $fromUser)->count();
