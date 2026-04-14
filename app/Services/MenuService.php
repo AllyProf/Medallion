@@ -269,6 +269,7 @@ class MenuService
                 'icon'        => 'fa-cogs',
                 'is_placeholder' => true,
                 'sort_order'  => 1999,
+                'children'    => collect(),
             ];
 
             $finalMenus->push($separator);
