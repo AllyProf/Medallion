@@ -13,8 +13,8 @@ class ProductHelper
      */
     public static function generateDisplayName($productName, $variantDescription = '', $variantSpecificName = '')
     {
-        $vSpec = trim($variantSpecificName);
-        $mAndPkg = trim($variantDescription);
+        $vSpec = trim($variantSpecificName ?? '');
+        $mAndPkg = trim($variantDescription ?? '');
         
         // Extract measurement (e.g. "750ml" from "750ml - Piece")
         $m = '';

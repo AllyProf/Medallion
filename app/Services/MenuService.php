@@ -378,7 +378,7 @@ class MenuService
                 }
                 
                 // For Manager role, hide specific menus - BUT allow them for Super Admin if specifically requested
-                if ($isManager && empty($staffRole->is_super_admin_virtual)) {
+                if ($isManager && !$isAccountant && empty($staffRole->is_super_admin_virtual)) {
                     if (in_array(strtolower($menu->name), ['sales', 'products', 'customers', 'restaurant management', 'daily master sheet']) || 
                         in_array($menu->slug, ['sales', 'products', 'customers', 'restaurant-management', 'bar-food-menu', 'daily-master-sheet'])) {
                         return false;

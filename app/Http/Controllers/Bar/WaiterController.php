@@ -375,7 +375,7 @@ class WaiterController extends Controller
 
                     // Also keep in notes for backward compatibility
                     $foodItemNote = $item['quantity'].'x '.($item['product_name'] ?? 'Food Item').
-                        ($item['variant_name'] ? ' ('.$item['variant_name'].')' : '').
+                        ((!empty($item['variant_name'])) ? ' ('.$item['variant_name'].')' : '').
                         ' - Tsh '.number_format($unitPrice, 0);
 
                     if (! empty($item['notes'])) {
@@ -509,7 +509,7 @@ class WaiterController extends Controller
                     'order_id' => $order->id,
                     'food_item_id' => $item['food_item_id'] ?? null, // Link to food_items table
                     'food_item_name' => $item['food_item_name'],
-                    'variant_name' => $item['variant_name'],
+                    'variant_name' => $item['variant_name'] ?? null,
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
                     'total_price' => $item['total_price'],
@@ -1471,7 +1471,7 @@ class WaiterController extends Controller
                     ];
 
                     $foodItemNote = $quantity.'x '.($item['product_name'] ?? 'Food Item').
-                        ($item['variant_name'] ? ' ('.$item['variant_name'].')' : '').
+                        ((!empty($item['variant_name'])) ? ' ('.$item['variant_name'].')' : '').
                         ' - Tsh '.number_format($unitPrice, 0);
 
                     if (! empty($item['notes'])) {
@@ -1649,7 +1649,7 @@ class WaiterController extends Controller
                     'order_id' => $order->id,
                     'food_item_id' => $item['food_item_id'] ?? null,
                     'food_item_name' => $item['food_item_name'],
-                    'variant_name' => $item['variant_name'],
+                    'variant_name' => $item['variant_name'] ?? null,
                     'quantity' => $item['quantity'],
                     'unit_price' => $item['unit_price'],
                     'total_price' => $item['total_price'],
