@@ -506,8 +506,9 @@ class CounterController extends Controller
             ->limit(5)
             ->get();
 
-        // Recent orders
+        // Recent orders (Filtered to only show orders containing bar items)
         $recentOrders = BarOrder::where('user_id', $ownerId)
+            ->whereHas('items')
             ->with(['waiter', 'items.productVariant.product', 'table'])
             ->orderBy('created_at', 'desc')
             ->paginate(3);
