@@ -100,6 +100,30 @@ class StockReceipt extends Model
     }
 
     /**
+     * Get a human-friendly display of the quantity (e.g. 10 Crate & 10 Btl).
+     */
+    public function getDisplayQuantityAttribute()
+    {
+        $conv = $this->productVariant->items_per_package ?? 0;
+        if ($conv <= 1) {
+            return number_format($this->total_units) . ' ' . ($this->productVariant->unit ?? 'Pcs');
+        }
+
+        $pkgs = floor($this->total_units / $conv);
+        $loose = round($this->total_units % $conv);
+        $pkgLabel = $this->productVariant->packaging ?? 'Pkg';
+        $unitLabel = $this->productVariant->unit ?? 'Btl/Pc';
+
+        if ($pkgs > 0 && $loose > 0) {
+            return "{$pkgs} {$pkgLabel} & {$loose} {$unitLabel}";
+        } elseif ($pkgs > 0) {
+            return "{$pkgs} {$pkgLabel}";
+        } else {
+            return "{$loose} {$unitLabel}";
+        }
+    }
+
+    /**
      * Get the staff member who received the stock.
      */
     public function receivedBy()

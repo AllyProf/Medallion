@@ -70,7 +70,36 @@
                             {{ $receipt->item_count }} types
                         </span>
                     </td>
-                    <td class="text-center"><span class="font-weight-bold">{{ number_format($receipt->total_packages_sum, 1) }}</span> <small class="text-muted">{{ $receipt->pkg_label ?: 'Pkgs' }}</small></td>
+                     <td class="text-center">
+                        @php
+                            $pkgsSum = $receipt->total_packages_sum;
+                            $unitsSum = $receipt->total_units_sum;
+                            $isMixed = ($receipt->pkg_label === 'Mixed' || $receipt->item_count > 1);
+                            
+                            // Try to calculate breakdown if only one type of item
+                            if (!$isMixed && $pkgsSum > 0) {
+                                // We don't have conversion directly, but we can infer it: conversion = units / packages
+                                // But it's safer to just check if it's a whole number or not.
+                                $fullPkgs = floor($pkgsSum);
+                                if ($pkgsSum != $fullPkgs) {
+                                    // It has a fractional part. Since we know total_units_sum and total_packages_sum:
+                                    // Total Units = Pkgs * Conv. So Conv = Total Units / Pkgs
+                                    $inferredConv = $receipt->total_units_sum / $receipt->total_packages_sum;
+                                    $loose = round($unitsSum - ($fullPkgs * $inferredConv));
+                                    
+                                    echo "<span class='font-weight-bold'>" . $fullPkgs . "</span> <small class='text-muted'>" . $receipt->pkg_label . "</small>";
+                                    if ($loose > 0) {
+                                        echo " <span class='text-primary'>&</span> <span class='font-weight-bold'>" . $loose . "</span> <small class='text-muted'>Pcs</small>";
+                                    }
+                                } else {
+                                    echo "<span class='font-weight-bold'>" . number_format($pkgsSum, 0) . "</span> <small class='text-muted'>" . ($receipt->pkg_label ?: 'Pkgs') . "</small>";
+                                }
+                            } else {
+                                // Default decimal display for mixed/ambiguous batches
+                                echo "<span class='font-weight-bold'>" . number_format($pkgsSum, 1) . "</span> <small class='text-muted'>" . ($receipt->pkg_label ?: 'Pkgs') . "</small>";
+                            }
+                        @endphp
+                    </td>
                     <td class="text-center font-weight-bold">{{ number_format($receipt->total_units_sum) }}</td>
                     <td class="text-right">TSh {{ number_format($receipt->total_cost_sum) }}</td>
                     @if($showRevenue)

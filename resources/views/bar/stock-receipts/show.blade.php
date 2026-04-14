@@ -52,8 +52,8 @@
               <tr>
                 <th>Quantity Received:</th>
                 <td>
-                  {{ $stockReceipt->quantity_received }} {{ $stockReceipt->productVariant->packaging ?? 'packages' }}<br>
-                  <small class="text-muted">({{ $stockReceipt->total_units }} total bottle(s))</small>
+                  <strong>{!! $stockReceipt->display_quantity !!}</strong><br>
+                  <small class="text-muted">({{ number_format($stockReceipt->total_units) }} total pieces)</small>
                 </td>
               </tr>
               <tr>
