@@ -99,9 +99,6 @@
                                 <th>Category</th>
                                 <th class="text-center">Stock Level</th>
                                 <th class="text-center">Packages</th>
-                                @if($showRevenue)
-                                <th class="text-right">Valuation</th>
-                                @endif
                             </tr>
                         </thead>
                         <tbody>
@@ -123,12 +120,7 @@
                                 <td class="text-center">
                                     <strong>{!! $item['packages'] !!}</strong>
                                 </td>
-                                @if($showRevenue)
-                                <td class="text-right">
-                                    <small class="text-muted">TSh {{ number_format($item['buying_price']) }} / {{ $item['unit'] }}</small><br>
-                                    <strong>TSh {{ number_format($item['value']) }}</strong>
                                 </td>
-                                @endif
                             </tr>
                             @endforeach
                         </tbody>
@@ -161,11 +153,6 @@
                                             <span>Inventory Breakdown:</span>
                                             <strong>{!! $item['packages'] !!}</strong>
                                         </div>
-                                    </div>
-                                    @if($showRevenue)
-                                    <div class="d-flex justify-content-between mb-3">
-                                        <span class="small text-muted">Valuation:</span>
-                                        <strong class="text-dark">TSh {{ number_format($item['value']) }}</strong>
                                     </div>
                                     @endif
                                 </div>
