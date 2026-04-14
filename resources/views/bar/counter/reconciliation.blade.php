@@ -356,7 +356,7 @@
 @endif
 
 
-@if(!$isAccountant && !$todayHandover && $accountant && Route::currentRouteName() !== 'accountant.counter.reconciliation')
+@if(!$isManagementRole && !$todayHandover && $accountant && Route::currentRouteName() !== 'accountant.counter.reconciliation')
   {{-- The handover submission form section --}}
   <div class="row">
     <div class="col-md-12">
@@ -768,7 +768,7 @@
       </div>
     </div>
   @endif
-@elseif(!$isAccountant)
+@elseif(!$isManagementRole)
     {{-- The status alert section for Counter Staff --}}
     <div class="row">
       <div class="col-md-12">
