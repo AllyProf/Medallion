@@ -120,7 +120,7 @@
                                 <td class="text-center">
                                     <strong>{!! $item['packages'] !!}</strong>
                                 </td>
-                                </td>
+
                             </tr>
                             @endforeach
                         </tbody>
@@ -154,7 +154,7 @@
                                             <strong>{!! $item['packages'] !!}</strong>
                                         </div>
                                     </div>
-                                    @endif
+
                                 </div>
                             </div>
                         </div>
