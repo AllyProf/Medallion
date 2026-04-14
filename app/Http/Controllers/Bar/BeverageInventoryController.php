@@ -85,9 +85,20 @@ class BeverageInventoryController extends Controller
                     // Calculate packaging information
                     $packagingType = $variant->packaging ?? 'Packages';
                     $itemsPerPackage = $variant->items_per_package ?? 1;
-                    $warehousePackages = ($itemsPerPackage > 0) ? floor($warehouseQty / $itemsPerPackage) : 0;
-                    $counterPackages = ($itemsPerPackage > 0) ? floor($counterQty / $itemsPerPackage) : 0;
-                    $totalPackages = $warehousePackages + $counterPackages;
+                    
+                    // Helper to format breakdown
+                    $fmtPkg = function($qty, $ipp, $pType, $uType) {
+                        if ($ipp <= 1) return number_format($qty) . ' ' . ($uType ?? 'Pcs');
+                        $p = floor($qty / $ipp);
+                        $l = round($qty % $ipp);
+                        if ($p > 0 && $l > 0) return "{$p} {$pType} & {$l} {$uType}";
+                        if ($p > 0) return "{$p} {$pType}";
+                        return "{$l} {$uType}";
+                    };
+
+                    $warehousePackages = $fmtPkg($warehouseQty, $itemsPerPackage, $packagingType, $variant->inventory_unit);
+                    $counterPackages = $fmtPkg($counterQty, $itemsPerPackage, $packagingType, $variant->inventory_unit);
+                    $totalPackages = $fmtPkg($totalQty, $itemsPerPackage, $packagingType, $variant->inventory_unit);
                     
                     $stockOverview->push([
                         'product_name' => $product->name,
@@ -292,8 +303,19 @@ class BeverageInventoryController extends Controller
 
                     $packagingType  = $variant->packaging ?? 'Packages';
                     $ipp            = ($variant->items_per_package > 0) ? $variant->items_per_package : 1;
-                    $packagingCount = floor($quantity / $ipp);
-                    $extraBottles   = $quantity % $ipp;
+                    
+                    // Human friendly breakdown
+                    $pCount = floor($quantity / $ipp);
+                    $lCount = round($quantity % $ipp);
+                    $uName  = $variant->inventory_unit ?? 'Btl';
+                    
+                    if ($pCount > 0 && $lCount > 0) {
+                        $displayPkgs = "{$pCount} {$packagingType} & {$lCount} {$uName}";
+                    } elseif ($pCount > 0) {
+                        $displayPkgs = "{$pCount} {$packagingType}";
+                    } else {
+                        $displayPkgs = "{$lCount} {$uName}";
+                    }
 
                     // Clean Title: prioritize variant name and remove redundant brand/parentheses
                     $vName        = $variant->name ?? '';
@@ -332,8 +354,7 @@ class BeverageInventoryController extends Controller
                         'total_cost_sold'       => $bestRevenue,
                         'expected_profit'       => $bestProfit,
                         'items_per_package'     => $ipp,
-                        'packages'              => $packagingCount,
-                        'extra_bottles'         => $extraBottles,
+                        'packages'              => $displayPkgs,
                         'packaging_type'        => $packagingType,
                         'unit'                  => $variant->inventory_unit,
                         'is_low_stock'          => $quantity < 10,

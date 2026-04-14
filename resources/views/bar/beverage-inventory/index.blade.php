@@ -280,22 +280,22 @@
                           }
                         @endphp
                         <div>{{ number_format($stock['warehouse_quantity']) }} bottle(s)</div>
-                        @if($stock['warehouse_packages'] > 0 && $stock['items_per_package'] > 1)
-                          <small class="text-muted">{{ number_format($stock['warehouse_packages']) }} {{ $stock['warehouse_packages'] == 1 ? $packagingTypeSingular : $packagingType }}</small>
+                        @if($stock['warehouse_packages'])
+                          <small class="text-muted">{!! $stock['warehouse_packages'] !!}</small>
                         @endif
                       </td>
                       <td>TSh {{ number_format($stock['warehouse_value'], 2) }}</td>
                       <td>
                         <div>{{ number_format($stock['counter_quantity']) }} bottle(s)</div>
-                        @if($stock['counter_packages'] > 0 && $stock['items_per_package'] > 1)
-                          <small class="text-muted">{{ number_format($stock['counter_packages']) }} {{ $stock['counter_packages'] == 1 ? $packagingTypeSingular : $packagingType }}</small>
+                        @if($stock['counter_packages'])
+                          <small class="text-muted">{!! $stock['counter_packages'] !!}</small>
                         @endif
                       </td>
                       <td>TSh {{ number_format($stock['counter_value'], 2) }}</td>
                       <td>
                         <div><strong>{{ number_format($stock['total_quantity']) }} bottle(s)</strong></div>
-                        @if($stock['total_packages'] > 0 && $stock['items_per_package'] > 1)
-                          <small class="text-muted"><strong>{{ number_format($stock['total_packages']) }} {{ $stock['total_packages'] == 1 ? $packagingTypeSingular : $packagingType }}</strong></small>
+                        @if($stock['total_packages'])
+                          <small class="text-muted"><strong>{!! $stock['total_packages'] !!}</strong></small>
                         @endif
                       </td>
                       <td><strong>TSh {{ number_format($stock['warehouse_value'] + $stock['counter_value'], 2) }}</strong></td>
@@ -396,8 +396,8 @@
                         <div class="col-6">
                           <strong>Total Stock</strong>
                           <div class="h5 text-primary">{{ number_format($stock['total_quantity']) }} bottle(s)</div>
-                          @if($stock['total_packages'] > 0 && $stock['items_per_package'] > 1)
-                            <small class="text-muted">{{ number_format($stock['total_packages']) }} {{ $stock['total_packages'] == 1 ? $packagingTypeSingular : $packagingType }}</small>
+                          @if($stock['total_packages'])
+                            <small class="text-muted">{!! $stock['total_packages'] !!}</small>
                           @endif
                         </div>
                         <div class="col-6">

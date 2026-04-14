@@ -121,7 +121,7 @@
                                     </span>
                                 </td>
                                 <td class="text-center">
-                                    <strong>{{ $item['packages'] }}</strong> {{ $item['packaging_type'] }}
+                                    <strong>{!! $item['packages'] !!}</strong>
                                 </td>
                                 @if($showRevenue)
                                 <td class="text-right">
@@ -158,8 +158,8 @@
                                             <strong>{{ $item['packaging_type'] }}</strong>
                                         </div>
                                         <div class="d-flex justify-content-between small">
-                                            <span>Total Pkgs:</span>
-                                            <strong>{{ $item['packages'] }}</strong>
+                                            <span>Inventory Breakdown:</span>
+                                            <strong>{!! $item['packages'] !!}</strong>
                                         </div>
                                     </div>
                                     @if($showRevenue)
