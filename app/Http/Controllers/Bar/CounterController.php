@@ -1141,8 +1141,9 @@ class CounterController extends Controller
 
         // Final Filters from Processed items - Focused on Categories
         $categories = $variants->pluck('category')->unique()->sort()->values();
+        $brands = $variants->pluck('brand')->unique()->filter()->sort()->values();
 
-        return view('bar.counter.counter-stock', compact('variants', 'totalValue', 'categories'));
+        return view('bar.counter.counter-stock', compact('variants', 'totalValue', 'categories', 'brands'));
     }
 
     /**
