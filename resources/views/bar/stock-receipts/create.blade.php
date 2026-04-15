@@ -626,15 +626,25 @@ $(document).ready(function() {
                                     if(u.includes('pc')) return 'pc';
                                     return u.substring(0,3);
                                 })()}s
-                                (${(item.existing_quantity / (item.items_per_package || 1)) % 1 === 0 ? (item.existing_quantity / (item.items_per_package || 1)) : (item.existing_quantity / (item.items_per_package || 1)).toFixed(1)} 
-                                ${(() => {
-                                    const p = (item.packaging || 'pkg').toLowerCase();
-                                    if(p.includes('crate')) return 'crt';
-                                    if(p.includes('carton')) return 'ctn';
-                                    if(p.includes('outer')) return 'otr';
-                                    if(p.includes('piece')) return 'pc';
-                                    return p.substring(0,3);
-                                })()}s)
+                                (${(() => {
+                                    const conv = item.items_per_package || 1;
+                                    const q = item.existing_quantity || 0;
+                                    const fullP = Math.floor(q / conv);
+                                    const looseP = Math.round(q % conv);
+                                    let labelP = (item.packaging || 'pkg').toLowerCase();
+                                    if(labelP.includes('crate')) labelP = 'crt';
+                                    else if(labelP.includes('carton')) labelP = 'ctn';
+                                    else if(labelP.includes('outer')) labelP = 'otr';
+                                    else labelP = labelP.substring(0,3);
+
+                                    if (fullP > 0 && looseP > 0) {
+                                        return `${fullP}${labelP} & ${looseP}btl`;
+                                    } else if (fullP > 0) {
+                                        return `${fullP}${labelP}`;
+                                    } else {
+                                        return `${looseP}btl`;
+                                    }
+                                })()})
                             </span>
                             ${item.buying_price_per_unit != item.last_known_buy ? `
                                 <span class="text-warning font-weight-bold" title="Price changed from previous reception">
