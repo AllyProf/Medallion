@@ -76,27 +76,21 @@
                             $unitsSum = $receipt->total_units_sum;
                             $isMixed = ($receipt->pkg_label === 'Mixed' || $receipt->item_count > 1);
                             
-                            // Try to calculate breakdown if only one type of item
                             if (!$isMixed && $pkgsSum > 0) {
-                                // We don't have conversion directly, but we can infer it: conversion = units / packages
-                                // But it's safer to just check if it's a whole number or not.
                                 $fullPkgs = floor($pkgsSum);
-                                if ($pkgsSum != $fullPkgs) {
-                                    // It has a fractional part. Since we know total_units_sum and total_packages_sum:
-                                    // Total Units = Pkgs * Conv. So Conv = Total Units / Pkgs
-                                    $inferredConv = $receipt->total_units_sum / $receipt->total_packages_sum;
-                                    $loose = round($unitsSum - ($fullPkgs * $inferredConv));
-                                    
-                                    echo "<span class='font-weight-bold'>" . $fullPkgs . "</span> <small class='text-muted'>" . $receipt->pkg_label . "</small>";
-                                    if ($loose > 0) {
-                                        echo " <span class='text-primary'>&</span> <span class='font-weight-bold'>" . $loose . "</span> <small class='text-muted'>Pcs</small>";
-                                    }
-                                } else {
-                                    echo "<span class='font-weight-bold'>" . number_format($pkgsSum, 0) . "</span> <small class='text-muted'>" . ($receipt->pkg_label ?: 'Pkgs') . "</small>";
+                                $inferredConv = $receipt->total_units_sum / $receipt->total_packages_sum;
+                                $loose = round($unitsSum - ($fullPkgs * $inferredConv));
+                                
+                                echo "<span class='font-weight-bold text-dark'>" . $fullPkgs . "</span> <small class='text-muted'>" . $receipt->pkg_label . "</small>";
+                                if ($loose > 0) {
+                                    echo " <span class='text-primary'>&</span> <span class='font-weight-bold text-dark'>" . $loose . "</span> <small class='text-muted'>Btl</small>";
                                 }
                             } else {
-                                // Default decimal display for mixed/ambiguous batches
-                                echo "<span class='font-weight-bold'>" . number_format($pkgsSum, 1) . "</span> <small class='text-muted'>" . ($receipt->pkg_label ?: 'Pkgs') . "</small>";
+                                // Default display for mixed batches - no decimals
+                                echo "<span class='font-weight-bold text-dark'>" . floor($pkgsSum) . "</span> <small class='text-muted'>" . ($receipt->pkg_label ?: 'Pkgs') . "</small>";
+                                if (($pkgsSum - floor($pkgsSum)) > 0) {
+                                    echo " <span class='text-primary'>+</span> <small class='text-muted italic'>Loose</small>";
+                                }
                             }
                         @endphp
                     </td>
