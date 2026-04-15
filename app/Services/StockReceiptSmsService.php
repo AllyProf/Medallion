@@ -34,7 +34,7 @@ class StockReceiptSmsService
 
         $receipts = StockReceipt::where('user_id', $ownerId)
             ->where('receipt_number', $receiptNumber)
-            ->with(['productVariant.product', 'supplier', 'receivedBy'])
+            ->with(['productVariant.product', 'supplier', 'receivedBy', 'receivedByStaff'])
             ->get();
 
         if ($receipts->isEmpty()) {
@@ -43,7 +43,7 @@ class StockReceiptSmsService
 
         $firstReceipt = $receipts->first();
         $supplierName = $firstReceipt->supplier->company_name ?? 'Unknown Supplier';
-        $receivedByName = $firstReceipt->receivedBy->name ?? 'System';
+        $receivedByName = $firstReceipt->received_by_name; // Uses model accessor (staff name if staff, else owner)
         $date = Carbon::parse($firstReceipt->received_date)->format('M d, Y');
         $itemCount = $receipts->count();
 
@@ -64,21 +64,10 @@ class StockReceiptSmsService
             ->with('role')
             ->get();
 
-        // Build product list
-        $productLines = $receipts->map(function($r) {
-            $productName = $r->productVariant->product->name ?? 'Unknown';
-            $variantName = $r->productVariant->name ?? '';
-            $label = $variantName ? "{$productName} ({$variantName})" : $productName;
-            $packaging = ucfirst(strtolower($r->productVariant->packaging ?? 'pkg')) . 's';
-            $pkgQty = (int) $r->quantity_received;
-            $bottleQty = (int) $r->total_units;
-            return "  - {$label}: {$pkgQty} {$packaging} / {$bottleQty} Bottles";
-        })->implode("\n");
-
-        // Pre-build default message for general notifications
+        // Pre-build SMS message
         $message = "STOCK RECEIVED - {$supplierName}\n\n";
         $message .= "Batch: #{$receiptNumber}\n";
-        $message .= "Products:\n{$productLines}\n";
+        $message .= "Products: {$itemCount}\n";
         $message .= "Received By: {$receivedByName}\n";
         $message .= "Date: {$date}\n";
         $message .= "\nPlease verify the receipt in the dashboard.";

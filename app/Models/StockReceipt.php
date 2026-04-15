@@ -32,6 +32,7 @@ class StockReceipt extends Model
         'expiry_date',
         'notes',
         'received_by',
+        'received_by_staff_id',
     ];
 
     protected $casts = [
@@ -125,10 +126,29 @@ class StockReceipt extends Model
     }
 
     /**
-     * Get the staff member who received the stock.
+     * Get the user who received the stock (owner/super admin context).
      */
     public function receivedBy()
     {
         return $this->belongsTo(User::class, 'received_by');
+    }
+
+    /**
+     * Get the staff member who received the stock (when received by a staff account).
+     */
+    public function receivedByStaff()
+    {
+        return $this->belongsTo(\App\Models\Staff::class, 'received_by_staff_id');
+    }
+
+    /**
+     * Get the display name of whoever received the stock.
+     */
+    public function getReceivedByNameAttribute(): string
+    {
+        if ($this->receivedByStaff) {
+            return $this->receivedByStaff->full_name ?? $this->receivedByStaff->name ?? 'Staff';
+        }
+        return $this->receivedBy->name ?? 'System';
     }
 }

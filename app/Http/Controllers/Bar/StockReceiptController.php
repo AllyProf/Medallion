@@ -285,6 +285,7 @@ class StockReceiptController extends Controller
                     'received_date' => $validated['received_date'],
                     'notes' => $validated['notes'],
                     'received_by' => Auth::id() ?? $ownerId,
+                    'received_by_staff_id' => session('is_staff') ? session('staff_id') : null,
                 ]);
 
                 // Update Warehouse Stock (With Weighted Average Costing)
