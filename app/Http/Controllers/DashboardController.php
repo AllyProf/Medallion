@@ -269,7 +269,7 @@ class DashboardController extends Controller
                     
                 $revenueTrend = $dateRange->map(function($dateStr) use ($trendOrdersRaw) {
                     $dayOrders = $trendOrdersRaw->filter(fn($o) => \Carbon\Carbon::parse($o->created_at)->format('Y-m-d') === $dateStr);
-                    $barRev = $dayOrders->sum(fn($o) => $o->items ? $o->items->where('status', '!=', 'cancelled')->sum('total_price') : 0);
+                    $barRev = $dayOrders->sum(fn($o) => $o->items ? $o->items->sum('total_price') : 0);
                     $foodRev = $dayOrders->sum(fn($o) => $o->kitchenOrderItems ? $o->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price') : 0);
                     
                     return (object)[
@@ -539,7 +539,9 @@ class DashboardController extends Controller
                                 });
                             });
                         }
-                    })->sum('total_price');
+                    })
+                    ->where('status', '!=', 'cancelled')
+                    ->sum('total_price');
                 $foodTargetProgress = $foodMonthlyTarget > 0 ? min(100, round(($foodMonthRevenue / $foodMonthlyTarget) * 100)) : 0;
 
                 // ── Master Sheet Financials (Manager Context)
@@ -575,7 +577,7 @@ class DashboardController extends Controller
                     // Skip 'Counter' from waiter leaderboard
                     if (stripos($waiter->full_name, 'counter') !== false) return null;
 
-                    $barRev = $orders->sum(fn($o) => $o->items ? $o->items->where('status', '!=', 'cancelled')->sum('total_price') : 0);
+                    $barRev = $orders->sum(fn($o) => $o->items ? $o->items->sum('total_price') : 0);
                     $foodRev = $orders->sum(fn($o) => $o->kitchenOrderItems ? $o->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price') : 0);
                     return [
                         'waiter' => $waiter,
@@ -584,7 +586,7 @@ class DashboardController extends Controller
                         'food_revenue' => $foodRev,
                         'total_revenue' => $barRev + $foodRev,
                     ];
-                })->filter()->sortByDesc('total_revenue')->values();
+                })->filter(fn($item) => $item !== null && $item['total_revenue'] > 0)->sortByDesc('total_revenue')->values();
 
                 return view('dashboard.manager', compact(
                     'staff', 'owner',

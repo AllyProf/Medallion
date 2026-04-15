@@ -136,6 +136,7 @@ class AccountantController extends Controller
         // Period Financial Summary (default: current month)
         $periodOrders = $applyFilters(BarOrder::query())
             ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()])
+            ->where('status', '!=', 'cancelled')
             ->with(['items', 'kitchenOrderItems', 'orderPayments'])
             ->get();
 
@@ -145,7 +146,7 @@ class AccountantController extends Controller
                 ? $order->items->sum('total_price') 
                 : 0;
             $foodAmount = $order->kitchenOrderItems && $order->kitchenOrderItems->isNotEmpty()
-                ? $order->kitchenOrderItems->sum('total_price')
+                ? $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price')
                 : 0;
             return $barAmount + $foodAmount;
         });
@@ -176,7 +177,7 @@ class AccountantController extends Controller
         });
 
         $todayFoodSales = $todayOrders->sum(function($order) {
-            return $order->kitchenOrderItems->sum('total_price');
+            return $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price');
         });
 
         // Period sales
@@ -185,7 +186,7 @@ class AccountantController extends Controller
         });
 
         $periodFoodSales = $periodOrders->sum(function($order) {
-            return $order->kitchenOrderItems->sum('total_price');
+            return $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price');
         });
 
         // Waiter Reconciliations Summary (filtered by branch)
@@ -302,7 +303,7 @@ class AccountantController extends Controller
                     return $order->items->sum('total_price');
                 });
                 $foodRev = $orders->sum(function($order) {
-                    return $order->kitchenOrderItems->sum('total_price');
+                    return $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price');
                 });
 
                 return [
@@ -319,6 +320,7 @@ class AccountantController extends Controller
                     }),
                 ];
             })
+            ->filter(fn($item) => $item['total_revenue'] > 0)
             ->sortByDesc('total_revenue')
             ->take(10)
             ->values();
@@ -391,11 +393,12 @@ class AccountantController extends Controller
 
         $outstandingAmount = $outstandingOrders->sum('total_amount');
 
-        // ── Top selling products this month (Bar + Kitchen)
+        // ── Top selling products for selected period (Bar + Kitchen)
         $barTopProducts = \App\Models\OrderItem::with('productVariant.product')
-            ->whereHas('order', function($q) use ($applyFilters) {
+            ->whereHas('order', function($q) use ($applyFilters, $startDate, $endDate) {
                 $applyFilters($q);
-                $q->where('status', '!=', 'cancelled')->whereMonth('created_at', now()->month);
+                $q->where('status', '!=', 'cancelled')
+                  ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()]);
             })
             ->whereNotNull('product_variant_id')
             ->selectRaw('product_variant_id, SUM(quantity) as total_sold, SUM(total_price) as total_revenue')
@@ -409,9 +412,11 @@ class AccountantController extends Controller
                 ];
             });
 
-        $foodTopProducts = \App\Models\KitchenOrderItem::whereHas('order', function($q) use ($applyFilters) {
+        $foodTopProducts = \App\Models\KitchenOrderItem::where('status', '!=', 'cancelled')
+            ->whereHas('order', function($q) use ($applyFilters, $startDate, $endDate) {
                 $applyFilters($q);
-                $q->where('status', '!=', 'cancelled')->whereMonth('created_at', now()->month);
+                $q->where('status', '!=', 'cancelled')
+                  ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()]);
             })
             ->selectRaw('COALESCE(food_item_id, 0) as food_id, COALESCE(food_item_name, "Kitchen Item") as name, variant_name, SUM(quantity) as total_sold, SUM(total_price) as total_revenue')
             ->groupBy('food_id', 'name', 'variant_name')
@@ -433,10 +438,11 @@ class AccountantController extends Controller
             ->take(10)
             ->values();
 
-        // ── Category Distribution (this month) - Bar + Food
-        $barCategories = \App\Models\OrderItem::whereHas('order', function($q) use ($applyFilters) {
+        // ── Category Distribution (selected period) - Bar + Food
+        $barCategories = \App\Models\OrderItem::whereHas('order', function($q) use ($applyFilters, $startDate, $endDate) {
                 $applyFilters($q);
-                $q->where('status', '!=', 'cancelled')->whereMonth('created_at', now()->month);
+                $q->where('status', '!=', 'cancelled')
+                  ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()]);
             })
             ->join('product_variants', 'order_items.product_variant_id', '=', 'product_variants.id')
             ->join('products', 'product_variants.product_id', '=', 'products.id')
@@ -447,9 +453,11 @@ class AccountantController extends Controller
                 return ['category' => $c->category, 'total_revenue' => (float)$c->total_revenue];
             });
 
-        $foodCategories = \App\Models\KitchenOrderItem::whereHas('order', function($q) use ($applyFilters) {
+        $foodCategories = \App\Models\KitchenOrderItem::where('status', '!=', 'cancelled')
+            ->whereHas('order', function($q) use ($applyFilters, $startDate, $endDate) {
                 $applyFilters($q);
-                $q->where('status', '!=', 'cancelled')->whereMonth('created_at', now()->month);
+                $q->where('status', '!=', 'cancelled')
+                  ->whereBetween('created_at', [Carbon::parse($startDate)->startOfDay(), Carbon::parse($endDate)->endOfDay()]);
             })
             ->leftJoin('food_items', 'kitchen_order_items.food_item_id', '=', 'food_items.id')
             ->selectRaw('COALESCE(food_items.category, "Kitchen") as category, SUM(kitchen_order_items.total_price) as total_revenue')

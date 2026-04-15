@@ -1002,7 +1002,7 @@ class WaiterApiController extends Controller
 
         // Calculate food sales
         $foodSales = $foodOrders->sum(function($order) {
-            return $order->kitchenOrderItems->sum('total_price');
+            return $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price');
         });
 
         // Calculate paid amounts
@@ -1019,7 +1019,7 @@ class WaiterApiController extends Controller
         });
 
         $paidFoodAmount = $paidFoodOrders->sum(function($order) {
-            return $order->kitchenOrderItems->sum('total_price');
+            return $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price');
         });
 
         // Payment collection

@@ -1443,6 +1443,7 @@ class ChefController extends Controller
                   ->where('payment_status', 'paid')
                   ->where('created_at', '>=', now()->subDays(30));
         })
+        ->where('status', '!=', 'cancelled')
         ->sum('total_price');
 
         // Get total food orders count
@@ -1481,7 +1482,7 @@ class ChefController extends Controller
         ->select(
             DB::raw('DAYNAME(created_at) as day_name'),
             DB::raw('DAYOFWEEK(created_at) as day_number'),
-            DB::raw('SUM(total_price) as revenue')
+            DB::raw('SUM(CASE WHEN status != "cancelled" THEN total_price ELSE 0 END) as revenue')
         )
         ->groupBy('day_name', 'day_number')
         ->orderBy('day_number')

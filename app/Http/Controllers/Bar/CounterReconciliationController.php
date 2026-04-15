@@ -153,7 +153,7 @@ class CounterReconciliationController extends Controller
 
                 // Calculate food sales from kitchenOrderItems
                 $foodSales = $allOrders->sum(function ($order) {
-                    return $order->kitchenOrderItems ? $order->kitchenOrderItems->sum('total_price') : 0;
+                    return $order->kitchenOrderItems ? $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price') : 0;
                 });
 
                 // Keep both counts:
