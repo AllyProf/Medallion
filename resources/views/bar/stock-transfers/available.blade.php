@@ -167,6 +167,27 @@
                             </div>
 
                             <div class="form-group mb-0">
+                                {{-- Package / Bottle mode toggle --}}
+                                <div class="btn-group btn-group-sm w-100 mb-2" role="group">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary active unit-mode-btn font-weight-bold"
+                                            data-mode="pkg"
+                                            data-packaging="{{ $item['packaging'] }}"
+                                            data-items-per-package="{{ $item['items_per_package'] }}"
+                                            data-warehouse-packages="{{ $item['warehouse_packages'] }}"
+                                            data-warehouse-quantity="{{ $item['warehouse_quantity'] }}"
+                                            data-unit-label="{{ $unitLabel }}">
+                                        <i class="fa fa-archive"></i> {{ strtolower($item['packaging']) }}
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-info unit-mode-btn font-weight-bold"
+                                            data-mode="btl"
+                                            data-packaging="{{ $item['packaging'] }}"
+                                            data-items-per-package="{{ $item['items_per_package'] }}"
+                                            data-warehouse-packages="{{ $item['warehouse_packages'] }}"
+                                            data-warehouse-quantity="{{ $item['warehouse_quantity'] }}"
+                                            data-unit-label="{{ $unitLabel }}">
+                                        <i class="fa fa-flask"></i> {{ $unitLabel }}
+                                    </button>
+                                </div>
                                 <div class="input-group input-group-sm mb-2 shadow-sm">
                                     <div class="input-group-prepend">
                                         <button class="btn btn-light border btn-qty-minus" type="button"><i class="fa fa-minus"></i></button>
@@ -239,7 +260,28 @@
                                 <small class="text-muted">{{ number_format($item['warehouse_quantity']) }} {{ $unitLabel }} total</small>
                             </td>
                             <td>Tsh {{ number_format($item['selling_price']) }}</td>
-                            <td style="width: 140px;">
+                            <td style="width: 180px;">
+                                {{-- Package / Bottle mode toggle (list view) --}}
+                                <div class="btn-group btn-group-sm w-100 mb-1" role="group">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary active unit-mode-btn font-weight-bold"
+                                            data-mode="pkg"
+                                            data-packaging="{{ $item['packaging'] }}"
+                                            data-items-per-package="{{ $item['items_per_package'] }}"
+                                            data-warehouse-packages="{{ $item['warehouse_packages'] }}"
+                                            data-warehouse-quantity="{{ $item['warehouse_quantity'] }}"
+                                            data-unit-label="{{ $unitLabel }}">
+                                        <i class="fa fa-archive"></i> {{ strtolower($item['packaging']) }}
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-info unit-mode-btn font-weight-bold"
+                                            data-mode="btl"
+                                            data-packaging="{{ $item['packaging'] }}"
+                                            data-items-per-package="{{ $item['items_per_package'] }}"
+                                            data-warehouse-packages="{{ $item['warehouse_packages'] }}"
+                                            data-warehouse-quantity="{{ $item['warehouse_quantity'] }}"
+                                            data-unit-label="{{ $unitLabel }}">
+                                        <i class="fa fa-flask"></i> {{ $unitLabel }}
+                                    </button>
+                                </div>
                                 <div class="input-group input-group-sm shadow-sm">
                                     <div class="input-group-prepend">
                                         <button class="btn btn-light border btn-qty-minus" type="button"><i class="fa fa-minus"></i></button>
@@ -435,6 +477,36 @@ $(function() {
         applyFilters();
     });
 
+    // UNIT MODE TOGGLE (pkg vs btl)
+    $(document).on('click', '.unit-mode-btn', function() {
+        const row = $(this).closest('.product-card-wrapper');
+        const mode = $(this).data('mode');
+        const ipp = parseInt($(this).data('items-per-package')) || 1;
+        const warehousePkgs = parseInt($(this).data('warehouse-packages')) || 0;
+        const warehouseQty = parseInt($(this).data('warehouse-quantity')) || 0;
+        const packaging = $(this).data('packaging') || 'Package';
+        const unitLabel = $(this).data('unit-label') || 'btl';
+        const input = row.find('.q-field');
+
+        // Update toggle active state
+        row.find('.unit-mode-btn').removeClass('active');
+        $(this).addClass('active');
+
+        if (mode === 'pkg') {
+            input.attr('max', warehousePkgs).val(1);
+            row.find('.total-units-preview').html(
+                'Requesting: <span class="calc-qty">' + ipp + '</span> ' + unitLabel
+            );
+        } else {
+            input.attr('max', warehouseQty).val(ipp);
+            row.find('.total-units-preview').html(
+                'Requesting: <span class="calc-qty">' + ipp + ' ' + unitLabel + ' ≈ 1 ' + packaging.toLowerCase() + '</span>'
+            );
+        }
+
+        updatePreview(input);
+    });
+
     // Qty buttons
     $(document).on('click', '.btn-qty-plus', function() {
         const input = $(this).closest('.input-group').find('input');
@@ -487,18 +559,29 @@ $(function() {
     function updatePreview(input) {
         const row = input.closest('.product-card-wrapper');
         const btn = row.find('.btn-add-batch');
-        const itemsPerPkg = parseInt(btn.data('items-per-package'));
+        const itemsPerPkg = parseInt(btn.data('items-per-package')) || 1;
         const qty = parseInt(input.val()) || 0;
-        const total = qty * itemsPerPkg;
-        row.find('.calc-qty').text(total.toLocaleString());
+        const activeMode = row.find('.unit-mode-btn.active').data('mode') || 'pkg';
+        
+        if (activeMode === 'btl') {
+            // In bottle mode, input is bottles → show bottles, preview packages
+            const pkgs = Math.floor(qty / itemsPerPkg);
+            const packaging = row.find('.unit-mode-btn[data-mode="pkg"]').data('packaging') || 'pkg';
+            const unitLabel = row.find('.unit-mode-btn[data-mode="btl"]').data('unit-label') || 'btl';
+            row.find('.calc-qty').text(qty.toLocaleString() + ' ' + unitLabel + ' ≈ ' + pkgs + ' ' + packaging.toLowerCase() + (pkgs !== 1 ? 's' : ''));
+        } else {
+            // In package mode, input is packages → show total bottles
+            const total = qty * itemsPerPkg;
+            row.find('.calc-qty').text(total.toLocaleString());
+        }
     }
 
     $(document).on('click', '.btn-add-batch', function() {
         const row = $(this).closest('.product-card-wrapper');
-        const qty = parseInt(row.find('.q-field').val());
+        let qty = parseInt(row.find('.q-field').val());
         const variantId = $(this).data('variant-id');
         const name = $(this).data('name');
-        const itemsPerPkg = $(this).data('items-per-package');
+        const itemsPerPkg = parseInt($(this).data('items-per-package')) || 1;
         const sellPrice = $(this).data('sell-price');
         const buyPrice = $(this).data('buy-price');
         const packaging = $(this).data('packaging');
@@ -506,6 +589,22 @@ $(function() {
         const canSellTots = $(this).data('can-sell-tots');
         const totsPerUnit = $(this).data('tots-per-unit');
         const totPrice = $(this).data('tot-price');
+        const activeMode = row.find('.unit-mode-btn.active').data('mode') || 'pkg';
+
+        // Convert bottle input to packages if in bottle mode
+        if (activeMode === 'btl') {
+            const pkgs = Math.floor(qty / itemsPerPkg);
+            if (pkgs < 1) {
+                Swal.fire({
+                    toast: true, position: 'top-end',
+                    icon: 'warning',
+                    title: 'Need at least ' + itemsPerPkg + ' ' + unit + 's to make 1 ' + packaging.toLowerCase(),
+                    showConfirmButton: false, timer: 2500
+                });
+                return;
+            }
+            qty = pkgs;
+        }
 
         // Check if already in batch
         const existingIndex = batchItems.findIndex(i => i.variantId === variantId);
