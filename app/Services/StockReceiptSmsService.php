@@ -77,8 +77,7 @@ class StockReceiptSmsService
                 $roleSlug = $staff->role->slug ?? '';
                 
                 // Build role-specific message
-                }
-
+                
                 $result = $this->smsService->sendSms($staff->phone_number, $message);
                 
                 if ($result['success']) {
