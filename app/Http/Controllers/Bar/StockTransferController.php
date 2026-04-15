@@ -45,7 +45,7 @@ class StockTransferController extends Controller
 
         $ownerId = $this->getOwnerId();
         $transfers = StockTransfer::where('user_id', $ownerId)
-            ->with(['productVariant.product', 'productVariant.counterStock', 'requestedBy', 'approvedBy'])
+            ->with(['productVariant.product', 'productVariant.counterStock', 'requestedBy', 'requestedByStaff', 'approvedBy', 'approvedByStaff'])
             ->orderBy('transfer_number', 'desc')
             ->orderBy('created_at', 'desc')
             ->paginate(20);
@@ -370,6 +370,7 @@ class StockTransferController extends Controller
                 'total_units' => $totalUnits,
                 'status' => 'pending',
                 'requested_by' => $requestedById,
+                'requested_by_staff_id' => session('is_staff') ? session('staff_id') : null,
                 'notes' => $validated['notes'] ?? null,
             ]);
 
@@ -505,6 +506,7 @@ class StockTransferController extends Controller
                     'total_units' => $totalUnits,
                     'status' => 'pending',
                     'requested_by' => $requestedById,
+                    'requested_by_staff_id' => session('is_staff') ? session('staff_id') : null,
                     'notes' => $validated['notes'] ?? null,
                 ]);
 
@@ -590,7 +592,7 @@ class StockTransferController extends Controller
             abort(403, 'You do not have permission to view stock transfers.');
         }
 
-        $stockTransfer->load(['productVariant.product', 'productVariant.counterStock', 'requestedBy', 'approvedBy', 'verifiedBy']);
+        $stockTransfer->load(['productVariant.product', 'productVariant.counterStock', 'requestedBy', 'requestedByStaff', 'approvedBy', 'approvedByStaff', 'verifiedBy']);
 
         // Calculate expected revenue for completed transfers
         $expectedRevenue = null;
@@ -671,8 +673,8 @@ class StockTransferController extends Controller
                     'created_at' => $stockTransfer->created_at ? $stockTransfer->created_at->format('M d, Y H:i') : null,
                     'approved_at' => $stockTransfer->approved_at ? $stockTransfer->approved_at->format('M d, Y H:i') : null,
                     'completed_date' => $stockTransfer->updated_at ? $stockTransfer->updated_at->format('M d, Y H:i') : null,
-                    'requested_by_name' => $stockTransfer->requestedBy ? ($stockTransfer->requestedBy->name ?? 'N/A') : 'N/A',
-                    'approved_by_name' => $stockTransfer->approvedBy ? ($stockTransfer->approvedBy->name ?? 'N/A') : 'N/A',
+                    'requested_by_name' => $stockTransfer->requested_by_name,
+                    'approved_by_name' => $stockTransfer->approved_by_name,
                     'verified_by' => $stockTransfer->verifiedBy ? $stockTransfer->verifiedBy->name : null,
                     'verified_at' => $stockTransfer->verified_at ? $stockTransfer->verified_at->format('M d, Y H:i') : null,
                 ]
@@ -747,6 +749,7 @@ class StockTransferController extends Controller
                 $item->update([
                     'status' => 'approved',
                     'approved_by' => $ownerId,
+                    'approved_by_staff_id' => session('is_staff') ? session('staff_id') : null,
                     'approved_at' => now(),
                 ]);
             }

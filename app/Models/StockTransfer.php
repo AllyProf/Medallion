@@ -17,9 +17,12 @@ class StockTransfer extends Model
         'total_units',
         'status',
         'requested_by',
+        'requested_by_staff_id',
         'approved_by',
+        'approved_by_staff_id',
         'approved_at',
         'verified_by',
+        'verified_by_staff_id',
         'verified_at',
         'notes',
         'rejection_reason',
@@ -81,11 +84,55 @@ class StockTransfer extends Model
     }
 
     /**
+     * Get the staff member (staff table) who requested the transfer.
+     */
+    public function requestedByStaff()
+    {
+        return $this->belongsTo(\App\Models\Staff::class, 'requested_by_staff_id');
+    }
+
+    /**
+     * Get a resolved name for who requested this transfer.
+     */
+    public function getRequestedByNameAttribute(): string
+    {
+        if ($this->requestedByStaff) {
+            return $this->requestedByStaff->full_name ?? $this->requestedByStaff->name ?? 'Staff';
+        }
+        if ($this->requestedBy) {
+            return $this->requestedBy->name ?? 'N/A';
+        }
+        return 'N/A';
+    }
+
+    /**
      * Get the staff member who approved the transfer.
      */
     public function approvedBy()
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    /**
+     * Get the staff member (staff table) who approved the transfer.
+     */
+    public function approvedByStaff()
+    {
+        return $this->belongsTo(\App\Models\Staff::class, 'approved_by_staff_id');
+    }
+
+    /**
+     * Get a resolved name for who approved this transfer.
+     */
+    public function getApprovedByNameAttribute(): string
+    {
+        if ($this->approvedByStaff) {
+            return $this->approvedByStaff->full_name ?? $this->approvedByStaff->name ?? 'Staff';
+        }
+        if ($this->approvedBy) {
+            return $this->approvedBy->name ?? 'N/A';
+        }
+        return 'N/A';
     }
 
     /**

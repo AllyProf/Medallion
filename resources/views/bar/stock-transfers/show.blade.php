@@ -144,7 +144,7 @@
               </tr>
               <tr>
                 <th>Requested By:</th>
-                <td>{{ $stockTransfer->requestedBy->name ?? 'N/A' }}</td>
+                <td>{{ $stockTransfer->requested_by_name }}</td>
               </tr>
               <tr>
                 <th>Requested Date:</th>

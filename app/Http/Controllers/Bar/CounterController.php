@@ -469,18 +469,26 @@ class CounterController extends Controller
         $lowStockThreshold = \App\Models\SystemSetting::get('low_stock_threshold_'.$ownerId, 10);
         $criticalStockThreshold = \App\Models\SystemSetting::get('critical_stock_threshold_'.$ownerId, 5);
 
-        // Get low stock items (both warehouse and counter)
+        // Get low stock items specifically for the COUNTER
+        // We focus on items that are low in the counter to prompt transfers from warehouse
         $lowStockItemsList = ProductVariant::whereHas('product', function ($query) use ($ownerId) {
             $query->where('user_id', $ownerId);
         })
             ->with(['product', 'warehouseStock', 'counterStock'])
             ->get()
             ->filter(function ($variant) use ($lowStockThreshold) {
-                $warehouseQty = $variant->warehouseStock ? $variant->warehouseStock->quantity : 0;
                 $counterQty = $variant->counterStock ? $variant->counterStock->quantity : 0;
-                $totalQty = $warehouseQty + $counterQty;
+                $warehouseQty = $variant->warehouseStock ? $variant->warehouseStock->quantity : 0;
+                $specificThreshold = $variant->counter_alert_threshold ?? $lowStockThreshold;
 
-                return $totalQty > 0 && $totalQty < $lowStockThreshold;
+                // Alert if:
+                // 1. Counter stock is below its specific alert threshold (or global threshold)
+                // 2. ONLY show items that still have some stock (ignore 0.00 items as requested)
+                return $counterQty > 0 && $counterQty < $specificThreshold;
+            })
+            ->sortBy(function($variant) {
+                // Priority: Lower stock numbers first
+                return $variant->counterStock ? $variant->counterStock->quantity : 0;
             })
             ->take(10)
             ->map(function ($variant) use ($criticalStockThreshold) {
@@ -533,6 +541,7 @@ class CounterController extends Controller
                         ->orWhere('category', 'like', '%spirit%')
                         ->orWhere('category', 'like', '%water%')
                         ->orWhere('category', 'like', '%soda%')
+                        ->orWhere('category', 'like', '%energy%')
                         ->orWhere('category', 'like', '%item%');
                 });
         })
@@ -1094,20 +1103,11 @@ class CounterController extends Controller
                     $openTots = $openBottles->get($variant->id)->sum('tots_remaining');
                 }
 
-                // Normalize Category
-                $cat = $variant->product->category ?? 'General';
-                $c = strtolower(trim($cat));
-                if (str_contains($c, 'water')) {
-                    $cat = 'Water';
-                } elseif (str_contains($c, 'soda') || str_contains($c, 'soft drink')) {
-                    $cat = 'Soft Drinks';
-                } elseif (str_contains($c, 'juice')) {
-                    $cat = 'Juice';
-                } elseif (str_contains($c, 'beer') || str_contains($c, 'spirit') || str_contains($c, 'wine') || str_contains($c, 'liquor')) {
-                    $cat = 'Bar Drinks';
-                } else {
-                    $cat = ucwords($c);
-                }
+                // Normalize Category: Use database values while cleaning up casing
+                $rawCat = $variant->product->category ?? 'General';
+                // Split multi-categories if necessary but preserve '&'
+                $splitCats = preg_split('/[,|\/]+/', $rawCat);
+                $cat = trim($splitCats[0] ?? 'General');
 
                 return [
                     'id' => $variant->id,
@@ -1116,7 +1116,7 @@ class CounterController extends Controller
                     'product_image' => $variant->product->image,
                     'brand' => $variant->product->brand ?? 'N/A',
                     'category' => $cat,
-                    'raw_category' => $variant->product->category ?? '',
+                    'raw_category' => $rawCat,
                     'variant' => $variant->measurement,
                     'quantity' => $quantity,
                     'open_tots' => $openTots,
@@ -1134,29 +1134,15 @@ class CounterController extends Controller
                     'unit' => $variant->inventory_unit,
                 ];
             })
-            ->filter(fn ($v) => $v['quantity'] > 0 || $v['open_tots'] > 0) // Only items with actual counter stock or open bottles
+            ->filter(fn ($v) => $v['quantity'] > 0 || $v['open_tots'] > 0)
             ->values();
 
         $totalValue = 0; // Hidden for counter staff confidentiality
 
-        // Final Filters from Processed items
+        // Final Filters from Processed items - Focused on Categories
         $categories = $variants->pluck('category')->unique()->sort()->values();
-        $brands = $variants->pluck('brand')->unique()
-            ->filter(fn ($b) => stripos($b, 'bonite') === false)
-            ->filter(function ($brand) use ($categories) {
-                $b = strtolower(trim($brand ?? ''));
-                foreach ($categories as $cat) {
-                    $c = strtolower(trim($cat));
-                    if ($b === $c || str_contains($b, $c) || str_contains($c, $b)) {
-                        return false;
-                    }
-                }
 
-                return true;
-            })
-            ->sort()->values();
-
-        return view('bar.counter.counter-stock', compact('variants', 'totalValue', 'categories', 'brands'));
+        return view('bar.counter.counter-stock', compact('variants', 'totalValue', 'categories'));
     }
 
     /**
@@ -1209,6 +1195,7 @@ class CounterController extends Controller
                 'status' => 'pending',
                 'notes' => $validated['notes'] ?? null,
                 'requested_by' => $ownerUser ? $ownerUser->id : null,
+                'requested_by_staff_id' => $staff ? $staff->id : null,
             ]);
 
             DB::commit();
@@ -2237,8 +2224,19 @@ class CounterController extends Controller
                 continue;
             }
 
-            if (($item->sell_type ?? 'unit') === 'unit') {
+            $hasMovement = \App\Models\StockMovement::where('reference_type', BarOrder::class)
+                ->where('reference_id', $order->id)
+                ->where('product_variant_id', $item->product_variant_id)
+                ->exists();
+
+            if ($hasMovement && ($item->sell_type ?? 'unit') === 'unit') {
                 $counterStock->increment('quantity', $item->quantity);
+                
+                // Also delete the movement to keep history clean
+                \App\Models\StockMovement::where('reference_type', BarOrder::class)
+                    ->where('reference_id', $order->id)
+                    ->where('product_variant_id', $item->product_variant_id)
+                    ->delete();
             }
         }
 

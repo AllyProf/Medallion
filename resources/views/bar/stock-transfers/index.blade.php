@@ -147,7 +147,7 @@
                         <span class="badge badge-light text-muted smallest border px-1" style="font-size: 9px;">{{ $transfer->status }}</span>
                       @endif
                     </td>
-                    <td><small class="text-dark">{{ $transfer->requestedBy->name ?? 'N/A' }}</small></td>
+                    <td><small class="text-dark">{{ $transfer->requested_by_name }}</small></td>
                     <td><small class="text-muted">{{ $transfer->created_at->format('M d, Y H:i') }}</small></td>
                     <td><small class="text-muted">{{ $transfer->approved_at ? $transfer->approved_at->format('M d, Y H:i') : '-' }}</small></td>
                     <td>

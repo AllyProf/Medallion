@@ -607,10 +607,11 @@
               </a>
             </li>
             <li style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin: 2px 15px;"></li>
+
             <li>
-              <a class="app-menu__item {{ request()->routeIs('bar.stock-sheet') && request()->route('location') == 'counter' ? 'active' : '' }}" href="{{ route('bar.stock-sheet', 'counter') }}">
-                <i class="app-menu__icon fa fa-cubes"></i>
-                <span class="app-menu__label">My Stock</span>
+              <a class="app-menu__item {{ request()->routeIs('bar.stock-transfers.*') ? 'active' : '' }}" href="{{ route('bar.stock-transfers.index') }}">
+                <i class="app-menu__icon fa fa-exchange"></i>
+                <span class="app-menu__label">Stock Transfers</span>
               </a>
             </li>
             <li style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin: 2px 15px;"></li>

@@ -84,7 +84,7 @@ class MenuService
             foreach ($businessTypes as $businessType) {
                 // Skip business types based on role exceptions
                 if ($isChef && $businessType->slug === 'bar') continue;
-                if ($isCounter && $businessType->slug === 'restaurant') continue;
+                if ($isCounter && in_array($businessType->slug, ['restaurant', 'bar'])) continue;
 
                 $businessSpecificMenusByType[$businessType->id] = [
                     'business_type' => $businessType,
@@ -370,7 +370,11 @@ class MenuService
                 }
                 
                 // For Counter and Stock Keeper roles, hide the common 'Products' menu (they use specific products menus)
-                // This must be checked BEFORE the children check
+                // Also hide 'Stock Management' for Counter as they use the simplified hardcoded version
+                if ($isCounter && $menu->slug === 'bar-stock-mgmt') {
+                    return false;
+                }
+                
                 if (($isCounter || $isStockKeeper) && $menu->slug === 'products') {
                     return false;
                 }
@@ -583,13 +587,9 @@ class MenuService
                 'bar.counter.mark-all-paid', 'bar.counter.update-order-status',
                 'bar.stock-transfers.available', 'bar.stock-transfers.index', 'bar.stock-transfers.create',
                 'bar.stock-transfers.history', 'bar.counter.stock-transfer-requests', 'bar.counter.request-stock-transfer',
-                'bar.orders.index', 'bar.orders.drinks', 'bar.orders.food', 'bar.orders.juice', 'bar.orders.create',
-                'bar.tables.index', 'bar.products.index', 'bar.products.create', 'bar.payments.index',
-                'customers.index', 'customers.groups', 
                 'bar.waiter.dashboard', 'bar.waiter.create-order', 'bar.waiter.order-history',
                 'sales.pos', 'sales.orders', 'sales.transactions',
-                'products.index', 'products.categories', 'products.inventory',
-                'bar.beverage-inventory.index', 'bar.beverage-inventory.stock-levels', 'bar.beverage-inventory.warehouse-stock',
+                'bar.beverage-inventory.stock-levels', 'bar.beverage-inventory.warehouse-stock',
                 'reports.index'
             ],
             'stock-keeper' => [
