@@ -1103,11 +1103,11 @@ class CounterController extends Controller
                     $openTots = $openBottles->get($variant->id)->sum('tots_remaining');
                 }
 
-                // Normalize Category: Use database values while cleaning up casing
+                // Normalize Category: Split compound categories so e.g. "Soda and Water" → "Soda"
                 $rawCat = $variant->product->category ?? 'General';
-                // Split multi-categories if necessary but preserve '&'
-                $splitCats = preg_split('/[,|\/]+/', $rawCat);
-                $cat = trim($splitCats[0] ?? 'General');
+                // Split on comma, pipe, slash, " and ", " & "
+                $splitCats = preg_split('/[,\/|]+|\s+and\s+|\s+&\s+/i', $rawCat);
+                $cat = ucwords(strtolower(trim($splitCats[0] ?? 'General')));
 
                 return [
                     'id' => $variant->id,
@@ -1139,8 +1139,12 @@ class CounterController extends Controller
 
         $totalValue = 0; // Hidden for counter staff confidentiality
 
-        // Final Filters from Processed items - Focused on Categories
-        $categories = $variants->pluck('category')->unique()->sort()->values();
+        // Final Filters from Processed items - case-insensitive dedup
+        $categories = $variants->pluck('category')
+            ->map(fn($c) => ucwords(strtolower(trim($c ?? 'General'))))
+            ->unique()
+            ->sort()
+            ->values();
         $brands = $variants->pluck('brand')->unique()->filter()->sort()->values();
 
         return view('bar.counter.counter-stock', compact('variants', 'totalValue', 'categories', 'brands'));
