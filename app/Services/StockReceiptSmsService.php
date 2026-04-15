@@ -69,9 +69,10 @@ class StockReceiptSmsService
             $productName = $r->productVariant->product->name ?? 'Unknown';
             $variantName = $r->productVariant->name ?? '';
             $label = $variantName ? "{$productName} ({$variantName})" : $productName;
-            $qty = number_format($r->quantity_received, 0);
-            $units = number_format($r->total_units, 0);
-            return "  - {$label}: {$qty} pkgs / {$units} units";
+            $packaging = ucfirst(strtolower($r->productVariant->packaging ?? 'pkg')) . 's';
+            $pkgQty = (int) $r->quantity_received;
+            $bottleQty = (int) $r->total_units;
+            return "  - {$label}: {$pkgQty} {$packaging} / {$bottleQty} Bottles";
         })->implode("\n");
 
         // Pre-build default message for general notifications
