@@ -90,7 +90,7 @@
                         <thead class="bg-light">
                             <tr>
                                 <th>Product Details</th>
-                                <th class="text-center">Pkg Qty (Crates)</th>
+                                <th class="text-center">Received Quantity</th>
                                 <th class="text-center">Total Units (Btls)</th>
                                 <th class="text-right">Unit Cost (Btl/Pc)</th>
                                 <th class="text-right">Subtotal</th>
@@ -167,8 +167,7 @@
                                     @endif
                                 </td>
                                 <td class="text-center">
-                                    <span class="font-weight-bold">{{ number_format($item->quantity_received, 1) }}</span>
-                                    <div class="smallest text-muted">{{ $item->productVariant->packaging ?: 'Pkgs' }}</div>
+                                    <div class="font-weight-bold text-dark">{!! $item->display_quantity !!}</div>
                                 </td>
                                 <td class="text-center">{{ number_format($item->total_units) }}</td>
                                 <td class="text-right">
