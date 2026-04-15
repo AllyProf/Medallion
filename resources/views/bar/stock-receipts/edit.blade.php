@@ -174,17 +174,28 @@
             </div>
             <div class="col-md-6">
               <div class="form-group">
-                <label class="control-label">Quantity Received (Packages) *</label>
-                <input type="number" class="form-control @error('quantity_received') is-invalid @enderror" 
-                       name="quantity_received" 
-                       id="quantity_received"
-                       value="{{ old('quantity_received', $stockReceipt->quantity_received ?? 1) }}" 
-                       min="1" 
-                       required>
-                @error('quantity_received')
-                  <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
-                <small class="form-text text-muted" id="quantityInfo">e.g., 10 crates</small>
+                <label class="control-label font-weight-bold">Quantity Received</label>
+                <div class="d-flex">
+                  <div class="flex-grow-1 mr-2">
+                    <div class="input-group">
+                      <input type="number" class="form-control" name="quantity_received" id="quantity_received" 
+                             value="{{ old('quantity_received', floor($stockReceipt->quantity_received)) }}" min="0" required>
+                      <div class="input-group-append">
+                        <span class="input-group-text pkg-label-text">{{ $stockReceipt->productVariant->packaging ?? 'Pkgs' }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex-grow-1">
+                    <div class="input-group">
+                      <input type="number" class="form-control" name="loose_received" id="loose_received" 
+                             value="{{ old('loose_received', round(($stockReceipt->quantity_received - floor($stockReceipt->quantity_received)) * ($stockReceipt->productVariant->items_per_package ?? 1))) }}" min="0">
+                      <div class="input-group-append">
+                        <span class="input-group-text unit-label-text">{{ $stockReceipt->productVariant->unit ?? 'Btls' }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <small class="form-text text-muted">Enter full packages and any extra loose units.</small>
               </div>
             </div>
           </div>
@@ -192,17 +203,26 @@
           <div class="row">
             <div class="col-md-6">
               <div class="form-group">
-                <label class="control-label">Buying Price per Bottle (TSh) *</label>
-                <input type="number" class="form-control @error('buying_price_per_unit') is-invalid @enderror" 
-                       name="buying_price_per_unit" 
-                       id="buying_price_per_unit"
-                       value="{{ old('buying_price_per_unit', $stockReceipt->buying_price_per_unit ?? '') }}" 
-                       step="0.01" 
-                       min="0" 
-                       required>
-                @error('buying_price_per_unit')
-                  <div class="invalid-feedback">{{ $message }}</div>
-                @enderror
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <label class="control-label mb-0 font-weight-bold">Buying Price</label>
+                  <div class="btn-group btn-group-toggle btn-group-sm" data-toggle="buttons">
+                    <label class="btn btn-outline-primary active py-0 px-2" style="font-size: 0.7rem;">
+                      <input type="radio" name="buying_price_mode" value="pkg" checked> Per <span class="pkg-label-text-short">{{ $stockReceipt->productVariant->packaging ?? 'Pkg' }}</span>
+                    </label>
+                    <label class="btn btn-outline-primary py-0 px-2" style="font-size: 0.7rem;">
+                      <input type="radio" name="buying_price_mode" value="unit"> Per Unit
+                    </label>
+                  </div>
+                </div>
+                <div class="input-group">
+                  <div class="input-group-prepend">
+                    <span class="input-group-text">TSh</span>
+                  </div>
+                  <input type="number" class="form-control" name="buying_price_per_unit" id="buying_price_per_unit"
+                         value="{{ old('buying_price_per_unit', $stockReceipt->final_buying_cost / max(1, $stockReceipt->quantity_received)) }}" 
+                         step="0.01" min="0" required>
+                </div>
+                <small class="form-text text-muted" id="priceModeHint">Enter cost per full package.</small>
               </div>
             </div>
             <div class="col-md-6">
@@ -367,9 +387,13 @@
     const buyingPriceInput = document.getElementById('buying_price_per_unit');
     const sellingPriceInput = document.getElementById('selling_price_per_unit');
     const discountTypeSelect = document.getElementById('discount_type');
-    const discountAmountInput = document.getElementById('discount_amount');
-    const discountHint = document.getElementById('discountHint');
-    const discountAmountHint = document.getElementById('discountAmountHint');
+    const looseReceivedInput = document.getElementById('loose_received');
+    const buyingPriceModeRadios = document.getElementsByName('buying_price_mode');
+    const priceModeHint = document.getElementById('priceModeHint');
+    const pkgLabels = document.querySelectorAll('.pkg-label-text');
+    const pkgLabelsShort = document.querySelectorAll('.pkg-label-text-short');
+    const unitLabels = document.querySelectorAll('.unit-label-text');
+
     const profitPerUnitInput = document.getElementById('profit_per_unit');
     const totalPackagesInput = document.getElementById('total_packages');
     const totalPackagesLabel = document.getElementById('totalPackagesLabel');
@@ -446,6 +470,16 @@
           const packagingCapitalized = variant.packaging.charAt(0).toUpperCase() + variant.packaging.slice(1).toLowerCase();
           packageUnitText.textContent = packagingLower;
           totalPackagesLabel.textContent = 'Total ' + packagingCapitalized;
+
+          pkgLabels.forEach(el => el.textContent = variant.packaging);
+          pkgLabelsShort.forEach(el => el.textContent = variant.packaging);
+          unitLabels.forEach(el => el.textContent = variant.unit || 'Btl');
+
+          // Update Price Mode label
+          const activeRadio = Array.from(buyingPriceModeRadios).find(r => r.checked);
+          if (activeRadio) {
+            updatePriceModeHint(activeRadio.value, variant.packaging);
+          }
           
           // Load registered prices if available
           if (variant.buying_price_per_unit) {
@@ -481,16 +515,27 @@
         return;
       }
 
-      const quantity = parseInt(quantityInput.value) || 0;
+      const pkgs = parseInt(quantityInput.value) || 0;
+      const loose = parseInt(looseReceivedInput.value) || 0;
+      const itemsPerPackage = selectedVariant.itemsPerPackage || 1;
+      
+      const totalPackages = pkgs + (loose / itemsPerPackage);
+      const totalUnits = (pkgs * itemsPerPackage) + loose;
+      
       const buyingPrice = parseFloat(buyingPriceInput.value) || 0;
+      const priceMode = Array.from(buyingPriceModeRadios).find(r => r.checked)?.value || 'pkg';
+      
       const sellingPrice = parseFloat(sellingPriceInput.value) || 0;
       const discountType = discountTypeSelect.value;
       const discountAmount = parseFloat(discountAmountInput.value) || 0;
 
-      const totalPackages = quantity;
-      const totalUnits = quantity * selectedVariant.itemsPerPackage;
-      const profitPerUnit = sellingPrice - buyingPrice;
-      let totalBuyingCost = totalUnits * buyingPrice;
+      const profitPerUnit = sellingPrice - (priceMode === 'unit' ? buyingPrice : (buyingPrice / itemsPerPackage));
+      let totalBuyingCost = 0;
+      if (priceMode === 'unit') {
+        totalBuyingCost = totalUnits * buyingPrice;
+      } else {
+        totalBuyingCost = totalPackages * buyingPrice;
+      }
       
       // Calculate discount
       let discountValue = 0;
@@ -582,10 +627,25 @@
     // Event listeners
     productSelect.addEventListener('change', updateVariants);
     variantSelect.addEventListener('change', updateVariantInfo);
-    quantityInput.addEventListener('input', calculateTotals);
     buyingPriceInput.addEventListener('input', calculateTotals);
     sellingPriceInput.addEventListener('input', calculateTotals);
     discountAmountInput.addEventListener('input', calculateTotals);
+    looseReceivedInput.addEventListener('input', calculateTotals);
+
+    buyingPriceModeRadios.forEach(radio => {
+      radio.addEventListener('change', function() {
+        updatePriceModeHint(this.value, selectedVariant ? selectedVariant.packaging : 'Pkg');
+        calculateTotals();
+      });
+    });
+
+    function updatePriceModeHint(mode, pkg) {
+      if (mode === 'unit') {
+        priceModeHint.textContent = 'Enter cost per individual unit.';
+      } else {
+        priceModeHint.textContent = 'Enter cost per full ' + pkg.toLowerCase() + '.';
+      }
+    }
     
     // Initialize discount field visibility
     if (discountTypeSelect.value) {

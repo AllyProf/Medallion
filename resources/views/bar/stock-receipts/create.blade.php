@@ -907,21 +907,46 @@ $(document).ready(function() {
 
 
 
-    $('#stockReceiptForm').on('submit', function(e) {
-        e.preventDefault();
+        // 1. Basic Form Validation
+        if(!$('#supplier_id').val()) { 
+            Swal.fire('Missing Data', 'Please select a Supplier/Distributor first.', 'warning');
+            return; 
+        }
         
-        if(receiptItems.length === 0) { showToast('error', 'List is empty!'); return; }
-        if(!$('#supplier_id').val()) { showToast('error', 'Select supplier.'); return; }
+        const entriesToSubmit = receiptItems.filter(item => cleanNum(item.quantity_received) > 0 || cleanNum(item.loose_received) > 0);
+        if(entriesToSubmit.length === 0) { 
+            Swal.fire('Empty Receipt', 'Please enter a quantity for at least one item before posting.', 'warning');
+            return; 
+        }
 
+        // 2. Data Integrity Validation (Prices)
+        let validationError = null;
+        entriesToSubmit.forEach(item => {
+            if (validationError) return; // Stop on first error
+            
+            if (cleanNum(item.buying_price_per_unit) <= 0) {
+                validationError = `<strong>${item.name}</strong> is missing a <strong>Buying Price</strong>. All received items must have a cost.`;
+            } else if ((item.selling_type === 'bottle' || item.selling_type === 'mixed') && cleanNum(item.selling_price_per_unit) <= 0) {
+                validationError = `<strong>${item.name}</strong> is missing a <strong>Retail Bottle Price</strong>.`;
+            } else if ((item.selling_type === 'glass' || item.selling_type === 'mixed') && item.is_dual && cleanNum(item.selling_price_per_tot) <= 0) {
+                validationError = `<strong>${item.name}</strong> is set to sell by Glass/Portion but has no <strong>Portion Price</strong>.`;
+            }
+        });
+
+        if (validationError) {
+            Swal.fire({
+                title: 'Validation Failed',
+                html: validationError,
+                icon: 'error',
+                confirmButtonColor: '#940000'
+            });
+            return;
+        }
+
+        // 3. Confirm and Submit
         const myForm = this;
         const btn = $('#submitBtn');
         const oldHtml = btn.html();
-        const entriesToSubmit = receiptItems.filter(item => cleanNum(item.quantity_received) > 0 || cleanNum(item.loose_received) > 0);
-
-        if(entriesToSubmit.length === 0) { 
-            showToast('error', 'Please enter quantity for at least one item.');
-            return; 
-        }
 
         Swal.fire({
             title: 'Confirm Stock Batch',
@@ -941,19 +966,6 @@ $(document).ready(function() {
                         Swal.showLoading();
                     }
                 });
-
-                // --- VALIDATION ---
-                let validationError = null;
-                entriesToSubmit.forEach(item => {
-                    if (cleanNum(item.buying_price_per_unit) <= 0) validationError = `Set buying price for: ${item.name}`;
-                    if ((item.selling_type === 'bottle' || item.selling_type === 'mixed') && cleanNum(item.selling_price_per_unit) <= 0) validationError = `Set Bottle selling price for: ${item.name}`;
-                    if ((item.selling_type === 'glass' || item.selling_type === 'mixed') && cleanNum(item.selling_price_per_tot) <= 0) validationError = `Set Glass/Portion price for: ${item.name}`;
-                });
-
-                if (validationError) {
-                    Swal.fire('Validation Error', validationError, 'error');
-                    return;
-                }
 
                 const formData = new FormData(myForm);
                 formData.delete('items');

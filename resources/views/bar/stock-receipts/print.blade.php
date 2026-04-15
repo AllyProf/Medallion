@@ -143,8 +143,7 @@
                     <td><span class="uom-badge">{{ $pv->measurement }}</span></td>
                     <td><span class="text-muted small">{{ $pkgLabel }} ({{ $itemsPerPkg }})</span></td>
                     <td class="qty-bold">
-                        {{ number_format($item->quantity_received, (fmod($item->quantity_received, 1) == 0 ? 0 : 1)) }} 
-                        {{ $pkgLabel }}{{ $item->quantity_received > 1 ? 's' : '' }}
+                        {!! $item->display_quantity !!}
                     </td>
                     <td>TSh {{ number_format($buyPrice) }} / btl</td>
                     <td class="qty-bold">TSh {{ number_format($finalCost) }}</td>

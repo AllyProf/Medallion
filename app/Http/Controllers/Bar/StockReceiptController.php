@@ -545,13 +545,15 @@ class StockReceiptController extends Controller
         $validated = $request->validate([
             'product_variant_id' => 'required|exists:product_variants,id',
             'supplier_id' => 'required|exists:suppliers,id',
-            'quantity_received' => 'required|integer|min:1',
+            'quantity_received' => 'required|integer|min:0',
+            'loose_received' => 'nullable|integer|min:0',
             'buying_price_per_unit' => 'required|numeric|min:0',
+            'buying_price_mode' => 'nullable|in:pkg,unit',
             'selling_price_per_unit' => 'required|numeric|min:0',
             'discount_type' => 'nullable|in:fixed,percent',
             'discount_amount' => 'nullable|numeric|min:0|required_with:discount_type',
             'received_date' => 'required|date',
-            'expiry_date' => 'nullable|date|after:received_date',
+            'expiry_date' => 'nullable|date|after_or_equal:received_date',
             'notes' => 'nullable|string',
         ]);
 
@@ -583,13 +585,24 @@ class StockReceiptController extends Controller
 
             // Calculate new values
             $numPackages = $validated['quantity_received'];
+            $looseItems = $validated['loose_received'] ?? 0;
             $itemsPerPackage = $productVariant->items_per_package ?? 1;
-            $totalUnits = $numPackages * $itemsPerPackage;
+            
+            // Total Units = Full Packages + Loose items
+            $totalUnits = ($numPackages * $itemsPerPackage) + $looseItems;
+            $truePackages = $numPackages + ($looseItems / $itemsPerPackage);
 
-            $buyingPricePerPackage = $validated['buying_price_per_unit'];
-            $totalBuyingCost = $numPackages * $buyingPricePerPackage;
+            $buyingPriceInput = $validated['buying_price_per_unit'];
+            $buyingPriceMode = $validated['buying_price_mode'] ?? 'pkg';
+            
+            $totalBuyingCost = 0;
+            if ($buyingPriceMode === 'unit') {
+                $totalBuyingCost = $totalUnits * $buyingPriceInput;
+            } else {
+                $totalBuyingCost = $truePackages * $buyingPriceInput;
+            }
 
-            $actualUnitBuyingPrice = $totalUnits > 0 ? ($totalBuyingCost / $totalUnits) : $buyingPricePerPackage;
+            $actualUnitBuyingPrice = $totalUnits > 0 ? ($totalBuyingCost / $totalUnits) : ($buyingPriceMode === 'unit' ? $buyingPriceInput : $buyingPriceInput / $itemsPerPackage);
             
             $totalSellingValue = $totalUnits * $validated['selling_price_per_unit'];
             $profitPerUnit = ($totalUnits > 0) ? ($totalSellingValue - $totalBuyingCost) / $totalUnits : 0;
@@ -615,7 +628,7 @@ class StockReceiptController extends Controller
             $stockReceipt->update([
                 'product_variant_id' => $validated['product_variant_id'],
                 'supplier_id' => $validated['supplier_id'],
-                'quantity_received' => $validated['quantity_received'],
+                'quantity_received' => $truePackages,
                 'total_units' => $totalUnits,
                 'buying_price_per_unit' => $actualUnitBuyingPrice,
                 'selling_price_per_unit' => $validated['selling_price_per_unit'],
