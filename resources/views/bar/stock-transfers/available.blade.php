@@ -590,30 +590,26 @@ $(function() {
         const totsPerUnit = $(this).data('tots-per-unit');
         const totPrice = $(this).data('tot-price');
         const activeMode = row.find('.unit-mode-btn.active').data('mode') || 'pkg';
+        let totalUnits = 0;
+        let packagesRequested = 0;
 
-        // Convert bottle input to packages if in bottle mode
         if (activeMode === 'btl') {
-            const pkgs = Math.floor(qty / itemsPerPkg);
-            if (pkgs < 1) {
-                Swal.fire({
-                    toast: true, position: 'top-end',
-                    icon: 'warning',
-                    title: 'Need at least ' + itemsPerPkg + ' ' + unit + 's to make 1 ' + packaging.toLowerCase(),
-                    showConfirmButton: false, timer: 2500
-                });
-                return;
-            }
-            qty = pkgs;
+            totalUnits = qty;
+            packagesRequested = Math.ceil(qty / itemsPerPkg);
+        } else {
+            totalUnits = qty * itemsPerPkg;
+            packagesRequested = qty;
         }
 
         // Check if already in batch
         const existingIndex = batchItems.findIndex(i => i.variantId === variantId);
         if (existingIndex > -1) {
-            batchItems[existingIndex].qty += qty;
+            batchItems[existingIndex].totalUnits += totalUnits;
+            batchItems[existingIndex].qty = Math.ceil(batchItems[existingIndex].totalUnits / itemsPerPkg);
         } else {
             batchItems.push({ 
-                variantId, name, qty, itemsPerPkg, sellPrice, buyPrice, 
-                packaging, unit, canSellTots, totsPerUnit, totPrice 
+                variantId, name, qty: packagesRequested, totalUnits, itemsPerPkg, sellPrice, buyPrice, 
+                packaging, unit, canSellTots, totsPerUnit, totPrice, mode: activeMode
             });
         }
 
@@ -644,11 +640,13 @@ $(function() {
         let totalRevenue = 0;
         
         batchItems.forEach((item, index) => {
-            const totalUnits = item.qty * item.itemsPerPkg;
+            const totalUnits = item.totalUnits;
             totalItemsCount += totalUnits;
             
             const pkgLabel = item.packaging.toLowerCase();
-            const fullPkgLabel = item.qty + ' ' + pkgLabel + (item.qty > 1 ? 's' : '');
+            const pkgValue = item.totalUnits / item.itemsPerPkg;
+            const fullPkgLabel = pkgValue.toFixed(2).replace(/\.00$/, '') + ' ' + pkgLabel + (pkgValue !== 1 ? 's' : '');
+            
             const unitLabel = (item.unit || 'pcs').toLowerCase();
             let displayUnit = unitLabel;
             if (totalUnits > 1) {
@@ -748,7 +746,8 @@ $(function() {
 
         const items = batchItems.map(item => ({
             product_variant_id: item.variantId,
-            quantity_requested: item.qty
+            quantity_requested: item.qty,
+            total_units: item.totalUnits
         }));
 
         $.ajax({

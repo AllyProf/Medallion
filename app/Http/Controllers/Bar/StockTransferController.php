@@ -449,6 +449,7 @@ class StockTransferController extends Controller
             'items' => 'required|array|min:1',
             'items.*.product_variant_id' => 'required|exists:product_variants,id',
             'items.*.quantity_requested' => 'required|integer|min:1',
+            'items.*.total_units' => 'nullable|numeric|min:1',
             'notes' => 'nullable|string|max:500',
         ]);
 
@@ -472,9 +473,18 @@ class StockTransferController extends Controller
                 $variant = ProductVariant::where('id', $itemData['product_variant_id'])->first();
                 if (!$variant) continue;
 
-                $totalUnits = $itemData['quantity_requested'] * ($variant->items_per_package ?? 1);
+                $ipp = max(1, (int) ($variant->items_per_package ?? 1));
 
-                // --- NEW STOCK VALIDATION ---
+                // If total_units is passed directly (BTL mode), use it; otherwise compute from packages
+                if (!empty($itemData['total_units']) && $itemData['total_units'] > 0) {
+                    $totalUnits = (float) $itemData['total_units'];
+                    $pkgRequested = ceil($totalUnits / $ipp); // for display/record only
+                } else {
+                    $totalUnits = $itemData['quantity_requested'] * $ipp;
+                    $pkgRequested = $itemData['quantity_requested'];
+                }
+
+                // --- STOCK VALIDATION ---
                 $warehouseStock = \App\Models\StockLocation::where('user_id', $ownerId)
                     ->where('product_variant_id', $variant->id)
                     ->where('location', 'warehouse')
@@ -482,18 +492,16 @@ class StockTransferController extends Controller
 
                 if (!$warehouseStock || $warehouseStock->quantity < $totalUnits) {
                     $availableQty = $warehouseStock ? $warehouseStock->quantity : 0;
-                    $ipp = ($variant->items_per_package > 0) ? $variant->items_per_package : 1;
                     $availablePkgs = floor($availableQty / $ipp);
-                    
-                    throw new \Exception("Insufficient stock for {$variant->name}. Requested: {$itemData['quantity_requested']} packages ({$totalUnits} units), but only {$availablePkgs} packages ({$availableQty} units) are available in warehouse.");
+                    throw new \Exception("Insufficient stock for {$variant->name}. Requested: {$totalUnits} units, but only {$availableQty} units ({$availablePkgs} packages) are available in warehouse.");
                 }
-                // -----------------------------
+                // -------------------------
 
                 $transfer = StockTransfer::create([
                     'user_id' => $ownerId,
                     'product_variant_id' => $variant->id,
                     'transfer_number' => $transferNumber,
-                    'quantity_requested' => $itemData['quantity_requested'],
+                    'quantity_requested' => $pkgRequested,
                     'total_units' => $totalUnits,
                     'status' => 'pending',
                     'requested_by' => $requestedById,
