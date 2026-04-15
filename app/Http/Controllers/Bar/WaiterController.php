@@ -53,7 +53,9 @@ class WaiterController extends Controller
                         ->orWhere('category', 'like', '%spirit%')
                         ->orWhere('category', 'like', '%soda%')
                         ->orWhere('category', 'like', '%water%')
-                        ->orWhere('category', 'like', '%juice%');
+                        ->orWhere('category', 'like', '%juice%')
+                        ->orWhere('category', 'like', '%energy%')
+                        ->orWhere('category', 'like', '%soft drink%');
                 });
         })
             ->with([
@@ -834,7 +836,9 @@ class WaiterController extends Controller
                         ->orWhere('category', 'like', '%spirit%')
                         ->orWhere('category', 'like', '%soda%')
                         ->orWhere('category', 'like', '%water%')
-                        ->orWhere('category', 'like', '%juice%');
+                        ->orWhere('category', 'like', '%juice%')
+                        ->orWhere('category', 'like', '%energy%')
+                        ->orWhere('category', 'like', '%soft drink%');
                 });
         })
             ->with([
@@ -940,6 +944,16 @@ class WaiterController extends Controller
                     $variantStr = '';
                 }
 
+                // Standardize Category extraction (same as Counter)
+                $rawCat = $variant->product->category ?? 'General';
+                $splitCats = preg_split('/[,|\/]+/', $rawCat);
+                $finalCat = trim($splitCats[0] ?? 'General');
+
+                // Specifically unify "Energy" branding into "Energies"
+                if (stripos($finalCat, 'energy') !== false || stripos($finalCat, 'energizer') !== false) {
+                    $finalCat = 'Energies';
+                }
+
                 return [
                     'id' => $variant->id,
                     'product_name' => $product_name,
@@ -957,7 +971,7 @@ class WaiterController extends Controller
                     'packaging_type' => $variant->packaging ?? 'pkg',
                     'unit' => $variant->inventory_unit,
                     'portion_label' => $portionLabel,
-                    'category' => $category,
+                    'category' => $finalCat,
                     'is_alcoholic' => $isAlcoholic,
                     'product_image' => $variant->product->image ?? null,
                 ];
@@ -1054,7 +1068,8 @@ class WaiterController extends Controller
                         ->orWhere('category', 'like', '%spirit%')
                         ->orWhere('category', 'like', '%soda%')
                         ->orWhere('category', 'like', '%water%')
-                        ->orWhere('category', 'like', '%juice%');
+                        ->orWhere('category', 'like', '%juice%')
+                        ->orWhere('category', 'like', '%energy%');
                 });
         })
             ->with([
@@ -1147,6 +1162,16 @@ class WaiterController extends Controller
                     $variantStr = '';
                 }
 
+                // Standardize Category extraction (same as Counter)
+                $rawCat = $variant->product->category ?? 'General';
+                $splitCats = preg_split('/[,|\/]+/', $rawCat);
+                $finalCat = trim($splitCats[0] ?? 'General');
+
+                // Specifically unify "Energy" branding into "Energies"
+                if (stripos($finalCat, 'energy') !== false || stripos($finalCat, 'energizer') !== false) {
+                    $finalCat = 'Energies';
+                }
+
                 return [
                     'id' => $variant->id,
                     'product_name' => $product_name,
@@ -1164,7 +1189,7 @@ class WaiterController extends Controller
                     'packaging_type' => $variant->packaging ?? 'pkg',
                     'unit' => $variant->inventory_unit,
                     'portion_label' => $portionLabel,
-                    'category' => $category,
+                    'category' => $finalCat,
                     'is_alcoholic' => $isAlcoholic,
                     'product_image' => $variant->product->image ?? null,
                 ];

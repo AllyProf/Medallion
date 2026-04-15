@@ -464,7 +464,10 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             </div>
             <div class="cat-list">
                 @php 
-                    $drinkCats = collect($variants)->pluck('category')->unique()->filter()->values(); 
+                    $drinkCats = collect($variants)->flatMap(function($v) {
+                        // Preserve '&' as per user preference for "Soda & Water"
+                        return preg_split('/[,|\/]+/', $v['category']);
+                    })->map(fn($c) => trim($c))->unique()->filter()->values(); 
                     $foodCats = collect($foodItems)->map(function($f) { return trim($f->category); })->unique()->filter()->values();
                     
                     $icons = ['fa-glass', 'fa-coffee', 'fa-lemon-o', 'fa-beer', 'fa-flask', 'fa-tint'];
@@ -485,8 +488,20 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     <div style="padding: 12px 20px; font-weight: 800; font-size: 0.75rem; letter-spacing: 1.5px; color: var(--accent-green); background: var(--bg-input); border-bottom: 1px solid var(--border-color); text-transform: uppercase;">DRINK ITEMS</div>
                     <div id="drink-cat-list">
                         @foreach($drinkCats as $i => $cat)
+                            @php
+                                $cIcon = $icons[$i % count($icons)];
+                                $lowCat = strtolower($cat);
+                                if(str_contains($lowCat, 'beer')) $cIcon = 'fa-beer';
+                                if(str_contains($lowCat, 'spirit')) $cIcon = 'fa-glass';
+                                if(str_contains($lowCat, 'wine')) $cIcon = 'fa-flask';
+                                if(str_contains($lowCat, 'soda') || str_contains($lowCat, 'drink')) $cIcon = 'fa-coffee';
+                                if(str_contains($lowCat, 'water')) $cIcon = 'fa-tint';
+                                if(str_contains($lowCat, 'energy')) $cIcon = 'fa-bolt';
+                                if(str_contains($lowCat, 'gin')) $cIcon = 'fa-flask';
+                                if(str_contains($lowCat, 'local')) $cIcon = 'fa-glass';
+                            @endphp
                             <div class="cat-item category-pill" data-category="cat-{{ \Illuminate\Support\Str::slug($cat) }}">
-                                <i class="fa {{ $icons[$i % count($icons)] }}" style="color: {{ $colors[$i % count($colors)] }};"></i> 
+                                <i class="fa {{ $cIcon }}" style="color: {{ $colors[$i % count($colors)] }};"></i> 
                                 <span style="display:inline-block; vertical-align:middle; color:var(--text-main) !important;">{{ $cat ?: 'Uncategorized' }}</span>
                             </div>
                         @endforeach
@@ -525,7 +540,11 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                 <!-- Drinks -->
                 @foreach($variants as $v)
                 @php $vFullName = $v['product_name']; @endphp
-                <div class="prod-card pos-item cat-drinks cat-{{ \Illuminate\Support\Str::slug($v['category']) }}" 
+                @php 
+                    $categories = preg_split('/[,|\/]+/', $v['category']);
+                    $catClasses = collect($categories)->map(fn($c) => 'cat-' . \Illuminate\Support\Str::slug(trim($c)))->implode(' ');
+                @endphp
+                <div class="prod-card pos-item cat-drinks {{ $catClasses }}" 
                      data-id="{{ $v['id'] }}" 
                      data-name="{{ $vFullName }}" 
                      data-variant="{{ $v['variant'] }}"
@@ -1472,7 +1491,8 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 
         // Map categories for colors and icons (replicating PHP logic temporarily)
         const normalizeCategory = (value) => (value ?? '').toString().trim();
-        const drinkCats = [...new Set(variants.map(v => normalizeCategory(v.category)).filter(Boolean))];
+        const drinkCatsRaw = variants.flatMap(v => (v.category ?? '').toString().split(/[,|\/]+/));
+        const drinkCats = [...new Set(drinkCatsRaw.map(c => c.trim()).filter(Boolean))];
         const foodCats = [...new Set(foodItems.map(f => normalizeCategory(f.category)).filter(Boolean))];
 
         const getSlug = (str) => normalizeCategory(str).toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '') || 'food';
@@ -1480,8 +1500,12 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         // Render Drinks
         variants.forEach(v => {
             const normalizedDrinkCategory = normalizeCategory(v.category);
-            const catSlug = getSlug(normalizedDrinkCategory);
-            const catIdx = drinkCats.indexOf(normalizedDrinkCategory);
+            const categories = normalizedDrinkCategory.split(/[,|\/]+/);
+            const catClasses = categories.map(c => 'cat-' + getSlug(c.trim())).join(' ');
+            
+            // For icon/color mapping, use the first category assigned
+            const primaryCat = categories[0] ? categories[0].trim() : '';
+            const catIdx = drinkCats.indexOf(primaryCat);
             const catColor = colors[catIdx % colors.length] || '#555';
             const catIcon = icons[catIdx % icons.length] || 'fa-glass';
 
@@ -1494,7 +1518,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                 : '';
 
             grid.append(`
-                <div class="prod-card pos-item cat-drinks cat-${catSlug}" 
+                <div class="prod-card pos-item cat-drinks ${catClasses}" 
                      data-id="${v.id}" 
                      data-name="${v.product_name}" 
                      data-variant="${v.variant}"

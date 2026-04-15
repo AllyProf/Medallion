@@ -560,6 +560,7 @@ class CounterReconciliationController extends Controller
     public function verifyReconciliation(Request $request, WaiterDailyReconciliation $reconciliation)
     {
         $currentStaff = $this->getCurrentStaff();
+        $isSuperAdmin = $this->isSuperAdminRole();
         $isAccountant = $currentStaff && strtolower($currentStaff->role->slug ?? '') === 'accountant';
 
         if (!$isAccountant && !$isSuperAdmin && !$this->hasPermission('bar_orders', 'edit')) {
@@ -600,6 +601,7 @@ class CounterReconciliationController extends Controller
     public function markAllOrdersPaid(Request $request)
     {
         $currentStaff = $this->getCurrentStaff();
+        $isSuperAdmin = $this->isSuperAdminRole();
         $isAccountant = $currentStaff && strtolower($currentStaff->role->slug ?? '') === 'accountant';
 
         if (!$isAccountant && !$isSuperAdmin && !$this->hasPermission('bar_orders', 'edit')) {
@@ -931,6 +933,7 @@ class CounterReconciliationController extends Controller
     public function getWaiterOrders(Request $request, Staff $waiter)
     {
         $currentStaff = $this->getCurrentStaff();
+        $isSuperAdmin = $this->isSuperAdminRole();
         $isAccountant = $currentStaff && strtolower($currentStaff->role->slug ?? '') === 'accountant';
 
         if (!$isAccountant && !$isSuperAdmin && !$this->hasPermission('bar_orders', 'view')) {
@@ -957,9 +960,14 @@ class CounterReconciliationController extends Controller
             ->where('reconciliation_type', 'bar')
             ->first();
 
-        // Try to find if there is an active shift
-        $bar_shift = \App\Models\BarShift::where('user_id', $ownerId)
+        // Try to find if there is an active shift (Must match the dashboard logic)
+        $bar_shift = \App\Models\BarShift::when(!$isSuperAdmin, function($q) use ($ownerId) {
+                return $q->where('user_id', $ownerId);
+            })
             ->where('status', 'open')
+            ->when($currentStaff && !$isAccountant && !$isSuperAdmin, function ($q) use ($currentStaff) {
+                $q->where('staff_id', $currentStaff->id);
+            })
             ->first();
 
         $targetShiftId = $reconciliation ? $reconciliation->bar_shift_id : ($bar_shift ? $bar_shift->id : null);

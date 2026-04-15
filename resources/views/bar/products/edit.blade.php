@@ -58,7 +58,7 @@
                 <select class="form-control @error('category') is-invalid @enderror" name="category" required>
                   <option value="">Select Category</option>
                   @php 
-                    $cats = ['Beers', 'Spirits', 'Wines', 'Soft Drinks', 'Water', 'Energies']; 
+                    $cats = ['Soda', 'Water', 'Soda & Water', 'Beers', 'Spirits', 'Wines', 'Soft Drinks', 'Energies']; 
                   @endphp
                   @foreach($cats as $cat)
                     <option value="{{ $cat }}" {{ old('category', $product->category) == $cat ? 'selected' : '' }}>{{ $cat }}</option>

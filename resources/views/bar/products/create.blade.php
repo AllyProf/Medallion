@@ -75,7 +75,9 @@
                     <div class="form-group mb-0">
                         <label class="small font-weight-bold text-uppercase text-muted">Core Category</label>
                         <select class="form-control form-control-lg border-primary" name="category" id="activeCategory" required>
-                          <option value="SODA & WATER" {{ old('category') === 'SODA & WATER' ? 'selected' : '' }}>SODA &amp; WATER</option>
+                          <option value="SODA" {{ old('category') === 'SODA' ? 'selected' : '' }}>SODA</option>
+                          <option value="WATER" {{ old('category') === 'WATER' ? 'selected' : '' }}>WATER</option>
+                          <option value="SODA & WATER" {{ old('category') === 'SODA & WATER' ? 'selected' : '' }}>SODA & WATER</option>
                           <option value="ENERGIZER" {{ old('category') === 'ENERGIZER' ? 'selected' : '' }}>⚡ ENERGIZER</option>
                           <option value="BEERS / LAGER (BOTTLES)" {{ old('category') === 'BEERS / LAGER (BOTTLES)' ? 'selected' : '' }}>🍺 BEERS / LAGER (BOTTLES)</option>
                           <option value="BEER CANS" {{ old('category') === 'BEER CANS' ? 'selected' : '' }}>🍺 BEER CANS</option>

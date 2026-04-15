@@ -470,15 +470,13 @@
                             <tr>
                                 <th>Product</th>
                                 <th>Qty</th>
-                                <th>Warehouse</th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach($lowStockItemsList as $item)
                             <tr>
                                 <td>{{ $item['product_name'] }}</td>
-                                <td class="text-danger font-weight-bold">{{ $item['counter_qty'] }} {{ strtolower($item['unit'] ?? 'btl') }}</td>
-                                <td>{{ $item['warehouse_qty'] }} {{ strtolower($item['unit'] ?? 'btl') }}</td>
+                                <td class="text-danger font-weight-bold">{{ $item['counter_qty'] + 0 }} {{ strtolower($item['unit'] ?? 'btl') }}</td>
                             </tr>
                             @endforeach
                         </tbody>
@@ -596,9 +594,9 @@
                         <div class="d-flex justify-content-between mb-1">
                             <span class="text-muted" style="font-size: 0.75rem;">Available:</span>
                             <strong class="text-dark" style="font-size: 0.75rem;">
-                                {{ number_format($v['quantity']) }} {{ $v['unit'] ?: 'btl' }}s
+                                {{ $v['quantity'] + 0 }} {{ $v['unit'] ?: 'btl' }}{{ ($v['quantity'] + 0) > 1 ? 's' : '' }}
                                 @if(($v['open_tots'] ?? 0) > 0)
-                                    <span class="text-primary">+ {{ $v['open_tots'] }} {{ $v['portion_label'] }}s</span>
+                                    <span class="text-primary">+ {{ $v['open_tots'] + 0 }} {{ $v['portion_label'] }}{{ ($v['open_tots'] + 0) > 1 ? 's' : '' }}</span>
                                 @endif
                             </strong>
                         </div>

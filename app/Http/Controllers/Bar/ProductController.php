@@ -30,12 +30,19 @@ class ProductController extends Controller
         $category = $request->get('category');
         
         // Get unique categories currently in use that have products
-        $categories = Product::where('user_id', $ownerId)
+        $categoriesRaw = Product::where('user_id', $ownerId)
             ->whereNotNull('category')
             ->where('category', '!=', '')
             ->distinct()
-            ->pluck('category')
-            ->map(fn($c) => strtoupper($c))
+            ->pluck('category');
+
+        $categories = collect($categoriesRaw)
+            ->flatMap(function($c) {
+                // Split by comma or slash (preserving '&' as per user preference for "Soda & Water")
+                return preg_split('/[,|\/]+/', $c);
+            })
+            ->map(fn($c) => trim(strtoupper($c)))
+            ->filter()
             ->unique()
             ->sort()
             ->values();
@@ -53,7 +60,7 @@ class ProductController extends Controller
         }
 
         if ($category) {
-            $query->where('products.category', $category);
+            $query->where('products.category', 'LIKE', "%{$category}%");
         }
 
         $variants = $query->orderBy('products.category')

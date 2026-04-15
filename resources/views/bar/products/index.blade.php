@@ -277,12 +277,15 @@
               <a class="nav-link {{ ($category ?? '') == $cat ? 'active' : '' }} category-tab" href="#" data-category="{{ $cat }}">
                 @php
                   $icon = 'fa-cube';
-                  if(str_contains(strtolower($cat), 'beer')) $icon = 'fa-beer';
-                  if(str_contains(strtolower($cat), 'spirit')) $icon = 'fa-glass';
-                  if(str_contains(strtolower($cat), 'wine')) $icon = 'fa-flask';
-                  if(str_contains(strtolower($cat), 'soda') || str_contains(strtolower($cat), 'drink')) $icon = 'fa-coffee';
-                  if(str_contains(strtolower($cat), 'water')) $icon = 'fa-tint';
-                  if(str_contains(strtolower($cat), 'energy')) $icon = 'fa-bolt';
+                  $lowCat = strtolower($cat);
+                  if(str_contains($lowCat, 'beer')) $icon = 'fa-beer';
+                  if(str_contains($lowCat, 'spirit')) $icon = 'fa-glass';
+                  if(str_contains($lowCat, 'wine')) $icon = 'fa-flask';
+                  if(str_contains($lowCat, 'soda') || str_contains($lowCat, 'drink')) $icon = 'fa-coffee';
+                  if(str_contains($lowCat, 'water')) $icon = 'fa-tint';
+                  if(str_contains($lowCat, 'energy')) $icon = 'fa-bolt';
+                  if(str_contains($lowCat, 'gin')) $icon = 'fa-flask';
+                  if(str_contains($lowCat, 'local')) $icon = 'fa-glass';
                 @endphp
                 <i class="fa {{ $icon }} mr-2"></i> {{ strtoupper($cat) }}
               </a>

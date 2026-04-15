@@ -88,12 +88,6 @@
                               {{ strtoupper($label) }}
                           </button>
                       @endforeach
-                      <div class="mx-2 border-right h-100" style="height: 24px !important;"></div>
-                      @foreach($brands as $label)
-                          <button class="btn btn-sm btn-outline-info filter-pill mr-1 mb-1" data-filter="{{ Str::slug($label) }}" data-filter-type="brand">
-                              {{ $label }}
-                          </button>
-                      @endforeach
                   </div>
               </div>
           </div>
