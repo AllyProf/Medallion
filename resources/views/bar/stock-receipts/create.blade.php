@@ -619,13 +619,13 @@ $(document).ready(function() {
                         
                         <div class="d-flex align-items-center mb-1 smallest">
                             <span class="badge ${item.existing_quantity <= 0 ? 'badge-danger' : (item.existing_quantity < (item.items_per_package || 1) ? 'badge-warning' : 'badge-success')} border mr-2 font-weight-bold shadow-sm" style="font-size: 10px; padding: 3px 8px;">
-                                <i class="fa fa-cubes"></i> ${item.existing_quantity || 0} 
+                                <i class="fa fa-cubes"></i> ${Math.round(item.existing_quantity || 0)} 
                                 ${(() => {
                                     const u = (item.unit || '').toLowerCase();
-                                    if(u.includes('btl') || u.includes('ml') || u.includes('bottle') || !u) return 'btl';
+                                    if(u.includes('btl') || u.includes('ml') || u.includes('liter') || u.includes('litre') || u.includes('l') || u.includes('bottle') || !u) return 'btl';
                                     if(u.includes('pc')) return 'pc';
                                     return u.substring(0,3);
-                                })()}s
+                                })()}
                                 (${(() => {
                                     const conv = item.items_per_package || 1;
                                     const q = item.existing_quantity || 0;
