@@ -641,11 +641,14 @@ class StockTransferController extends Controller
                     $vName = ltrim($vName, ' -');
                 }
 
+                $ipp = $item->productVariant->items_per_package ?: 1;
+                $exactPkgs = $item->total_units / $ipp;
+
                 return [
                     'id' => $item->id,
                     'product_name' => $vName,
                     'variant_measurement' => $item->productVariant->measurement ?? null,
-                    'quantity_requested' => $item->quantity_requested,
+                    'quantity_requested' => number_format($exactPkgs, 2),
                     'packaging_display' => $pkgDisplay,
                     'total_units' => $item->total_units,
                     'unit_display' => $unitDisplay,

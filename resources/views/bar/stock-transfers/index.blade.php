@@ -112,7 +112,11 @@
                         if ($pkgSing == 'boxe') $pkgSing = 'box';
                         $pkgDisp = $transfer->quantity_requested == 1 ? $pkgSing : $pkg;
                       @endphp
-                      {{ $transfer->quantity_requested }} {{ ucfirst($pkgDisp) }}
+                      @php
+                        $ipp = $transfer->productVariant->items_per_package ?: 1;
+                        $exactPkgs = $transfer->total_units / $ipp;
+                      @endphp
+                      {{ number_format($exactPkgs, 2) }} {{ ucfirst($pkgDisp) }}
                     </td>
                     <td class="{{ $isNewBatch ? 'font-weight-bold' : '' }}">
                       @php
