@@ -149,8 +149,8 @@
                    <thead class="bg-light">
                        <tr>
                           <th class="border-top-0 px-3 py-2" style="font-size: 0.75rem;">PRODUCT & EXPIRE</th>
-                           <th class="border-top-0 px-2 py-2 text-center" width="70" style="font-size: 0.75rem;">PKGS</th>
-                           <th class="border-top-0 px-2 py-2 text-center" width="70" style="font-size: 0.75rem;">LOOSE</th>
+                           <th class="border-top-0 px-2 py-2 text-center" width="100" style="font-size: 0.75rem;">PKGS</th>
+                           <th class="border-top-0 px-2 py-2 text-center" width="100" style="font-size: 0.75rem;">LOOSE</th>
                            <th class="border-top-0 px-2 py-2" width="130" style="font-size: 0.75rem;">BUYING COST</th>
                           <th class="border-top-0 px-2 py-2" width="150" style="font-size: 0.75rem;">RETAIL PRICE</th>
                           <th class="border-top-0 px-2 py-2" width="150" style="font-size: 0.75rem;">DISCOUNT</th>
