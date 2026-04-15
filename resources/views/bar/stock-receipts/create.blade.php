@@ -907,6 +907,9 @@ $(document).ready(function() {
 
 
 
+    $('#stockReceiptForm').on('submit', function(e) {
+        e.preventDefault();
+        
         // 1. Basic Form Validation
         if(!$('#supplier_id').val()) { 
             Swal.fire('Missing Data', 'Please select a Supplier/Distributor first.', 'warning');
