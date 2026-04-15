@@ -112,7 +112,8 @@ class StockReceipt extends Model
         $pkgs = floor($this->total_units / $conv);
         $loose = round($this->total_units % $conv);
         $pkgLabel = $this->productVariant->packaging ?? 'Pkg';
-        $unitLabel = $this->productVariant->unit ?? 'Btl/Pc';
+        $unitLabel = $this->productVariant->inventory_unit ?? 'Btl/Pc';
+        $unitLabel = ucfirst(strtolower($unitLabel)); // Standardize casing (Btl, Pcs)
 
         if ($pkgs > 0 && $loose > 0) {
             return "{$pkgs} {$pkgLabel} & {$loose} {$unitLabel}";
