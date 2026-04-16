@@ -98,14 +98,13 @@ class CounterReconciliationController extends Controller
             
         $targetShiftIds = [];
         if ($todayHandover) {
-            // Include ALL shifts from the handover date, not just the single handover shift.
-            // This ensures waiters on earlier shifts (different shift ID) are still visible.
-            $handoverDate = $todayHandover->handover_date ?? $date;
-            $allTodayShiftIds = \App\Models\BarShift::where('user_id', $ownerId)
-                ->whereDate('created_at', $handoverDate)
-                ->pluck('id')
-                ->toArray();
-            $targetShiftIds = !empty($allTodayShiftIds) ? $allTodayShiftIds : [$todayHandover->bar_shift_id];
+            // Combine the handover's specific shift AND all currently open shifts.
+            // This handles the case where orders were placed in an earlier/different shift
+            // that is still open (e.g., Shift 1 opened days ago and never closed).
+            $handoverShiftIds = $todayHandover->bar_shift_id ? [$todayHandover->bar_shift_id] : [];
+            $targetShiftIds = array_values(array_unique(array_filter(
+                array_merge($handoverShiftIds, $allOpenShiftIds)
+            )));
         } elseif ($targetShiftId && in_array($targetShiftId, $allOpenShiftIds)) {
             // If we have an active shift context and it's open, include ALL open shifts for reconciliation visibility
             $targetShiftIds = $allOpenShiftIds;
