@@ -96,12 +96,16 @@ class CounterController extends Controller
             ->get();
 
         $activeShift = $this->getCurrentShift();
+        $allOpenShiftIds = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->pluck('id')
+            ->toArray();
 
         if ($request->ajax()) {
-            return view('bar.counter.partials._waiter_orders_table_body', compact('orders', 'pendingCount', 'servedCount', 'waiters', 'activeShift'))->render();
+            return view('bar.counter.partials._waiter_orders_table_body', compact('orders', 'pendingCount', 'servedCount', 'waiters', 'activeShift', 'allOpenShiftIds'))->render();
         }
 
-        return view('bar.counter.waiter-orders', compact('orders', 'pendingCount', 'servedCount', 'waiters', 'activeShift'));
+        return view('bar.counter.waiter-orders', compact('orders', 'pendingCount', 'servedCount', 'waiters', 'activeShift', 'allOpenShiftIds'));
     }
 
     /**

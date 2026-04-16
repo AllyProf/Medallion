@@ -88,19 +88,37 @@ class CounterReconciliationController extends Controller
 
         // If a handover exists, we derive our shift context and target date from it
         $targetShiftId = $todayHandover ? $todayHandover->bar_shift_id : ($bar_shift ? $bar_shift->id : null);
+        
+        // NEW: Collection of all open shifts if we are looking at the current active period
+        // This ensures orders from ALL waiters working on DIFFERENT shifts show up in one view.
+        $allOpenShiftIds = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->pluck('id')
+            ->toArray();
+            
+        $targetShiftIds = [];
+        if ($todayHandover) {
+            $targetShiftIds = [$todayHandover->bar_shift_id];
+        } elseif ($targetShiftId && in_array($targetShiftId, $allOpenShiftIds)) {
+            // If we have an active shift context and it's open, include ALL open shifts for reconciliation visibility
+            $targetShiftIds = $allOpenShiftIds;
+        } elseif ($targetShiftId) {
+            $targetShiftIds = [$targetShiftId];
+        }
+
         $reconciliationDate = $todayHandover ? $todayHandover->handover_date : $date;
 
         // Get waiters, or anyone who placed an order today, or has a reconciliation today
         $waitersQuery = Staff::where('is_active', true)
-            ->where(function ($query) use ($date, $location, $targetShiftId) {
+            ->where(function ($query) use ($date, $location, $targetShiftIds) {
                 // Role check
                 $query->whereHas('role', function ($q) {
                     $q->where('slug', 'waiter');
                 })
                     // OR orders today/shift check
-                    ->orWhereHas('orders', function ($q) use ($date, $location, $targetShiftId) {
-                        if ($targetShiftId) {
-                            $q->where('bar_shift_id', $targetShiftId);
+                    ->orWhereHas('orders', function ($q) use ($date, $location, $targetShiftIds) {
+                        if (!empty($targetShiftIds)) {
+                            $q->whereIn('bar_shift_id', $targetShiftIds);
                         } else {
                             $q->whereDate('created_at', $date);
                         }
@@ -112,9 +130,9 @@ class CounterReconciliationController extends Controller
                         }
                     })
                     // OR daily reconciliations check
-                    ->orWhereHas('dailyReconciliations', function ($q) use ($date, $targetShiftId) {
-                        if ($targetShiftId) {
-                            $q->where('bar_shift_id', $targetShiftId);
+                    ->orWhereHas('dailyReconciliations', function ($q) use ($date, $targetShiftIds) {
+                        if (!empty($targetShiftIds)) {
+                            $q->whereIn('bar_shift_id', $targetShiftIds);
                         } else {
                             $q->where('reconciliation_date', $date);
                         }
@@ -132,17 +150,17 @@ class CounterReconciliationController extends Controller
 
         $waiters = $waitersQuery
             ->with([
-                'dailyReconciliations' => function ($q) use ($date, $targetShiftId) {
+                'dailyReconciliations' => function ($q) use ($date, $targetShiftIds) {
                     $q->where('reconciliation_type', 'bar')
-                        ->when($targetShiftId, function ($sq) use ($targetShiftId) {
-                            $sq->where('bar_shift_id', $targetShiftId);
+                        ->when(!empty($targetShiftIds), function ($sq) use ($targetShiftIds) {
+                            $sq->whereIn('bar_shift_id', $targetShiftIds);
                         }, function($sq) use ($date) {
                             $sq->where('reconciliation_date', $date);
                         });
                 },
             ])
             ->get()
-            ->map(function ($waiter) use ($ownerId, $date, $isAccountant, $isSuperAdmin, $location, $targetShiftId) {
+            ->map(function ($waiter) use ($ownerId, $date, $isAccountant, $isSuperAdmin, $location, $targetShiftIds) {
                 $ordersQuery = BarOrder::query()
                     ->where('waiter_id', $waiter->id)
                     ->when($location && $location !== 'all', function ($q) use ($location) {
@@ -157,8 +175,8 @@ class CounterReconciliationController extends Controller
                 }
 
                 $allOrders = $ordersQuery
-                    ->when($targetShiftId, function ($q) use ($targetShiftId) {
-                        return $q->where('bar_shift_id', $targetShiftId);
+                    ->when(!empty($targetShiftIds), function ($q) use ($targetShiftIds) {
+                        return $q->whereIn('bar_shift_id', $targetShiftIds);
                     }, function ($q) use ($date) {
                         return $q->whereDate('created_at', $date);
                     })
@@ -665,7 +683,7 @@ class CounterReconciliationController extends Controller
             ->whereDate('created_at', $validated['date'])
             ->where('status', 'served')
             ->where('payment_status', '!=', 'paid')
-            ->whereHas('items') // Only orders with drinks (bar items)
+            ->whereHas('items')
             ->get();
 
         // Only error out if we have NO unpaid orders AND no submitted_amount provided
@@ -676,9 +694,14 @@ class CounterReconciliationController extends Controller
             ], 400);
         }
 
-        // REQUIRE ACTIVE SHIFT
+        // REQUIRE ACTIVE SHIFT (Check if ANY shift is open for the business, or the specific staff member)
         $activeShift = $this->getCurrentShift();
-        if (!$activeShift && !$isAccountant && !$isSuperAdmin) {
+        $allOpenShiftIds = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->pluck('id')
+            ->toArray();
+
+        if (empty($allOpenShiftIds) && !$isAccountant && !$isSuperAdmin) {
             return response()->json(['error' => 'Please open a shift before reconciling waiters.'], 403);
         }
 
@@ -693,8 +716,8 @@ class CounterReconciliationController extends Controller
         }
 
         $expectedAmount = $expectedOrdersQuery
-            ->when($activeShift, function ($q) use ($activeShift) {
-                return $q->where('bar_shift_id', $activeShift->id);
+            ->when(!empty($allOpenShiftIds), function ($q) use ($allOpenShiftIds) {
+                return $q->whereIn('bar_shift_id', $allOpenShiftIds);
             }, function ($q) use ($validated) {
                 return $q->whereDate('created_at', $validated['date']);
             })
@@ -731,8 +754,10 @@ class CounterReconciliationController extends Controller
                 if (! $order->payment_method) {
                     $order->payment_method = 'cash';
                 }
-                if ($activeShift) {
-                    $order->bar_shift_id = $activeShift->id;
+                // Maintain the order's existing shift if it's already set and open, 
+                // otherwise assign to the first available open shift if missing.
+                if (!$order->bar_shift_id && !empty($allOpenShiftIds)) {
+                    $order->bar_shift_id = $allOpenShiftIds[0];
                 }
                 $order->save();
 
@@ -753,8 +778,8 @@ class CounterReconciliationController extends Controller
             $existingReconciliation = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
                 ->where('waiter_id', $waiter->id)
                 ->where('reconciliation_date', $validated['date'])
-                ->when($activeShift, function ($q) use ($activeShift) {
-                    return $q->where('bar_shift_id', $activeShift->id);
+                ->when(!empty($allOpenShiftIds), function ($q) use ($allOpenShiftIds) {
+                    return $q->whereIn('bar_shift_id', $allOpenShiftIds);
                 })
                 ->first();
 
@@ -769,8 +794,8 @@ class CounterReconciliationController extends Controller
                 // Calculate submitted amount from OrderPayments (what waiters have recorded)
                 $allOrdersWithPaymentsQuery = BarOrder::query()
                     ->where('waiter_id', $waiter->id)
-                    ->when($activeShift, function ($q) use ($activeShift) {
-                        return $q->where('bar_shift_id', $activeShift->id);
+                    ->when(!empty($allOpenShiftIds), function ($q) use ($allOpenShiftIds) {
+                        return $q->whereIn('bar_shift_id', $allOpenShiftIds);
                     }, function ($q) use ($validated) {
                         return $q->whereDate('created_at', $validated['date']);
                     })
@@ -801,8 +826,8 @@ class CounterReconciliationController extends Controller
             // Get bar orders for cash/mobile money calculation
             $barOrdersQuery = BarOrder::query()
                 ->where('waiter_id', $waiter->id)
-                ->when($activeShift, function ($q) use ($activeShift) {
-                    return $q->where('bar_shift_id', $activeShift->id);
+                ->when(!empty($allOpenShiftIds), function ($q) use ($allOpenShiftIds) {
+                    return $q->whereIn('bar_shift_id', $allOpenShiftIds);
                 }, function ($q) use ($validated) {
                     return $q->whereDate('created_at', $validated['date']);
                 })
@@ -856,8 +881,11 @@ class CounterReconciliationController extends Controller
                 'reconciliation_date' => $validated['date'],
                 'reconciliation_type' => 'bar', // Bar-specific reconciliation
             ];
-            if ($activeShift) {
-                $matchArray['bar_shift_id'] = $activeShift->id;
+            if (!empty($allOpenShiftIds)) {
+                // Prioritize the waiter's actually used shift if it's among the open ones
+                $waiterShiftId = $barOrders->whereIn('bar_shift_id', $allOpenShiftIds)->pluck('bar_shift_id')->first() 
+                                 ?? $allOpenShiftIds[0];
+                $matchArray['bar_shift_id'] = $waiterShiftId;
             }
 
             // Create or update bar-specific reconciliation record
@@ -876,7 +904,7 @@ class CounterReconciliationController extends Controller
                         'recorded_breakdown' => $waiterPlatformTotals,
                         'waiter_note' => $request->input('notes', ''),
                     ]),
-                    'bar_shift_id' => $activeShift ? $activeShift->id : null,
+                    'bar_shift_id' => $matchArray['bar_shift_id'] ?? null,
                 ]
             );
 
@@ -973,17 +1001,19 @@ class CounterReconciliationController extends Controller
             ->where('reconciliation_type', 'bar')
             ->first();
 
-        // Try to find if there is an active shift (Must match the dashboard logic)
-        $bar_shift = \App\Models\BarShift::when(!$isSuperAdmin, function($q) use ($ownerId) {
-                return $q->where('user_id', $ownerId);
-            })
+        $allOpenShiftIds = \App\Models\BarShift::where('user_id', $ownerId)
             ->where('status', 'open')
-            ->when($currentStaff && !$isAccountant && !$isSuperAdmin, function ($q) use ($currentStaff) {
-                $q->where('staff_id', $currentStaff->id);
-            })
-            ->first();
+            ->pluck('id')
+            ->toArray();
 
-        $targetShiftId = $reconciliation ? $reconciliation->bar_shift_id : ($bar_shift ? $bar_shift->id : null);
+        $targetShiftIds = [];
+        if ($reconciliation) {
+            $targetShiftIds = [$reconciliation->bar_shift_id];
+        } elseif ($bar_shift && in_array($bar_shift->id, $allOpenShiftIds)) {
+            $targetShiftIds = $allOpenShiftIds;
+        } elseif ($bar_shift) {
+            $targetShiftIds = [$bar_shift->id];
+        }
 
         // Return all orders (both bar and food) for counter reconciliation view
         $ordersQuery = BarOrder::query()
@@ -995,8 +1025,8 @@ class CounterReconciliationController extends Controller
         }
 
         $orders = $ordersQuery
-            ->when($targetShiftId, function ($q) use ($targetShiftId) {
-                return $q->where('bar_shift_id', $targetShiftId);
+            ->when(!empty($targetShiftIds), function ($q) use ($targetShiftIds) {
+                return $q->whereIn('bar_shift_id', $targetShiftIds);
             }, function ($q) use ($date) {
                 return $q->whereDate('created_at', $date);
             })

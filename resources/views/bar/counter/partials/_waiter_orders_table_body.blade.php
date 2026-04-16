@@ -1,5 +1,5 @@
 @php 
-    $activeShiftId = isset($activeShift) && $activeShift ? $activeShift->id : null;
+    $activeShiftIds = isset($allOpenShiftIds) ? $allOpenShiftIds : (isset($activeShift) && $activeShift ? [$activeShift->id] : []);
     $hasShownActiveHeader = false;
     $hasShownHistoryHeader = false;
 @endphp
@@ -10,7 +10,7 @@
         $orderStatus = $order->status;
     @endphp
 
-    @if($activeShiftId && $order->bar_shift_id == $activeShiftId && !$hasShownActiveHeader)
+    @if(count($activeShiftIds) > 0 && in_array($order->bar_shift_id, $activeShiftIds) && !$hasShownActiveHeader)
         <tr class="bg-light shift-header" data-shift-group="active">
             <td colspan="9" class="text-center py-2" style="background: #e1f5fe; border-bottom: 2px solid #b3e5fc;">
                 <span class="badge badge-info px-3 py-2"><i class="fa fa-refresh fa-spin"></i> CURRENT ACTIVE SHIFT ORDERS</span>
@@ -19,7 +19,7 @@
         @php $hasShownActiveHeader = true; @endphp
     @endif
 
-    @if((!$activeShiftId || $order->bar_shift_id != $activeShiftId) && !$hasShownHistoryHeader)
+    @if((count($activeShiftIds) === 0 || !in_array($order->bar_shift_id, $activeShiftIds)) && !$hasShownHistoryHeader)
         <tr class="bg-light shift-header" data-shift-group="history">
             <td colspan="9" class="text-center py-2" style="background: #f5f5f5; border-bottom: 2px solid #e0e0e0;">
                 <span class="badge badge-secondary px-3 py-2"><i class="fa fa-history"></i> PREVIOUS SHIFTS / HISTORY</span>
