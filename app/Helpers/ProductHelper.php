@@ -35,8 +35,8 @@ class ProductHelper
         $strippedWords = str_word_count($strippedV);
         $isGenericSingle = ($strippedWords === 1 && in_array(strtolower($strippedV), $genericDescriptors));
         
-        // Is usable if it's 2+ words, or a long single word that isn't a generic descriptor
-        $useVariantName = !empty($strippedV) && ($strippedWords >= 2 || (strlen($strippedV) > 5 && !$isGenericSingle));
+        // Is usable if it's 2+ words, or a custom identity word that isn't a generic descriptor
+        $useVariantName = !empty($strippedV) && ($strippedWords >= 2 || (strlen($strippedV) >= 4 && !$isGenericSingle));
 
         if ($useVariantName) {
             // "Fanta Orange"
