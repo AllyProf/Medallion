@@ -89,37 +89,75 @@ class AccountantController extends Controller
         }
         $todayLedger = $todayLedgerQuery->first();
 
-        $handoversQuery = \App\Models\FinancialHandover::where('department', 'bar')
-            ->whereDate('handover_date', $date);
+        // Bar Handovers (Verified Money)
+        $barHandoversQuery = \App\Models\FinancialHandover::where('department', 'bar')
+            ->whereDate('handover_date', $date)
+            ->where('status', 'verified');
         if (!$isAdmin) {
-            $handoversQuery->where('user_id', $ownerId);
+            $barHandoversQuery->where('user_id', $ownerId);
         }
-        $handovers = $handoversQuery->get();
+        $barHandovers = $barHandoversQuery->get();
 
-        $todayCash = 0;
-        $todayMobileMoney = 0;
-        foreach ($handovers as $h) {
-            if ($h->status === 'verified') {
-                $breakdown = $h->payment_breakdown ?? [];
-                if (is_string($breakdown)) $breakdown = json_decode($breakdown, true);
-                if (is_array($breakdown) && !empty($breakdown)) {
-                    foreach ($breakdown as $key => $val) {
-                        $amt = floatval($val);
-                        if ($key === 'shortage_payment' || $key === 'total') continue;
-                        
-                        if ($key === 'cash' || str_contains($key, 'cash_')) {
-                            $todayCash += $amt;
-                        } else {
-                            $todayMobileMoney += $amt;
-                        }
+        $todayBarVerified = 0;
+        $todayBarCash = 0;
+        $todayBarMobile = 0;
+        foreach ($barHandovers as $h) {
+            $amt = (float)$h->amount;
+            $todayBarVerified += $amt;
+            
+            $breakdown = $h->payment_breakdown ?? [];
+            if (is_string($breakdown)) $breakdown = json_decode($breakdown, true);
+            if (is_array($breakdown) && !empty($breakdown)) {
+                foreach ($breakdown as $key => $val) {
+                    $itemAmt = floatval($val);
+                    if ($key === 'shortage_payment' || $key === 'total') continue;
+                    if ($key === 'cash' || str_contains($key, 'cash_')) {
+                        $todayBarCash += $itemAmt;
+                    } else {
+                        $todayBarMobile += $itemAmt;
                     }
-                } else {
-                    $todayCash += floatval($h->amount);
                 }
+            } else {
+                $todayBarCash += $amt;
             }
         }
 
-        $todayRevenue = $todayCash + $todayMobileMoney;
+        // Food Handovers (Verified Money)
+        $foodHandoversQuery = \App\Models\FinancialHandover::where('department', 'food')
+            ->whereDate('handover_date', $date)
+            ->where('status', 'verified');
+        if (!$isAdmin) {
+            $foodHandoversQuery->where('user_id', $ownerId);
+        }
+        $foodHandovers = $foodHandoversQuery->get();
+
+        $todayFoodVerified = 0;
+        $todayFoodCash = 0;
+        $todayFoodMobile = 0;
+        foreach ($foodHandovers as $h) {
+            $amt = (float)$h->amount;
+            $todayFoodVerified += $amt;
+            
+            $breakdown = $h->payment_breakdown ?? [];
+            if (is_string($breakdown)) $breakdown = json_decode($breakdown, true);
+            if (is_array($breakdown) && !empty($breakdown)) {
+                foreach ($breakdown as $key => $val) {
+                    $itemAmt = floatval($val);
+                    if ($key === 'shortage_payment' || $key === 'total') continue;
+                    if ($key === 'cash' || str_contains($key, 'cash_')) {
+                        $todayFoodCash += $itemAmt;
+                    } else {
+                        $todayFoodMobile += $itemAmt;
+                    }
+                }
+            } else {
+                $todayFoodCash += $amt;
+            }
+        }
+
+        $todayRevenue = $todayBarVerified + $todayFoodVerified;
+        $todayCash = $todayBarCash + $todayFoodCash;
+        $todayMobileMoney = $todayBarMobile + $todayFoodMobile;
 
         $todayOrdersCount = $todayOrders->count();
         $todayPaidOrders = $todayOrders->where('payment_status', 'paid')->count();
@@ -484,6 +522,8 @@ class AccountantController extends Controller
             'startDate',
             'endDate',
             'todayRevenue',
+            'todayBarVerified',
+            'todayFoodVerified',
             'todayCash',
             'todayMobileMoney',
             'todayExpenses',

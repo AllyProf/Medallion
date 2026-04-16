@@ -73,7 +73,7 @@
       <div class="info" style="color: white !important;">
         <h4 style="color: white !important; opacity: 0.9;">Today Revenue</h4>
         <p><b>TSh {{ number_format($todayRevenue) }}</b></p>
-        <div style="font-size: 10px; opacity: 0.8; margin-top: 4px; color: white !important;">Bar: {{ number_format($todayBarSales) }} | Food: {{ number_format($todayRevenue - $todayBarSales) }}</div>
+        <div style="font-size: 10px; opacity: 0.8; margin-top: 4px; color: white !important;">Bar: {{ number_format($todayBarVerified) }} | Food: {{ number_format($todayFoodVerified) }}</div>
       </div>
     </div>
   </div>
