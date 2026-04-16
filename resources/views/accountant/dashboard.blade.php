@@ -80,8 +80,8 @@
   <div class="col-md">
     <div class="widget-small info coloured-icon h-100"><i class="icon fa fa-cutlery fa-2x"></i>
       <div class="info">
-        <h4>Today Kitchen Profit</h4>
-        <p><b>TSh {{ number_format($todayRevenue - $todayBarSales) }}</b></p>
+        <h4>Today Kitchen Sales</h4>
+        <p><b>TSh {{ number_format($todayFoodSales) }}</b></p>
         <div style="font-size: 10px; opacity: 0; margin-top: 4px;">-</div> {{-- Hidden balancer --}}
       </div>
     </div>
