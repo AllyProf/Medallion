@@ -826,22 +826,7 @@ class WaiterController extends Controller
             ->groupBy('product_variant_id');
 
         $variants = ProductVariant::whereHas('product', function ($query) use ($ownerId) {
-            $query->where('user_id', $ownerId)
-                ->where(function ($q) {
-                    $q->where('category', 'like', '%beverage%')
-                        ->orWhere('category', 'like', '%drink%')
-                        ->orWhere('category', 'like', '%alcohol%')
-                        ->orWhere('category', 'like', '%beer%')
-                        ->orWhere('category', 'like', '%wine%')
-                        ->orWhere('category', 'like', '%champagne%')
-                        ->orWhere('category', 'like', '%spirit%')
-                        ->orWhere('category', 'like', '%gin%')
-                        ->orWhere('category', 'like', '%soda%')
-                        ->orWhere('category', 'like', '%water%')
-                        ->orWhere('category', 'like', '%juice%')
-                        ->orWhere('category', 'like', '%energ%')
-                        ->orWhere('category', 'like', '%soft drink%');
-                });
+            $query->where('user_id', $ownerId);
         })
             ->with([
                 'product',
@@ -1054,22 +1039,7 @@ class WaiterController extends Controller
             ->groupBy('product_variant_id');
 
         $variants = ProductVariant::whereHas('product', function ($query) use ($ownerId) {
-            $query->where('user_id', $ownerId)
-                ->where(function ($q) {
-                    $q->where('category', 'like', '%beverage%')
-                        ->orWhere('category', 'like', '%drink%')
-                        ->orWhere('category', 'like', '%alcohol%')
-                        ->orWhere('category', 'like', '%beer%')
-                        ->orWhere('category', 'like', '%wine%')
-                        ->orWhere('category', 'like', '%champagne%')
-                        ->orWhere('category', 'like', '%spirit%')
-                        ->orWhere('category', 'like', '%gin%')
-                        ->orWhere('category', 'like', '%soda%')
-                        ->orWhere('category', 'like', '%water%')
-                        ->orWhere('category', 'like', '%juice%')
-                        ->orWhere('category', 'like', '%energ%')
-                        ->orWhere('category', 'like', '%soft drink%');
-                });
+            $query->where('user_id', $ownerId);
         })
             ->with([
                 'product',

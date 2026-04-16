@@ -617,7 +617,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             <div class="cart-top-form">
                 <div class="form-group-dark" style="grid-column: span 2;">
                     <label>Enter Waiter PIN*</label>
-                    <input type="text" class="form-control-dark font-weight-bold" id="form-waiter-pin" placeholder="1234" inputmode="numeric" pattern="\d*" maxlength="4" required style="font-size: 1.5rem; text-align:center;">
+                    <input type="password" class="form-control-dark font-weight-bold" id="form-waiter-pin" placeholder="1234" inputmode="numeric" pattern="\d*" maxlength="4" required autocomplete="new-password" style="font-size: 1.5rem; text-align:center; -webkit-text-security: disc;">
                     <div id="form-waiter-name-display" class="mt-1" style="font-size: 0.95rem; color: var(--accent-green); font-weight: bold; min-height: 1.5rem; text-align: center;"></div>
                     <input type="hidden" id="form-waiter-id">
                 </div>
@@ -793,7 +793,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     <div class="mb-3">
                         <input type="password" class="form-control text-center shadow-sm font-weight-bold" id="action-pin" 
                                name="pin" placeholder="PIN" inputmode="numeric" pattern="\d*" maxlength="4"
-                               autocomplete="off"
+                               autocomplete="new-password"
                                style="font-size: 2rem; height: 60px; background:#111; color:var(--accent-yellow); border:1px solid #333;">
                     </div>
 
