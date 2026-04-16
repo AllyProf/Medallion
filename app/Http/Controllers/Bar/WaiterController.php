@@ -894,9 +894,10 @@ class WaiterController extends Controller
                 $isGenericSingle = ($strippedWords === 1 &&
                                     in_array(strtolower($strippedV), $genericDescriptors));
 
-                // Variant name is usable if: non-empty AND (2+ words OR long single word not generic)
+                // Variant name is usable if: non-empty AND (2+ words OR reasonable length single word not generic)
+                // Reduced threshold from 5 to 3 to accommodate names like 'Soda', 'Fanta', 'image'
                 $useVariantName = !empty($strippedV) &&
-                                  ($strippedWords >= 2 || (strlen($strippedV) > 5 && !$isGenericSingle));
+                                  ($strippedWords >= 2 || (strlen($strippedV) >= 4 && !$isGenericSingle));
 
                 if ($useVariantName) {
                     // Use the variant's specific name as core (e.g., "Fanta Orange")
@@ -1097,8 +1098,9 @@ class WaiterController extends Controller
                 $strippedWords = str_word_count($strippedV);
                 $isGenericSingle = ($strippedWords === 1 &&
                                     in_array(strtolower($strippedV), $genericDescriptors));
+                // Variant name is usable if: non-empty AND (2+ words OR reasonable length single word not generic)
                 $useVariantName = !empty($strippedV) &&
-                                  ($strippedWords >= 2 || (strlen($strippedV) > 5 && !$isGenericSingle));
+                                  ($strippedWords >= 2 || (strlen($strippedV) >= 4 && !$isGenericSingle));
 
                 if ($useVariantName) {
                     $productNameBase = $variantSpecificName;

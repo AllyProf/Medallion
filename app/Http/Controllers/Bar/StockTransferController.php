@@ -46,6 +46,13 @@ class StockTransferController extends Controller
         $ownerId = $this->getOwnerId();
         $transfers = StockTransfer::where('user_id', $ownerId)
             ->with(['productVariant.product', 'productVariant.counterStock', 'requestedBy', 'requestedByStaff', 'approvedBy', 'approvedByStaff'])
+            ->orderByRaw("CASE 
+                WHEN status = 'approved' THEN 1 
+                WHEN status = 'prepared' THEN 2 
+                WHEN status = 'pending' THEN 3 
+                WHEN status = 'rejected' THEN 5
+                WHEN status = 'completed' THEN 6 
+                ELSE 4 END ASC")
             ->orderBy('transfer_number', 'desc')
             ->orderBy('created_at', 'desc')
             ->paginate(20);
@@ -221,7 +228,7 @@ class StockTransferController extends Controller
             $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
             if ($staff && $staff->role) {
                 $roleName = strtolower(trim($staff->role->name ?? ''));
-                if (in_array($roleName, ['counter', 'bar counter', 'stock keeper', 'stockkeeper'])) {
+                if (in_array($roleName, ['counter', 'bar counter', 'stock keeper', 'stockkeeper', 'accountant', 'manager'])) {
                     $canCreate = true;
                 }
             }
@@ -294,7 +301,7 @@ class StockTransferController extends Controller
             $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
             if ($staff && $staff->role) {
                 $roleName = strtolower(trim($staff->role->name ?? ''));
-                if (in_array($roleName, ['counter', 'bar counter', 'stock keeper', 'stockkeeper'])) {
+                if (in_array($roleName, ['counter', 'bar counter', 'stock keeper', 'stockkeeper', 'accountant', 'manager'])) {
                     $canCreate = true;
                 }
             }
@@ -436,7 +443,7 @@ class StockTransferController extends Controller
             $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
             if ($staff && $staff->role) {
                 $roleName = strtolower(trim($staff->role->name ?? ''));
-                if (in_array($roleName, ['counter', 'bar counter', 'stock keeper', 'stockkeeper'])) {
+                if (in_array($roleName, ['counter', 'bar counter', 'stock keeper', 'stockkeeper', 'accountant', 'manager'])) {
                     $canCreate = true;
                 }
             }
@@ -704,7 +711,7 @@ class StockTransferController extends Controller
             $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
             if ($staff && $staff->role) {
                 $roleName = strtolower(trim($staff->role->name ?? ''));
-                if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
+                if (in_array($roleName, ['stock keeper', 'stockkeeper', 'accountant', 'manager'])) {
                     $canApprove = true;
                 }
             }
@@ -804,7 +811,7 @@ class StockTransferController extends Controller
             $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
             if ($staff && $staff->role) {
                 $roleName = strtolower(trim($staff->role->name ?? ''));
-                if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
+                if (in_array($roleName, ['stock keeper', 'stockkeeper', 'accountant', 'manager'])) {
                     $canReject = true;
                 }
             }
@@ -879,8 +886,19 @@ class StockTransferController extends Controller
             abort(403, 'You do not have access to this stock transfer.');
         }
 
-        // Check permission
-        if (!$this->hasPermission('stock_transfer', 'edit')) {
+        // Check permission - allow stock_transfer edit or counter role
+        $canEdit = $this->hasPermission('stock_transfer', 'edit');
+        if (!$canEdit && session('is_staff')) {
+            $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
+            if ($staff && $staff->role) {
+                $roleName = strtolower(trim($staff->role->name ?? ''));
+                if (in_array($roleName, ['counter', 'bar counter', 'accountant', 'manager', 'stock keeper', 'stockkeeper'])) {
+                    $canEdit = true;
+                }
+            }
+        }
+
+        if (!$canEdit) {
             abort(403, 'You do not have permission to mark transfers as prepared.');
         }
 
@@ -941,8 +959,19 @@ class StockTransferController extends Controller
             abort(403, 'You do not have access to this stock transfer.');
         }
 
-        // Check permission
-        if (!$this->hasPermission('stock_transfer', 'edit')) {
+        // Check permission - allow stock_transfer edit or counter role
+        $canEdit = $this->hasPermission('stock_transfer', 'edit');
+        if (!$canEdit && session('is_staff')) {
+            $staff = \App\Models\Staff::with('role')->find(session('staff_id'));
+            if ($staff && $staff->role) {
+                $roleName = strtolower(trim($staff->role->name ?? ''));
+                if (in_array($roleName, ['counter', 'bar counter', 'accountant', 'manager', 'stock keeper', 'stockkeeper'])) {
+                    $canEdit = true;
+                }
+            }
+        }
+
+        if (!$canEdit) {
             abort(403, 'You do not have permission to mark transfers as moved.');
         }
 

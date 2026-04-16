@@ -151,28 +151,39 @@
                     <td><small class="text-muted">{{ $transfer->created_at->format('M d, Y H:i') }}</small></td>
                     <td><small class="text-muted">{{ $transfer->approved_at ? $transfer->approved_at->format('M d, Y H:i') : '-' }}</small></td>
                     <td>
-                      @if($isNewBatch)
+                      @php
+                        // Determine if we should show the full action group for this row
+                        // We show it if it's a new batch OR if the transfer needs action (not completed/rejected)
+                        $needsAction = in_array($transfer->status, ['pending', 'approved', 'prepared']);
+                        $showActions = $isNewBatch || $needsAction;
+                      @endphp
+                      
+                      @if($showActions)
                         @php
                           $canEdit = false;
+                          $roleName = '';
                           if (session('is_staff')) {
                             $staff = \App\Models\Staff::find(session('staff_id'));
-                            if ($staff && $staff->role) {
-                              $canEdit = $staff->role->hasPermission('stock_transfer', 'edit');
-                              if (!$canEdit) {
-                                $roleName = strtolower(trim($staff->role->name ?? ''));
-                                if (in_array($roleName, ['stock keeper', 'stockkeeper'])) $canEdit = true;
-                              }
-                            }
+                             if ($staff && $staff->role) {
+                               $roleName = strtolower(trim($staff->role->name ?? ''));
+                               $canEdit = $staff->role->hasPermission('stock_transfer', 'edit');
+                               if (!$canEdit) {
+                                 if (in_array($roleName, ['stock keeper', 'stockkeeper', 'counter', 'bar counter', 'accountant', 'manager'])) $canEdit = true;
+                               }
+                             }
                           } else {
                             $user = Auth::user();
                             $canEdit = $user && ($user->hasPermission('stock_transfer', 'edit') || $user->hasRole('owner'));
+                            if ($user && $user->hasRole('owner')) $roleName = 'owner';
                           }
                         @endphp
+                        
                         <div class="btn-group" role="group">
                           <button type="button" class="btn btn-primary btn-sm view-transfer-btn" data-transfer-id="{{ $transfer->id }}" title="View Batch Details">
                              <i class="fa fa-eye"></i> View Batch
                           </button>
-                          @if($canEdit)
+                          
+                          @if($canEdit && $needsAction)
                             @if($transfer->status === 'pending')
                               <button type="button" class="btn btn-success btn-sm approve-btn" data-transfer-id="{{ $transfer->id }}" data-transfer-number="{{ $transfer->transfer_number }}" title="Approve Batch">
                                 <i class="fa fa-check"></i>
@@ -184,6 +195,11 @@
                               <button type="button" class="btn btn-info btn-sm prepare-btn" data-transfer-id="{{ $transfer->id }}" data-transfer-number="{{ $transfer->transfer_number }}" title="Mark Batch as Prepared">
                                 <i class="fa fa-cubes"></i>
                               </button>
+                              @if(in_array($roleName, ['counter', 'bar counter', 'waiter', 'accountant', 'manager']))
+                                <button type="button" class="btn btn-success btn-sm mark-moved-btn" data-transfer-id="{{ $transfer->id }}" title="Receive Stock (Skip Preparation)">
+                                  <i class="fa fa-truck"></i>
+                                </button>
+                              @endif
                             @elseif($transfer->status === 'prepared')
                               <button type="button" class="btn btn-success btn-sm mark-moved-btn" data-transfer-id="{{ $transfer->id }}" title="Transfer Batch to Counter">
                                 <i class="fa fa-truck"></i>
