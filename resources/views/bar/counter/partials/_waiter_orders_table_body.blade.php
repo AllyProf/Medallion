@@ -46,7 +46,11 @@
         <td><strong>{{ $order->order_number }}</strong> @if($orderStatus === 'cancelled') <span class="badge badge-danger">CANCELLED</span> @endif</td>
         <td>
             @if($order->waiter)
-                <i class="fa fa-user"></i> {{ $order->waiter->full_name }}<br>
+                <i class="fa fa-user"></i> {{ $order->waiter->full_name }}
+                @if($order->order_source === 'kiosk')
+                    <small class="text-info d-block">(via Kiosk)</small>
+                @endif
+                <br>
                 <small class="text-muted">{{ $order->waiter->staff_id }}</small>
             @else
                 <span class="text-muted">N/A</span>

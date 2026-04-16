@@ -59,12 +59,17 @@ class ProductHelper
             }
         }
 
-        // Append measurement if not already there (ignoring spaces for comparison)
-        $nmBase = str_replace(' ', '', strtolower($productNameBase));
-        $nmClean = str_replace(' ', '', strtolower($cleanM));
-        
-        if ($cleanM && stripos($nmBase, $nmClean) === false) {
-            $productNameBase .= ' (' . $cleanM . ')';
+        // Strip volume patterns from product name if we have a variant measurement
+        if ($cleanM) {
+            $volumeRegex = '/\d+(\.\d+)?\s*(ml|l|liter|liters|kg|grams|g|btl|pcs|pieces)\b/i';
+            $nmBaseStripped = trim(preg_replace($volumeRegex, '', $productNameBase));
+            $compBase = str_replace(' ', '', strtolower($nmBaseStripped));
+            $compClean = str_replace(' ', '', strtolower($cleanM));
+            if (stripos($compBase, $compClean) === false) {
+                $productNameBase = $nmBaseStripped . ' (' . $cleanM . ')';
+            } else {
+                $productNameBase = $nmBaseStripped;
+            }
         }
         
         // If the original product name was specific context we discarded, append it as a variant?
