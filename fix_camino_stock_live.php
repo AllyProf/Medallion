@@ -17,7 +17,7 @@ if (!$variant) {
 }
 
 $userId = 4; // This is the owner ID detected on your system
-$qty = 11 / 18; // 1 bottle = 18 shots, so 11 shots = 11/18 units
+$qty = 0.62; // Set to 0.62 to ensure it displays as exactly 11 shots (due to DB precision)
 
 DB::beginTransaction();
 try {
