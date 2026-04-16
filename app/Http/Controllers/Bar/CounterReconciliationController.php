@@ -47,39 +47,36 @@ class CounterReconciliationController extends Controller
         // Get location from session (branch switcher)
         $location = session('active_location');
 
+        // Find the specific active shift context
         $bar_shift = \App\Models\BarShift::when(!$isSuperAdmin, function($q) use ($ownerId) {
                 return $q->where('user_id', $ownerId);
             })
             ->where('status', 'open')
+            ->when($location && $location !== 'all', function($q) use ($location) {
+                $q->where('location_branch', $location);
+            })
             ->when($currentStaff && !$isAccountant && !$isSuperAdmin, function ($q) use ($currentStaff) {
                 $q->where('staff_id', $currentStaff->id);
             })
+            ->orderBy('created_at', 'desc')
             ->first();
 
-        // Check if there is already a handover for this shift/date
+        // Check for relevant Handover context
         $todayHandover = null;
         if ($currentStaff) {
-            // Find the shift context for the current active shift (if any)
-            $handoverShiftId = $bar_shift ? $bar_shift->id : null;
-
             $handoverQuery = FinancialHandover::where('user_id', $ownerId)
                 ->where('handover_type', 'staff_to_accountant');
 
-            if ($isAccountant || $isSuperAdmin) {
-                // Accountant sees handovers where they are recipients for this date
-                $handoverQuery->whereDate('handover_date', $date);
+            if ($bar_shift) {
+                // IMPORTANT: If there is an active OPEN shift, we ONLY look for its handover.
+                // This allows a NEWLY opened shift to take priority over a PREVIOUS verified handover today.
+                $handoverQuery->where('bar_shift_id', $bar_shift->id);
             } else {
-                // Staff sees their own handovers
-                if ($currentStaff) {
-                    $handoverQuery->where('accountant_id', $currentStaff->id);
-                }
+                // Otherwise look for the latest handover for this date (Historical View)
+                $handoverQuery->whereDate('handover_date', $date);
 
-                if ($handoverShiftId) {
-                    // If looking at an active shift, prioritize that shift's handover
-                    $handoverQuery->where('bar_shift_id', $handoverShiftId);
-                } else {
-                    // Otherwise show the latest for this date
-                    $handoverQuery->whereDate('handover_date', $date);
+                if (!$isAccountant && !$isSuperAdmin) {
+                    $handoverQuery->where('accountant_id', $currentStaff->id);
                 }
             }
 
