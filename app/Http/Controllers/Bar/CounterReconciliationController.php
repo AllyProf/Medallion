@@ -93,6 +93,7 @@ class CounterReconciliationController extends Controller
         // This ensures orders from ALL waiters working on DIFFERENT shifts show up in one view.
         $allOpenShiftIds = \App\Models\BarShift::where('user_id', $ownerId)
             ->where('status', 'open')
+            ->whereDate('created_at', $date)
             ->pluck('id')
             ->toArray();
             
