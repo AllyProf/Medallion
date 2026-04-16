@@ -17,7 +17,7 @@ if (!$variant) {
 }
 
 $userId = 4; // This is the owner ID detected on your system
-$qty = 11.00;
+$qty = 11 / 18; // 1 bottle = 18 shots, so 11 shots = 11/18 units
 
 DB::beginTransaction();
 try {
@@ -35,7 +35,7 @@ try {
         'to_location' => 'counter',
         'quantity' => $qty,
         'movement_type' => 'adjustment',
-        'notes' => 'Manual adjustment: Set to 11 tots as requested.'
+        'notes' => 'Manual adjustment: set to exactly 11 shots.'
     ]);
 
     DB::commit();
