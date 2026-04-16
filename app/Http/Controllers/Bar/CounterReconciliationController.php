@@ -47,16 +47,64 @@ class CounterReconciliationController extends Controller
         // Get location from session (branch switcher)
         $location = session('active_location');
 
+        $bar_shift = \App\Models\BarShift::when(!$isSuperAdmin, function($q) use ($ownerId) {
+                return $q->where('user_id', $ownerId);
+            })
+            ->where('status', 'open')
+            ->when($currentStaff && !$isAccountant && !$isSuperAdmin, function ($q) use ($currentStaff) {
+                $q->where('staff_id', $currentStaff->id);
+            })
+            ->first();
+
+        // Check if there is already a handover for this shift/date
+        $todayHandover = null;
+        if ($currentStaff) {
+            // Find the shift context for the current active shift (if any)
+            $handoverShiftId = $bar_shift ? $bar_shift->id : null;
+
+            $handoverQuery = FinancialHandover::where('user_id', $ownerId)
+                ->where('handover_type', 'staff_to_accountant');
+
+            if ($isAccountant || $isSuperAdmin) {
+                // Accountant sees handovers where they are recipients for this date
+                $handoverQuery->whereDate('handover_date', $date);
+            } else {
+                // Staff sees their own handovers
+                if ($currentStaff) {
+                    $handoverQuery->where('accountant_id', $currentStaff->id);
+                }
+
+                if ($handoverShiftId) {
+                    // If looking at an active shift, prioritize that shift's handover
+                    $handoverQuery->where('bar_shift_id', $handoverShiftId);
+                } else {
+                    // Otherwise show the latest for this date
+                    $handoverQuery->whereDate('handover_date', $date);
+                }
+            }
+
+            $todayHandover = $handoverQuery->orderBy('created_at', 'desc')->first();
+        }
+
+        // If a handover exists, we derive our shift context and target date from it
+        $targetShiftId = $todayHandover ? $todayHandover->bar_shift_id : ($bar_shift ? $bar_shift->id : null);
+        $reconciliationDate = $todayHandover ? $todayHandover->handover_date : $date;
+
         // Get waiters, or anyone who placed an order today, or has a reconciliation today
         $waitersQuery = Staff::where('is_active', true)
-            ->where(function ($query) use ($date, $location) {
+            ->where(function ($query) use ($date, $location, $targetShiftId) {
                 // Role check
                 $query->whereHas('role', function ($q) {
                     $q->where('slug', 'waiter');
                 })
-                    // OR orders today check
-                    ->orWhereHas('orders', function ($q) use ($date, $location) {
-                        $q->whereDate('created_at', $date);
+                    // OR orders today/shift check
+                    ->orWhereHas('orders', function ($q) use ($date, $location, $targetShiftId) {
+                        if ($targetShiftId) {
+                            $q->where('bar_shift_id', $targetShiftId);
+                        } else {
+                            $q->whereDate('created_at', $date);
+                        }
+
                         if ($location && $location !== 'all') {
                             $q->whereHas('table', function ($sq) use ($location) {
                                 $sq->where('location', $location);
@@ -64,9 +112,13 @@ class CounterReconciliationController extends Controller
                         }
                     })
                     // OR daily reconciliations check
-                    ->orWhereHas('dailyReconciliations', function ($q) use ($date) {
-                        $q->where('reconciliation_date', $date)
-                            ->where('reconciliation_type', 'bar');
+                    ->orWhereHas('dailyReconciliations', function ($q) use ($date, $targetShiftId) {
+                        if ($targetShiftId) {
+                            $q->where('bar_shift_id', $targetShiftId);
+                        } else {
+                            $q->where('reconciliation_date', $date);
+                        }
+                        $q->where('reconciliation_type', 'bar');
                     });
             })
             ->when($location && $location !== 'all', function ($q) use ($location) {
@@ -78,27 +130,19 @@ class CounterReconciliationController extends Controller
             $waitersQuery->where('user_id', $ownerId);
         }
 
-        $bar_shift = \App\Models\BarShift::when(!$isSuperAdmin, function($q) use ($ownerId) {
-                return $q->where('user_id', $ownerId);
-            })
-            ->where('status', 'open')
-            ->when($currentStaff && !$isAccountant && !$isSuperAdmin, function ($q) use ($currentStaff) {
-                $q->where('staff_id', $currentStaff->id);
-            })
-            ->first();
-
         $waiters = $waitersQuery
             ->with([
-                'dailyReconciliations' => function ($q) use ($date, $bar_shift) {
-                    $q->where('reconciliation_date', $date)
-                        ->where('reconciliation_type', 'bar') // Only get bar reconciliations
-                        ->when($bar_shift, function ($sq) use ($bar_shift) {
-                            $sq->where('bar_shift_id', $bar_shift->id);
+                'dailyReconciliations' => function ($q) use ($date, $targetShiftId) {
+                    $q->where('reconciliation_type', 'bar')
+                        ->when($targetShiftId, function ($sq) use ($targetShiftId) {
+                            $sq->where('bar_shift_id', $targetShiftId);
+                        }, function($sq) use ($date) {
+                            $sq->where('reconciliation_date', $date);
                         });
                 },
             ])
             ->get()
-            ->map(function ($waiter) use ($ownerId, $date, $isAccountant, $isSuperAdmin, $location, $bar_shift) {
+            ->map(function ($waiter) use ($ownerId, $date, $isAccountant, $isSuperAdmin, $location, $targetShiftId) {
                 $ordersQuery = BarOrder::query()
                     ->where('waiter_id', $waiter->id)
                     ->when($location && $location !== 'all', function ($q) use ($location) {
@@ -111,9 +155,6 @@ class CounterReconciliationController extends Controller
                 if (!$isAccountant && !$isSuperAdmin) {
                     $ordersQuery->where('user_id', $ownerId);
                 }
-
-                $bar_reconciliation = $waiter->dailyReconciliations->first();
-                $targetShiftId = $bar_reconciliation ? $bar_reconciliation->bar_shift_id : ($bar_shift ? $bar_shift->id : null);
 
                 $allOrders = $ordersQuery
                     ->when($targetShiftId, function ($q) use ($targetShiftId) {
@@ -342,35 +383,7 @@ class CounterReconciliationController extends Controller
             ->where('is_active', true)
             ->first();
 
-        // Check if there is already a handover for this shift/date
-        $todayHandover = null;
-        if ($currentStaff) {
-            // Find the shift context for the handover
-            $handoverShiftId = $bar_shift ? $bar_shift->id : null;
-
-            $handoverQuery = FinancialHandover::where('user_id', $ownerId)
-                ->where('handover_type', 'staff_to_accountant');
-
-            if ($isAccountant || $isSuperAdmin) {
-                // Accountant sees handovers where they are recipients for this date
-                $handoverQuery->whereDate('handover_date', $date);
-            } else {
-                // Staff sees their own handovers
-                if ($currentStaff) {
-                    $handoverQuery->where('accountant_id', $currentStaff->id);
-                }
-
-                if ($handoverShiftId) {
-                    // If looking at an active shift, prioritize that shift's handover
-                    $handoverQuery->where('bar_shift_id', $handoverShiftId);
-                } else {
-                    // Otherwise show the latest for this date
-                    $handoverQuery->whereDate('handover_date', $date);
-                }
-            }
-
-            $todayHandover = $handoverQuery->orderBy('created_at', 'desc')->first();
-        }
+        // Handover was already detected above
 
         // Management roles (Accountant/Manager/Admin) should not see any waiter data until they receive a handover
         if ($isManagementRole && ! $todayHandover) {

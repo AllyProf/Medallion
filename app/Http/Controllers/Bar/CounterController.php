@@ -1103,11 +1103,9 @@ class CounterController extends Controller
                     $openTots = $openBottles->get($variant->id)->sum('tots_remaining');
                 }
 
-                // Normalize Category: Split compound categories so e.g. "Soda and Water" → "Soda"
+                // Standardize Category extraction
                 $rawCat = $variant->product->category ?? 'General';
-                // Split on comma, pipe, slash, " and ", " & "
-                $splitCats = preg_split('/[,\/|]+|\s+and\s+|\s+&\s+/i', $rawCat);
-                $cat = ucwords(strtolower(trim($splitCats[0] ?? 'General')));
+                $cat = trim($rawCat);
 
                 return [
                     'id' => $variant->id,

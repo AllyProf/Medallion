@@ -833,11 +833,13 @@ class WaiterController extends Controller
                         ->orWhere('category', 'like', '%alcohol%')
                         ->orWhere('category', 'like', '%beer%')
                         ->orWhere('category', 'like', '%wine%')
+                        ->orWhere('category', 'like', '%champagne%')
                         ->orWhere('category', 'like', '%spirit%')
+                        ->orWhere('category', 'like', '%gin%')
                         ->orWhere('category', 'like', '%soda%')
                         ->orWhere('category', 'like', '%water%')
                         ->orWhere('category', 'like', '%juice%')
-                        ->orWhere('category', 'like', '%energy%')
+                        ->orWhere('category', 'like', '%energ%')
                         ->orWhere('category', 'like', '%soft drink%');
                 });
         })
@@ -946,13 +948,7 @@ class WaiterController extends Controller
 
                 // Standardize Category extraction (same as Counter)
                 $rawCat = $variant->product->category ?? 'General';
-                $splitCats = preg_split('/[,|\/]+/', $rawCat);
-                $finalCat = trim($splitCats[0] ?? 'General');
-
-                // Specifically unify "Energy" branding into "Energies"
-                if (stripos($finalCat, 'energy') !== false || stripos($finalCat, 'energizer') !== false) {
-                    $finalCat = 'Energies';
-                }
+                $finalCat = trim($rawCat);
 
                 return [
                     'id' => $variant->id,
@@ -1065,11 +1061,14 @@ class WaiterController extends Controller
                         ->orWhere('category', 'like', '%alcohol%')
                         ->orWhere('category', 'like', '%beer%')
                         ->orWhere('category', 'like', '%wine%')
+                        ->orWhere('category', 'like', '%champagne%')
                         ->orWhere('category', 'like', '%spirit%')
+                        ->orWhere('category', 'like', '%gin%')
                         ->orWhere('category', 'like', '%soda%')
                         ->orWhere('category', 'like', '%water%')
                         ->orWhere('category', 'like', '%juice%')
-                        ->orWhere('category', 'like', '%energy%');
+                        ->orWhere('category', 'like', '%energ%')
+                        ->orWhere('category', 'like', '%soft drink%');
                 });
         })
             ->with([
@@ -1164,13 +1163,7 @@ class WaiterController extends Controller
 
                 // Standardize Category extraction (same as Counter)
                 $rawCat = $variant->product->category ?? 'General';
-                $splitCats = preg_split('/[,|\/]+/', $rawCat);
-                $finalCat = trim($splitCats[0] ?? 'General');
-
-                // Specifically unify "Energy" branding into "Energies"
-                if (stripos($finalCat, 'energy') !== false || stripos($finalCat, 'energizer') !== false) {
-                    $finalCat = 'Energies';
-                }
+                $finalCat = trim($rawCat);
 
                 return [
                     'id' => $variant->id,

@@ -178,11 +178,11 @@
                       @if($ledger->status === 'closed' && !$ledger->isManagerReceived)
                           <div class="">
                               @if($ledger->managerReceiptStatus === 'none')
-                                  <button data-id="{{ $ledger->id }}" data-amount="{{ $netProfit }}" class="btn btn-success btn-sm btn-block shadow-sm submit-to-boss-btn" style="font-size: 11px; border-radius: 4px;">
+                                  <button data-id="{{ $ledger->id }}" data-amount="{{ round($netProfit) }}" class="btn btn-success btn-sm btn-block shadow-sm submit-to-boss-btn" style="font-size: 11px; border-radius: 4px;">
                                       <i class="fa fa-send"></i> Submit Payout
                                   </button>
                               @elseif($ledger->managerReceiptStatus === 'pending')
-                                  <button data-id="{{ $ledger->id }}" data-amount="{{ $netProfit }}" data-mode="update" class="btn btn-warning btn-sm btn-block shadow-sm submit-to-boss-btn" style="font-size: 11px; border-radius: 4px; color: #000;">
+                                  <button data-id="{{ $ledger->id }}" data-amount="{{ round($netProfit) }}" data-mode="update" class="btn btn-warning btn-sm btn-block shadow-sm submit-to-boss-btn" style="font-size: 11px; border-radius: 4px; color: #000;">
                                       <i class="fa fa-refresh"></i> Update Payout
                                   </button>
                               @endif
@@ -357,7 +357,7 @@ $(document).on('click', '.submit-to-boss-btn', function() {
     const successTitle = isUpdate ? 'Updated!' : 'Sent!';
 
     showConfirm(
-        (isUpdate ? "Update existing payout to " : "Submit ") + "TSh " + parseInt(amount).toLocaleString() + " profit to the Boss now?",
+        (isUpdate ? "Update existing payout to " : "Submit ") + "TSh " + Math.round(amount).toLocaleString() + " profit to the Boss now?",
         title,
         function() {
             btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Processing...');
@@ -368,7 +368,7 @@ $(document).on('click', '.submit-to-boss-btn', function() {
                 data: {
                     _token: "{{ csrf_token() }}",
                     ledger_id: ledgerId,
-                    amount: amount
+                    amount: Math.round(amount)
                 },
                 success: function(response) {
                     if (response.success) {

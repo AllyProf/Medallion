@@ -174,7 +174,7 @@
 <div class="row">
   <div class="col-md-12">
     <div class="tile">
-      <h3 class="tile-title">Waiters Reconciliation - {{ \Carbon\Carbon::parse($date)->format('F d, Y') }}</h3>
+      <h3 class="tile-title">Waiters Reconciliation</h3>
       <div class="tile-body">
         @if($waiters->count() > 0)
           <div class="table-responsive shadow-sm">

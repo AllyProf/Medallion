@@ -1,0 +1,149 @@
+ID,"Product Name","Variant Name",Measurement,Package
+24,"Red Bull Energy","Red Bull Energy",250,Outer
+25,"Red Bull Energy","Grand Malta",330,Outer
+26,"Bonite Soda","Bonite Soda",350,Crate
+27,M/Water,"M/Water Big",1.5,Carton
+28,M/Water,"M/Water Small",500,Carton
+29,"Ceres Juice","Ceres Juice",1,Carton
+30,Bavaria,"Bavaria Chupa",330,Outer
+31,Bavaria,"Bavaria Can",330,Outer
+32,Baltika,Baltika,450,Outer
+33,"Castle Lite","Castle Lite",330,Crate
+34,"Castle Lite","Kilimanjaro Ndogo",375,Crate
+35,"Castle Lite","Kilimanjaro Kubwa",500,Crate
+36,"Castle Lite","Safari Ndogo",375,Crate
+37,"Castle Lite","Safari Kubwa",500,Crate
+38,"Castle Lite","Serengeti Lager Ndogo",330,Crate
+39,"Castle Lite","Serengeti Lager Kubwa",500,Crate
+40,"Castle Lite","Serengeti Lite",330,Crate
+41,"Castle Lite","Serengeti Lemon",300,Crate
+42,"Castle Lite","Castle Lager",500,Crate
+43,"Castle Lite","Fly Fish",330,Crate
+44,"Castle Lite","Guinness Kubwa",500,Crate
+45,"Castle Lite","Guinness Smooth",300,Crate
+46,"Castle Lite","Smirnoff Black Ice",300,Crate
+47,"Castle Lite","Smirnoff Black Guarana",300,Crate
+48,"Castle Lite","Heineken lager",330,Outer
+49,"Castle Lite",Windhoek,330,Outer
+50,"Castle Lite","Brutal Apple Ruby",330,Outer
+51,"Castle Lite",Stella,330,Carton
+52,"Castle Lite",Corona,330,Carton
+53,"Castle Lite","Heineken silver",330,Carton
+54,"Hennessy VSOP 750ml","Hennessy VSOP 750ml",750,Piece
+55,"Hennessy VSOP 750ml","Hennessy VS 1L",1000,Piece
+56,"Hennessy VSOP 750ml","Hennessy VS 750ml",750,Piece
+57,"Hennessy VSOP 750ml","Hennessy VS 200ml",200,Piece
+58,"Hennessy VSOP 750ml","Martell VSOP",750,Piece
+59,"Hennessy VSOP 750ml","Martell VS",750,Piece
+60,"Hennessy VSOP 750ml","J/walker-Red Label 750ml",750,Piece
+61,"Hennessy VSOP 750ml","J/walker-Black Label 750ml",750,Piece
+62,"Hennessy VSOP 750ml","J/walker-Red Label 375ml",375,Piece
+63,"Hennessy VSOP 750ml","J/walker-Black Label 375ml",375,Piece
+64,"Hennessy VSOP 750ml","Jack Daniel's 1L",1000,Piece
+65,"Hennessy VSOP 750ml","Jack Daniel's 750ml",750,Piece
+66,"Hennessy VSOP 750ml","Jack Daniel's 375ml",375,Piece
+67,"Hennessy VSOP 750ml","Jack Daniel's 200ml",200,Piece
+68,"Hennessy VSOP 750ml","Jack Daniel's Honey 1L",1000,Piece
+69,"Hennessy VSOP 750ml","Jack Daniel's Honey 750ml",750,Piece
+70,"Hennessy VSOP 750ml","Jack Daniel's Honey 375ml",375,Piece
+71,"Hennessy VSOP 750ml","Jack Daniel's Honey 200ml",200,Piece
+72,"Hennessy VSOP 750ml","Ballantine's 750ml",750,Piece
+73,"Hennessy VSOP 750ml","Ballantine's 375ml",375,Piece
+74,"Hennessy VSOP 750ml","Ballantine's 200ml",200,Piece
+75,"Hennessy VSOP 750ml","Singleton 12 yrs",700,Piece
+76,"Hennessy VSOP 750ml","Singleton 15 yrs",700,Piece
+77,"Hennessy VSOP 750ml","Black & White 750ml",750,Piece
+78,"Hennessy VSOP 750ml","Black & White 200ml",200,Piece
+79,"Hennessy VSOP 750ml","Jägermeister 1L",1000,Piece
+80,"Hennessy VSOP 750ml","Jägermeister 750ml",750,Piece
+81,"Hennessy VSOP 750ml","Jägermeister 350ml",350,Piece
+82,"Hennessy VSOP 750ml","Jägermeister 200ml",200,Piece
+83,"Hennessy VSOP 750ml","Absolut Vodka 1L",1000,Piece
+84,"Hennessy VSOP 750ml","Absolut Vodka 750ml",750,Piece
+85,"Hennessy VSOP 750ml","Absolut Vodka 350ml",350,Piece
+86,"Hennessy VSOP 750ml","Absolut Vodka 200ml",200,Piece
+87,"Hennessy VSOP 750ml","Magic Moments Green Apple 750ml",750,Piece
+88,"Hennessy VSOP 750ml","Magic Moments Chocolate 750ml",750,Piece
+89,"Hennessy VSOP 750ml","Jameson 1L",1000,Piece
+90,"Hennessy VSOP 750ml","Jameson 750ml",750,Piece
+91,"Hennessy VSOP 750ml","Jameson 375ml",375,Piece
+92,"Hennessy VSOP 750ml","Jameson 200ml",200,Piece
+93,"Hennessy VSOP 750ml","Jameson Black Barrel 750ml",750,Piece
+94,"Hennessy VSOP 750ml","J & B 1L",1000,Piece
+95,"Hennessy VSOP 750ml","J & B 750ml",750,Piece
+96,"Hennessy VSOP 750ml","J & B 200ml",200,Piece
+97,"Hennessy VSOP 750ml","Grants 1L",1000,Piece
+98,"Hennessy VSOP 750ml","Grants 750ml Glass",750,Piece
+99,"Hennessy VSOP 750ml","Camino Tequila",750,Piece
+100,"Hennessy VSOP 750ml","Famous Grouse 350ml",350,Piece
+101,"Hennessy VSOP 750ml","Olmeca Tequila 750ml",750,Piece
+102,"Gordons 200ml","Gordons 200ml",200,Piece
+103,"Gordons 200ml","Gordons 750ml",750,Piece
+104,"Gordons 200ml","Konyagi 200ml",200,Piece
+105,"Gordons 200ml","Konyagi 500ml",500,Piece
+106,"Gordons 200ml","Konyagi 750ml",750,Piece
+107,"Gordons 200ml","Hanson Choice 200ml",200,Piece
+108,"Gordons 200ml","Hanson Choice 750ml",750,Piece
+109,"Gordons 200ml","Highlife 750ml",750,Piece
+110,"Gordons 200ml","K-Vant 750ml",750,Piece
+111,"Gordons 200ml","K-Vant 200ml",200,Piece
+112,"Martin Champagne 750ml","Martin Champagne 750ml",750,Piece
+113,"Martin Champagne 750ml","Moët Nectar Imperial",750,Piece
+114,"Martin Champagne 750ml","Moët Rosé",750,Piece
+115,"Martin Champagne 750ml","Provetto Rosé",750,Piece
+116,"Martin Champagne 750ml","Provetto Brut",750,Piece
+117,"Martin Champagne 750ml","Non-Alcoholic Champagne",750,Piece
+118,"Martin Champagne 750ml","Four Cousins Sweet Red 750ml",750,Piece
+119,"Martin Champagne 750ml","Four Cousins White 750ml",750,Piece
+120,"Martin Champagne 750ml","Drostdy Hof Red Claret 700ml",700,Piece
+121,"Martin Champagne 750ml","Drostdy Hof Red Claret 375ml",375,Piece
+122,"Martin Champagne 750ml","Drostdy Hof CRI White 700ml",700,Piece
+123,"Martin Champagne 750ml","Drostdy Hof CRI White 375ml",375,Piece
+124,"Martin Champagne 750ml","Pearly Bay Dry Red",750,Piece
+125,"Martin Champagne 750ml","Pearly Bay Dry White",750,Piece
+126,"Martin Champagne 750ml","Pearly Bay Sweet White",750,Piece
+127,"Martin Champagne 750ml","Pearly Bay Sweet Red",750,Piece
+128,"Martin Champagne 750ml","Pearly Bay Sweet Rosé",750,Piece
+129,"Martin Champagne 750ml","KWV Merlot",750,Piece
+130,"Martin Champagne 750ml","KWV Chardonnay-Rosé",750,Piece
+131,"Martin Champagne 750ml","Lions Hill Sweet Red",750,Piece
+132,"Martin Champagne 750ml","Lions Hill Dry White",750,Piece
+133,"Martin Champagne 750ml","Lions Hill Dry Red",750,Piece
+134,"Martin Champagne 750ml","Lions Hill Sweet White",750,Piece
+135,"Martin Champagne 750ml","Robertson Sweet Red 750ml",750,Piece
+136,"Martin Champagne 750ml","Robertson Sweet White 750ml",750,Piece
+137,"Martin Champagne 750ml","Nederburg Merlot 750ml",750,Piece
+138,"Martin Champagne 750ml","Calvet Merlot 750ml",750,Piece
+139,"Martin Champagne 750ml",image,250,Carton
+140,"Martin Champagne 750ml","Dompo 750ml",750,Piece
+141,"Martin Champagne 750ml","Dompo 375",375,Piece
+142,"Martin Champagne 750ml","Calvet Merlot",750,Piece
+143,"Martin Champagne 750ml","Alter wine",750,Piece
+144,"Martin Champagne 750ml","Presidential noble",750,Piece
+145,"Martin Champagne 750ml","Dodoma wine",5,Piece
+146,"Martin Champagne 750ml","TZEE 750",750,Piece
+147,"Martin Champagne 750ml","TZEE 200",200,Piece
+148,"Hennessy VSOP 750ml","Amarula 1ltr",1,Piece
+149,"Hennessy VSOP 750ml","Amarula 750",750,Piece
+150,"Hennessy VSOP 750ml","Amarula 375",375,Piece
+151,"Hennessy VSOP 750ml","Gilbeys Gin 750",750,Piece
+152,"Hennessy VSOP 750ml","Captain Morgan 750",750,Piece
+153,"Hennessy VSOP 750ml","Sminoff Vodika",250,Piece
+154,"Hennessy VSOP 750ml","Gilbeys Gin 200",200,Piece
+155,"Hennessy VSOP 750ml","Black label",200,Piece
+156,"Hennessy VSOP 750ml","Red Label",200,Piece
+157,"Hennessy VSOP 750ml","Chrome Gin smooth 750",750,Piece
+158,"Hennessy VSOP 750ml","Chrome Gin vodika 750",750,Piece
+159,"Hennessy VSOP 750ml","Captain Morgan 200",200,Piece
+160,"Hennessy VSOP 750ml","Chrome Gin vodika 200",200,Piece
+161,"Hennessy VSOP 750ml","Chrome Gin smooth 200",200,Piece
+162,"Hennessy VSOP 750ml","Campari ndogo",200,Piece
+163,"Hennessy VSOP 750ml","tanzanite 750",750,Piece
+164,"Hennessy VSOP 750ml","Campari 1ltr tot",1,Piece
+165,"Hennessy VSOP 750ml","Remmy Martin",750,Piece
+166,"Hennessy VSOP 750ml","Glenfiddich 15yrs",700,Piece
+167,"Martin Champagne 750ml","TZEE lemon and ginger",750,Piece
+168,"Castle Lite","desperador beer",330,Outer
+169,"Castle Lite","Savanna dry",330,Outer
+170,"Castle Lite","Castle lite can",330,Outer
+171,"Hennessy VSOP 750ml","Camino Tot",750,Piece

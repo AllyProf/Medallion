@@ -229,9 +229,9 @@ class HandoverSmsService
         $staffMsg .= "\nThank you for the shift!\n";
         $staffMsg .= "MEDALLION - Financial Audit.";
 
-        // Step 1: Send to Manager
-        if ($manager && $manager->phone_number) {
-            $this->smsService->sendSms($manager->phone_number, $mgmtMsg);
+        // Step 1: Send to Manager (Business Owner / Boss)
+        if ($manager && $manager->phone) {
+            $this->smsService->sendSms($manager->phone, $mgmtMsg);
         }
 
         // Step 2: Send to Accountant
@@ -243,7 +243,7 @@ class HandoverSmsService
         $counterStaffIds = \App\Models\FinancialHandover::where('user_id', $ledger->user_id)
             ->where('department', 'bar')
             ->whereDate('handover_date', $ledger->ledger_date)
-            ->pluck('staff_id')
+            ->pluck('accountant_id')
             ->unique();
 
         $counterStaffMembers = \App\Models\Staff::whereIn('id', $counterStaffIds)->get();
@@ -364,6 +364,17 @@ class HandoverSmsService
             ->get();
 
         $sentCount = 0;
+        
+        // Step 1: Notify the Business Owner (Boss) directly
+        $owner = \App\Models\User::find($ownerId);
+        if ($owner && $owner->phone) {
+            $result = $this->smsService->sendSms($owner->phone, $message);
+            if ($result['success'] ?? false) {
+                $sentCount++;
+            }
+        }
+
+        // Step 2: Notify other Managers in the staff list
         foreach ($managers as $manager) {
             if ($manager->phone_number) {
                 $result = $this->smsService->sendSms($manager->phone_number, $message);
