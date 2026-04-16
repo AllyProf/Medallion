@@ -140,7 +140,11 @@ class CounterReconciliationController extends Controller
                     });
             })
             ->when($location && $location !== 'all', function ($q) use ($location) {
-                $q->where('location_branch', $location);
+                $q->where(function ($sq) use ($location) {
+                    $sq->where('location_branch', $location)
+                       ->orWhereNull('location_branch')
+                       ->orWhere('location_branch', '');
+                });
             });
 
         // If not accountant and not super admin, filter by owner
@@ -164,8 +168,13 @@ class CounterReconciliationController extends Controller
                 $ordersQuery = BarOrder::query()
                     ->where('waiter_id', $waiter->id)
                     ->when($location && $location !== 'all', function ($q) use ($location) {
-                        $q->whereHas('table', function ($sq) use ($location) {
-                            $sq->where('location', $location);
+                        $q->where(function ($subQ) use ($location) {
+                            $subQ->whereDoesntHave('table')
+                                 ->orWhereHas('table', function ($sq) use ($location) {
+                                     $sq->where('location', $location)
+                                        ->orWhereNull('location')
+                                        ->orWhere('location', '');
+                                 });
                         });
                     });
 
