@@ -171,21 +171,23 @@ class AccountantController extends Controller
         $periodRevenue += $periodFoodHandovers;
         $periodCash += $periodFoodHandovers;
 
-        // Separate bar and food sales (Today)
-        $todayBarSales = $todayOrders->sum(function($order) {
+        // Separate bar and food sales (Today) - Strictly realized sales (Served or Paid)
+        $realizedStatuses = ['served', 'paid', 'completed', 'delivered'];
+
+        $todayBarSales = $todayOrders->whereIn('status', $realizedStatuses)->sum(function($order) {
             return $order->items->sum('total_price');
         });
 
-        $todayFoodSales = $todayOrders->sum(function($order) {
+        $todayFoodSales = $todayOrders->whereIn('status', $realizedStatuses)->sum(function($order) {
             return $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price');
         });
 
-        // Period sales
-        $periodBarSales = $periodOrders->sum(function($order) {
+        // Period sales - Strictly realized sales
+        $periodBarSales = $periodOrders->whereIn('status', $realizedStatuses)->sum(function($order) {
             return $order->items->sum('total_price');
         });
 
-        $periodFoodSales = $periodOrders->sum(function($order) {
+        $periodFoodSales = $periodOrders->whereIn('status', $realizedStatuses)->sum(function($order) {
             return $order->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price');
         });
 
