@@ -134,11 +134,47 @@
 @section('content')
 <div class="velocity-card">
     <div class="velocity-header">
-        <h2 class="velocity-title">Comparative Sales Velocity</h2>
+        <div>
+            <h2 class="velocity-title">Comparative Sales Velocity</h2>
+            <p class="section-desc mb-0">Staff performance efficiency and revenue contribution analytics.</p>
+        </div>
         <div class="btn-group btn-group-custom">
+            <a href="?period=today" class="btn {{ $period == 'today' ? 'active' : '' }}">Today</a>
             <a href="?period=7days" class="btn {{ $period == '7days' ? 'active' : '' }}">Last 7 Days</a>
             <a href="?period=30days" class="btn {{ $period == '30days' ? 'active' : '' }}">Last 30 Days</a>
             <a href="?period=month" class="btn {{ $period == 'month' ? 'active' : '' }}">This Month</a>
+        </div>
+    </div>
+
+    <!-- Enhanced Filter Bar -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <form action="" method="GET" class="p-3" style="background: #f8f9fa; border-radius: 8px; border: 1px solid #eee;">
+                <div class="row align-items-end">
+                    <div class="col-md-3">
+                        <label class="section-subtitle">Start Date</label>
+                        <input type="date" name="start_date" class="form-control" value="{{ $startDate }}" style="border-radius: 6px; font-size: 13px;">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="section-subtitle">End Date</label>
+                        <input type="date" name="end_date" class="form-control" value="{{ $endDate }}" style="border-radius: 6px; font-size: 13px;">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="section-subtitle">Focus Waiter</label>
+                        <select name="waiter_id" class="form-control" style="border-radius: 6px; font-size: 13px;">
+                            <option value="">All Performing Staff</option>
+                            @foreach($allWaiters as $waiter)
+                                <option value="{{ $waiter->id }}" {{ $waiterId == $waiter->id ? 'selected' : '' }}>{{ $waiter->full_name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-block" style="background: #800000; color: #fff; font-weight: 700; border-radius: 6px; height: 38px;">
+                            <i class="fa fa-filter mr-1"></i> Apply Analytics
+                        </button>
+                    </div>
+                </div>
+            </form>
         </div>
     </div>
     
@@ -197,7 +233,49 @@
                 </div>
             </div>
             @endforeach
-            
+        </div>
+    </div>
+
+    <!-- Daily Pulse Table [NEW] -->
+    <div class="mt-5 pt-4" style="border-top: 1px solid #f0f0f0;">
+        <div class="section-subtitle">DAILY SALES VELOCITY PULSE</div>
+        <div class="section-desc">Detailed day-by-day revenue and efficiency breakdown.</div>
+        
+        <div class="table-responsive">
+            <table class="table" style="border-collapse: separate; border-spacing: 0 8px;">
+                <thead>
+                    <tr style="background: transparent;">
+                        <th style="border: none; color: #8792a1; font-size: 11px; text-transform: uppercase;">Date</th>
+                        <th style="border: none; color: #8792a1; font-size: 11px; text-transform: uppercase;">Orders</th>
+                        <th style="border: none; color: #8792a1; font-size: 11px; text-transform: uppercase;">Total Revenue</th>
+                        <th style="border: none; color: #8792a1; font-size: 11px; text-transform: uppercase;">Avg/Order</th>
+                        <th style="border: none; color: #8792a1; font-size: 11px; text-transform: uppercase; text-align: right;">Top Performer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($dailyBreakdown as $day)
+                    <tr style="background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.02);">
+                        <td style="border: none; vertical-align: middle; padding: 15px;">
+                            <span style="font-weight: 700; color: #1a233a;">{{ $day['label'] }}</span>
+                        </td>
+                        <td style="border: none; vertical-align: middle;">
+                            <span class="badge" style="background: #e3f2fd; color: #2196f3; font-weight: 700; border-radius: 4px;">{{ number_format($day['orders_count']) }} Orders</span>
+                        </td>
+                        <td style="border: none; vertical-align: middle;">
+                            <span style="font-weight: 700; color: #800000;">TSh {{ number_format($day['revenue']) }}</span>
+                        </td>
+                        <td style="border: none; vertical-align: middle;">
+                            <span style="color: #607d8b; font-size: 13px;">TSh {{ $day['orders_count'] > 0 ? number_format($day['revenue'] / $day['orders_count']) : 0 }}</span>
+                        </td>
+                        <td style="border: none; vertical-align: middle; text-align: right;">
+                            <div class="d-inline-flex align-items-center" style="background: #fff8e1; color: #ffa000; padding: 4px 12px; border-radius: 20px; font-weight: 700; font-size: 12px;">
+                                <i class="fa fa-star mr-1"></i> {{ $day['top_waiter'] }}
+                            </div>
+                        </td>
+                    </tr>
+                    @endforeach
+                </tbody>
+            </table>
         </div>
     </div>
     @endif
@@ -232,8 +310,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const ctxVelocity = document.getElementById('waiterVelocityChart');
     if (ctxVelocity && chartDatasets.length > 0) {
+        // Switch to Bar chart if only one day is selected for better visibility
+        const chartType = chartLabels.length <= 1 ? 'bar' : 'line';
+        
         new Chart(ctxVelocity, {
-            type: 'line',
+            type: chartType,
             data: {
                 labels: chartLabels,
                 datasets: chartDatasets

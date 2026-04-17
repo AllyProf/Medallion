@@ -43,23 +43,56 @@ class CounterReconciliationController extends Controller
         $isManager = $currentStaff && in_array(strtolower($currentStaff->role->slug ?? ''), ['manager', 'admin', 'general-manager']);
         $isManagementRole = $isAccountant || $isManager || $isSuperAdmin;
         $requestedDate = $request->get('date');
+        $requestedShiftId = $request->get('shift_id');
         $location = session('active_location');
+
+        // Handle Shift ID Search (e.g. S000003 or 3)
+        $searchShift = null;
+        if ($requestedShiftId) {
+            $numericId = preg_replace('/[^0-9]/', '', $requestedShiftId);
+            $searchShift = \App\Models\BarShift::where('user_id', $ownerId)
+                ->where('id', $numericId)
+                ->first();
+            
+            if ($searchShift && !$requestedDate) {
+                $requestedDate = $searchShift->opened_at->format('Y-m-d');
+            }
+        }
         
         // Priority logic: Find the first thing that needs attention:
         // 1. Any PENDING handover (something submitted that needs verification)
-        // 2. Any OPEN shift (something currently active)
-        $pendingHandover = FinancialHandover::where('user_id', $ownerId)
+        // 2. Any VERIFIED handover where the Daily Ledger is NOT yet CLOSED (Needs finalization)
+        $priorityHandover = FinancialHandover::where('user_id', $ownerId)
             ->where('handover_type', 'staff_to_accountant')
-            ->where('status', 'pending')
-            ->when($location && $location !== 'all', function($q) use ($location) {
-                // Approximate location filter for handovers if possible
-                // (Handover doesn't have branch directly, but we can check the staff who submitted it)
+            ->whereIn('status', ['pending', 'verified'])
+            ->where(function($q) use ($ownerId) {
+                $q->where('status', 'pending')
+                  ->orWhere(function($sq) use ($ownerId) {
+                      $sq->where('status', 'verified')
+                         ->whereNotExists(function ($eq) use ($ownerId) {
+                             $eq->select(DB::raw(1))
+                                ->from('daily_cash_ledgers')
+                                ->where('daily_cash_ledgers.user_id', $ownerId)
+                                ->whereColumn('daily_cash_ledgers.ledger_date', 'financial_handovers.handover_date')
+                                ->where('daily_cash_ledgers.status', 'closed');
+                         });
+                  });
+            })
+            ->when($searchShift, function($q) use ($searchShift) {
+                // If a specific shift was searched, prioritize that handover
+                $q->where('bar_shift_id', $searchShift->id);
+            })
+            ->when($location && $location !== 'all' && !$isAccountant && !$isSuperAdmin, function($q) use ($location) {
                 $q->whereHas('staff', function($sq) use ($location) {
                     $sq->where('location_branch', $location);
                 });
             })
-            ->orderBy('created_at', 'desc')
+            ->orderBy('status', 'asc') // 'pending' (verification) first, then 'verified' (settlement)
+            ->orderBy('handover_date', 'asc') // Oldest first
             ->first();
+
+        // Compatibility alias
+        $pendingHandover = $priorityHandover;
 
         // Determine target date: If no date requested, use the date of the pending handover or today.
         if (!$requestedDate && $pendingHandover) {
@@ -72,14 +105,19 @@ class CounterReconciliationController extends Controller
         $bar_shift = \App\Models\BarShift::when(!$isSuperAdmin, function($q) use ($ownerId) {
                 return $q->where('user_id', $ownerId);
             })
-            ->where('status', 'open')
+            ->when($searchShift, function($q) use ($searchShift) {
+                // If a specific shift was searched, LOAD IT regardless of status
+                return $q->where('id', $searchShift->id);
+            }, function($q) use ($date) {
+                // Default behavior: find an OPEN shift for the viewing date
+                return $q->where('status', 'open')->whereDate('opened_at', $date);
+            })
             ->when($location && $location !== 'all', function($q) use ($location) {
                 $q->where('location_branch', $location);
             })
             ->when($currentStaff && !$isAccountant && !$isSuperAdmin, function ($q) use ($currentStaff) {
                 $q->where('staff_id', $currentStaff->id);
             })
-            ->whereDate('opened_at', $date) // Scope to the date we are viewing!
             ->orderBy('created_at', 'desc')
             ->first();
 
@@ -93,16 +131,31 @@ class CounterReconciliationController extends Controller
                 $handoverQuery = FinancialHandover::where('user_id', $ownerId)
                     ->where('handover_type', 'staff_to_accountant');
 
-                if ($bar_shift) {
-                    $handoverQuery->where('bar_shift_id', $bar_shift->id);
-                } else {
-                    $handoverQuery->whereDate('handover_date', $date);
+                // For accountants, prioritize finding a handover for visualising the settlement flow
+                if ($isAccountant) {
+                    $todayHandover = (clone $handoverQuery)
+                        ->when($searchShift, function($q) use ($searchShift) {
+                            return $q->where('bar_shift_id', $searchShift->id);
+                        }, function($q) use ($date) {
+                            return $q->whereDate('handover_date', $date);
+                        })
+                        ->whereIn('status', ['pending', 'verified'])
+                        ->orderBy('status', 'asc') // Pendings first
+                        ->first();
+                }
+
+                if (!$todayHandover) {
+                    if ($bar_shift) {
+                        $handoverQuery->where('bar_shift_id', $bar_shift->id);
+                    } else {
+                        $handoverQuery->whereDate('handover_date', $date);
+                    }
 
                     if (!$isAccountant && !$isSuperAdmin) {
                         $handoverQuery->where('accountant_id', $currentStaff->id);
                     }
+                    $todayHandover = $handoverQuery->orderBy('created_at', 'desc')->first();
                 }
-                $todayHandover = $handoverQuery->orderBy('created_at', 'desc')->first();
             }
         }
 
@@ -118,7 +171,11 @@ class CounterReconciliationController extends Controller
             ->toArray();
             
         $targetShiftIds = [];
-        if ($todayHandover) {
+        if ($searchShift) {
+            // STRICT ISOLATION: If a specific shift was searched, ONLY show that shift's data.
+            // This prevents overlapping data from other shifts on the same date.
+            $targetShiftIds = [$searchShift->id];
+        } elseif ($todayHandover) {
             // Combine the handover's specific shift AND all currently open shifts.
             // This handles the case where orders were placed in an earlier/different shift
             // that is still open (e.g., Shift 1 opened days ago and never closed).
@@ -445,6 +502,59 @@ class CounterReconciliationController extends Controller
             $waiters = collect([]);
         }
 
+        // For accountants viewing TODAY's live shift with no pending action from a prior date:
+        // detect any recently-closed prior shifts so the view can alert them with navigation links.
+        $closedPriorShifts = collect([]);
+        if ($isManagementRole && $bar_shift && $date === now()->format('Y-m-d')) {
+            // Find all handovers that are either pending verification OR verified but the ledger is still open
+            $closedPriorShifts = FinancialHandover::where('user_id', $ownerId)
+                ->where('handover_type', 'staff_to_accountant')
+                ->whereIn('status', ['pending', 'verified'])
+                ->whereDate('handover_date', '<', $date)
+                ->where(function($q) use ($ownerId) {
+                    $q->where('status', 'pending')
+                      ->orWhere(function($sq) use ($ownerId) {
+                          $sq->where('status', 'verified')
+                         ->whereNotExists(function ($eq) use ($ownerId) {
+                             $eq->select(DB::raw(1))
+                                ->from('daily_cash_ledgers')
+                                ->where('daily_cash_ledgers.user_id', $ownerId)
+                                ->whereColumn('daily_cash_ledgers.ledger_date', 'financial_handovers.handover_date')
+                                ->where('daily_cash_ledgers.status', 'closed');
+                         });
+                      });
+                })
+                ->orderBy('handover_date', 'desc')
+                ->limit(5)
+                ->get();
+
+            // If no pending handovers, also look for recently-closed bar shifts with no verified handover
+            if ($closedPriorShifts->isEmpty()) {
+                $recentClosedShifts = \App\Models\BarShift::where('user_id', $ownerId)
+                    ->where('status', 'closed')
+                    ->whereDate('opened_at', '<', $date)
+                    ->orderBy('closed_at', 'desc')
+                    ->limit(5)
+                    ->get();
+
+                foreach ($recentClosedShifts as $cls) {
+                    $hasVerified = FinancialHandover::where('user_id', $ownerId)
+                        ->where('bar_shift_id', $cls->id)
+                        ->where('status', 'verified')
+                        ->exists();
+                    if (!$hasVerified) {
+                        $closedPriorShifts->push((object)[
+                            'handover_date' => $cls->opened_at,
+                            'id'            => null,
+                            'bar_shift_id'  => $cls->id,
+                            'shift'         => $cls,
+                            'is_shift_only' => true, // No handover submitted, counter still needs to submit
+                        ]);
+                    }
+                }
+            }
+        }
+
         $expectedBreakdowns = [
             'cash_amount' => 0,
             'mpesa_amount' => 0,
@@ -558,6 +668,13 @@ class CounterReconciliationController extends Controller
 
         // Financial calculations for the drawer closure (Daily Context)
         $totalRevenueToday = $ledger->total_cash_received + $ledger->total_digital_received; // Consolidated Verified collections
+        
+        // AUDIT FIX: If ledger is not yet synced for this date but we have a verified handover,
+        // use the handover amount to show the correct financial context in the settlement card.
+        if ($totalRevenueToday <= 0 && $todayHandover && $todayHandover->status === 'verified') {
+            $totalRevenueToday = $todayHandover->amount;
+        }
+
         $totalBusinessValue = $ledger->opening_cash + $totalRevenueToday - $totalExpensesCombined;
 
         $expFromProfit = floatval($ledger->total_expenses_from_profit) + floatval($pettyCashIssues->where('fund_source', 'profit')->sum('amount'));
@@ -569,9 +686,13 @@ class CounterReconciliationController extends Controller
 
         // 2. Final Daily Profit (Capped at 0)
         $finalDailyProfit = max(0, $netDailyEarnings);
+        $finalProfit = $finalDailyProfit; // Alias used by the settlement view
 
         // 3. Money in Circulation (Daily Port)
         $moneyInCirculation = max(0, $totalRevenueToday - $stockProfit - $expFromCirculation);
+
+        // 4. Rollover Float = opening cash carried forward + working capital in circulation
+        $rolloverFloat = $ledger->opening_cash + $moneyInCirculation;
 
         if ($ledger->status === 'open') {
             $ledger->update([
@@ -607,9 +728,12 @@ class CounterReconciliationController extends Controller
             'totalExpensesCombined',
             'stockProfit',
             'finalDailyProfit',
+            'finalProfit',
+            'rolloverFloat',
             'moneyInCirculation',
             'staff',
-            'totalRevenueToday'
+            'totalRevenueToday',
+            'closedPriorShifts'
         ));
     }
 

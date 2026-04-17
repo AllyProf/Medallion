@@ -52,8 +52,8 @@
     <div class="tile">
       <form method="GET" action="{{ Route::currentRouteName() === 'accountant.counter.reconciliation' ? route('accountant.counter.reconciliation') : route('bar.counter.reconciliation') }}" class="form-inline">
         <div class="form-group mr-3">
-          <label for="date" class="mr-2">Select Date:</label>
-          <input type="date" name="date" id="date" class="form-control" value="{{ $date }}" required>
+          <label for="shift_id" class="mr-2">Shift ID:</label>
+          <input type="text" name="shift_id" id="shift_id" class="form-control" placeholder="e.g. S000003" value="{{ request('shift_id') }}">
         </div>
         <div class="form-group mr-3">
           <label for="status-filter" class="mr-2">Status:</label>
@@ -142,6 +142,41 @@
 </div>
 @endif
 
+@if($isManagementRole && isset($closedPriorShifts) && $closedPriorShifts->count() > 0)
+  <div class="row">
+    <div class="col-md-12">
+      <div class="alert alert-danger shadow-sm border-0 mb-4 py-3" style="border-radius: 12px; border-left: 10px solid #dc3545 !important;">
+        <div class="d-flex align-items-center">
+          <div class="mr-4 ml-2">
+            <i class="fa fa-exclamation-triangle fa-3x text-danger animate__animated animate__pulse animate__infinite"></i>
+          </div>
+          <div>
+            <h4 class="alert-heading font-weight-bold mb-1">Unfinalized Historical Shifts Detected</h4>
+            <p class="mb-2">There are previous shifts that require your immediate attention for verification or final closing. You cannot accurately track consecutive daily cash flows until these are cleared.</p>
+            <div class="d-flex flex-wrap">
+              @foreach($closedPriorShifts as $prior)
+                <a href="{{ route('accountant.counter.reconciliation', ['date' => \Carbon\Carbon::parse($prior->handover_date)->format('Y-m-d'), 'shift_id' => $prior->bar_shift_id]) }}" class="btn btn-danger btn-sm mr-2 mb-2 px-3 shadow-sm font-weight-bold">
+                  <i class="fa fa-calendar mr-1"></i> Resolve: {{ \Carbon\Carbon::parse($prior->handover_date)->format('M d, Y') }} 
+                  @if(isset($prior->bar_shift_id))
+                    <span class="badge badge-warning text-dark ml-1">ID: S{{ str_pad($prior->bar_shift_id, 6, '0', STR_PAD_LEFT) }}</span>
+                  @endif
+                  @if(isset($prior->is_shift_only) && $prior->is_shift_only)
+                    <span class="badge badge-light text-danger ml-1">SHIFT CLOSED - NO HANDOVER</span>
+                  @elseif(isset($prior->status) && $prior->status === 'verified')
+                    <span class="badge badge-light text-danger ml-1">FINALIZE SETTLEMENT</span>
+                  @else
+                    <span class="badge badge-light text-danger ml-1">PENDING VERIFICATION</span>
+                  @endif
+                </a>
+              @endforeach
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+@endif
+
 @if($isManagementRole && !$todayHandover)
   <div class="row">
     <div class="col-md-12">
@@ -179,7 +214,7 @@
 @endif
 
 
-@if(!$isManagementRole || $todayHandover || $bar_shift)
+@if(!$isManagementRole || $todayHandover || ($bar_shift && (!$isAccountant || $bar_shift->status === 'closed' || $date !== now()->format('Y-m-d'))))
 <!-- Waiters List -->
 
 <div class="row">
@@ -211,6 +246,15 @@
                 @foreach($waiters as $index => $data)
                 @php 
                   $isCounter = in_array(strtolower($data['waiter']->role->slug ?? ''), ['counter', 'counter-staff', 'bar-manager']); 
+                  
+                  // Accountant Focus Filter:
+                  // Hide 'Pending' waiters from the Accountant's view during an active shift.
+                  // They only need to see rows that are ready for verification or counter staff themselves.
+                  if ($isAccountant && $bar_shift && $bar_shift->status === 'open' && $date === now()->format('Y-m-d')) {
+                      if ($data['status'] === 'pending' && !$isCounter) {
+                          continue;
+                      }
+                  }
                 @endphp
                 <tr data-waiter-id="{{ $data['waiter']->id }}" class="waiter-row">
                   <td>{{ $index + 1 }}</td>
@@ -1328,6 +1372,16 @@
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 $(document).ready(function() {
+
+  // Helper: reload the page keeping the currently viewed date in the URL.
+  // Without this, a plain location.reload() drops the ?date= param and the
+  // controller defaults to today, showing "Counter Shift in Progress" instead
+  // of the historical settlement panel the accountant was working on.
+  function reloadWithDate() {
+    const url = new URL(window.location.href);
+    url.searchParams.set('date', '{{ $date }}');
+    window.location.href = url.toString();
+  }
   // Initialize DataTables
   if ($('#waiters-table').length > 0) {
     const table = $('#waiters-table').DataTable({
@@ -1548,7 +1602,7 @@ $(document).ready(function() {
           data: { _token: '{{ csrf_token() }}' },
           success: function(response) {
             if (response.success) {
-              Swal.fire({ icon: 'success', title: 'Verified!', text: 'Reconciliation verified successfully.', timer: 2000, timerProgressBar: true }).then(() => { location.reload(); });
+              Swal.fire({ icon: 'success', title: 'Verified!', text: 'Reconciliation verified successfully.', timer: 2000, timerProgressBar: true }).then(() => { reloadWithDate(); });
             }
           },
           error: function(xhr) {
@@ -1785,7 +1839,15 @@ $(document).ready(function() {
                 title: 'Funds Consolidated!', 
                 text: response.message,
                 confirmButtonText: 'Great'
-              }).then(() => { location.reload(); });
+              }).then(() => {
+                // Redirect WITH the date param so the controller stays on
+                // the correct historical date and shows the Day-End Settlement.
+                // A plain location.reload() loses the date and defaults to today,
+                // which finds the open shift and shows "Counter Shift in Progress".
+                const url = new URL(window.location.href);
+                url.searchParams.set('date', '{{ $date }}');
+                window.location.href = url.toString();
+              });
             } else {
               Swal.fire({ icon: 'error', title: 'Error', text: response.error || 'Failed to verify' });
               btn.prop('disabled', false).html('<i class="fa fa-check-circle"></i> Confirm Receipt & Consolidate All Funds as Cash');
@@ -1904,7 +1966,7 @@ $(document).ready(function() {
       data: $(this).serialize(),
       success: function(response) {
         if(response.success) { 
-            Swal.fire({ icon: 'success', title: 'Expense Recorded!', text: 'The deduction has been added to the master ledger.', timer: 1500 }).then(() => { location.reload(); });
+            Swal.fire({ icon: 'success', title: 'Expense Recorded!', text: 'The deduction has been added to the master ledger.', timer: 1500 }).then(() => { reloadWithDate(); });
         } else { 
            Swal.fire('Error', response.error || 'Failed to log expense', 'error');
            $btn.prop('disabled', false).html('Record Expense'); 
@@ -1935,7 +1997,7 @@ $(document).ready(function() {
             text: 'The expense has been deducted from the ledger.', 
             timer: 1500 
           }).then(() => { 
-            location.reload(); 
+            reloadWithDate(); 
           });
         } else {
           Swal.fire('Error', response.error || 'Failed to log expense', 'error');
@@ -1971,7 +2033,7 @@ $(document).ready(function() {
           data: { _token: '{{ csrf_token() }}' },
           success: function(response) {
             if (response.success) {
-              Swal.fire({ icon: 'success', title: 'Undone!', text: 'Verification reversed successfully.', timer: 2000 }).then(() => { location.reload(); });
+              Swal.fire({ icon: 'success', title: 'Undone!', text: 'Verification reversed successfully.', timer: 2000 }).then(() => { reloadWithDate(); });
             } else {
               Swal.fire({ icon: 'error', title: 'Error', text: response.error || 'Failed to undo' });
               btn.prop('disabled', false).html('<i class="fa fa-undo"></i> Undo Verification');
@@ -2008,7 +2070,7 @@ $(document).ready(function() {
           data: { _token: '{{ csrf_token() }}', ledger_id: ledgerId },
           success: function(response) {
             if (response.success) {
-              Swal.fire({ icon: 'success', title: 'Day Reopened!', text: response.message, timer: 2000 }).then(() => { location.reload(); });
+              Swal.fire({ icon: 'success', title: 'Day Reopened!', text: response.message, timer: 2000 }).then(() => { reloadWithDate(); });
             } else {
               Swal.fire({ icon: 'error', title: 'Error', text: response.error || 'Failed to reopen day' });
               btn.prop('disabled', false).html('<i class="fa fa-unlock"></i> Reopen Day');
@@ -2046,7 +2108,7 @@ $(document).ready(function() {
           data: { _token: '{{ csrf_token() }}' },
           success: function(response) {
             if (response.success) {
-              Swal.fire({ icon: 'success', title: 'Deleted!', text: 'Expense removed.', timer: 1500 }).then(() => { location.reload(); });
+              Swal.fire({ icon: 'success', title: 'Deleted!', text: 'Expense removed.', timer: 1500 }).then(() => { reloadWithDate(); });
             } else {
               Swal.fire({ icon: 'error', title: 'Error', text: response.error || 'Failed to delete expense' });
               btn.prop('disabled', false).html('<i class="fa fa-times"></i>');
