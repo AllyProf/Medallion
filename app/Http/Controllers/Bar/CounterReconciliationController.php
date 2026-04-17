@@ -843,7 +843,11 @@ class CounterReconciliationController extends Controller
         }
 
         $orders = $ordersQuery
-            ->whereDate('created_at', $validated['date'])
+            ->when(!empty($allOpenShiftIds), function ($q) use ($allOpenShiftIds) {
+                return $q->whereIn('bar_shift_id', $allOpenShiftIds);
+            }, function ($q) use ($validated) {
+                return $q->whereDate('created_at', $validated['date']);
+            })
             ->where('status', 'served')
             ->where('payment_status', '!=', 'paid')
             ->whereHas('items')
@@ -1038,10 +1042,19 @@ class CounterReconciliationController extends Controller
                 }
             }
 
+            // [LOGIC FIX] LOCK DATE TO BUSINESS START DATE
+            $businessDate = $validated['date'];
+            if (!empty($allOpenShiftIds)) {
+                $primaryShift = \App\Models\BarShift::find($allOpenShiftIds[0]);
+                if ($primaryShift) {
+                    $businessDate = $primaryShift->opened_at->format('Y-m-d');
+                }
+            }
+
             $matchArray = [
                 'user_id' => $ownerId,
                 'waiter_id' => $waiter->id,
-                'reconciliation_date' => $validated['date'],
+                'reconciliation_date' => $businessDate,
                 'reconciliation_type' => 'bar', // Bar-specific reconciliation
             ];
             if (!empty($allOpenShiftIds)) {
@@ -1320,6 +1333,12 @@ class CounterReconciliationController extends Controller
         $activeShift = \App\Models\BarShift::where('staff_id', $staff->id)
             ->where('status', 'open')
             ->first();
+
+        // [LOGIC FIX] LOCK DATE TO BUSINESS START DATE
+        // Ensure even if closed at 2AM next day, it belongs to the shift day.
+        if ($activeShift) {
+            $date = $activeShift->opened_at->format('Y-m-d');
+        }
 
         $handover = FinancialHandover::create([
             'user_id' => $ownerId,

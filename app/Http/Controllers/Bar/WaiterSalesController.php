@@ -33,13 +33,29 @@ class WaiterSalesController extends Controller
         $ownerId = $this->getOwnerId();
         $date = $request->get('date', now()->format('Y-m-d'));
 
-        // Get all orders for this waiter on this date
-        $orders = BarOrder::where('user_id', $ownerId)
+        // [LOGIC FIX] Shift-Based Discovery
+        // Find the most appropriate shift context for the waiter
+        $activeShift = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->orderBy('opened_at', 'desc')
+            ->first();
+
+        // Get all orders for this waiter - Grouped by Shift instead of Date for cross-midnight support
+        $ordersQuery = BarOrder::where('user_id', $ownerId)
             ->where('waiter_id', $waiter->id)
-            ->whereDate('created_at', $date)
             ->with(['items.productVariant.product', 'kitchenOrderItems', 'table', 'orderPayments'])
-            ->orderBy('created_at', 'desc')
-            ->get();
+            ->orderBy('created_at', 'desc');
+
+        if ($activeShift && (!$request->has('date') || $request->get('date') === $activeShift->opened_at->format('Y-m-d'))) {
+            // Priority: Show orders for the active operational shift
+            $ordersQuery->where('bar_shift_id', $activeShift->id);
+            $date = $activeShift->opened_at->format('Y-m-d');
+        } else {
+            // Fallback: Group by date if looking at history
+            $ordersQuery->whereDate('created_at', $date);
+        }
+
+        $orders = $ordersQuery->get();
 
         // Calculate totals
         $totalSales = $orders->sum('total_amount');
@@ -55,9 +71,14 @@ class WaiterSalesController extends Controller
         $expectedAmount = $totalSales; // Expected = Total sales
 
         // Check if reconciliation already submitted
-        $reconciliation = WaiterDailyReconciliation::where('waiter_id', $waiter->id)
-            ->where('reconciliation_date', $date)
-            ->first();
+        $reconciliation = WaiterDailyReconciliation::where('waiter_id', $waiter->id);
+        
+        if ($activeShift && $date === $activeShift->opened_at->format('Y-m-d')) {
+            $reconciliation->where('bar_shift_id', $activeShift->id);
+        } else {
+            $reconciliation->where('reconciliation_date', $date);
+        }
+        $reconciliation = $reconciliation->first();
 
         return view('bar.waiter.sales', compact(
             'orders', 
@@ -88,22 +109,42 @@ class WaiterSalesController extends Controller
         $submittedAmount = $request->input('submitted_amount', 0);
         $notes = $request->input('notes', '');
 
-        // Check if already submitted
-        $existing = WaiterDailyReconciliation::where('waiter_id', $waiter->id)
-            ->where('reconciliation_date', $date)
+        // [LOGIC FIX] Determine Business Shift Context
+        $activeShift = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->orderBy('opened_at', 'desc')
             ->first();
+
+        // If we have an active shift, LOCK the date to the business start date
+        if ($activeShift) {
+            $date = $activeShift->opened_at->format('Y-m-d');
+        }
+
+        // Check if already submitted for this specific shift or date
+        $existingQuery = WaiterDailyReconciliation::where('waiter_id', $waiter->id);
+        if ($activeShift) {
+            $existingQuery->where('bar_shift_id', $activeShift->id);
+        } else {
+            $existingQuery->where('reconciliation_date', $date);
+        }
+        $existing = $existingQuery->first();
 
         if ($existing && $existing->isSubmitted()) {
             return response()->json([
-                'error' => 'Reconciliation already submitted for this date.'
+                'error' => 'Reconciliation already submitted for this business day.'
             ], 400);
         }
 
-        // Get all orders for this waiter on this date
-        $orders = BarOrder::where('user_id', $ownerId)
-            ->where('waiter_id', $waiter->id)
-            ->whereDate('created_at', $date)
-            ->get();
+        // Get all orders for this waiter - Prioritize Shift ID
+        $ordersQuery = BarOrder::where('user_id', $ownerId)
+            ->where('waiter_id', $waiter->id);
+
+        if ($activeShift) {
+            $ordersQuery->where('bar_shift_id', $activeShift->id);
+        } else {
+            $ordersQuery->whereDate('created_at', $date);
+        }
+        $orders = $ordersQuery->get();
 
         // Calculate totals
         $totalSales = $orders->sum('total_amount');
@@ -120,43 +161,39 @@ class WaiterSalesController extends Controller
 
         DB::beginTransaction();
         try {
+            $data = [
+                'total_sales' => $totalSales,
+                'cash_collected' => $cashCollected,
+                'mobile_money_collected' => $mobileMoneyCollected,
+                'expected_amount' => $expectedAmount,
+                'submitted_amount' => $submittedAmount,
+                'difference' => $difference,
+                'status' => 'submitted',
+                'submitted_at' => now(),
+                'notes' => $notes,
+                'bar_shift_id' => $activeShift ? $activeShift->id : ($existing ? $existing->bar_shift_id : null),
+            ];
+
             if ($existing) {
-                // Update existing
-                $existing->update([
-                    'total_sales' => $totalSales,
-                    'cash_collected' => $cashCollected,
-                    'mobile_money_collected' => $mobileMoneyCollected,
-                    'expected_amount' => $expectedAmount,
-                    'submitted_amount' => $submittedAmount,
-                    'difference' => $difference,
-                    'status' => 'submitted',
-                    'submitted_at' => now(),
-                    'notes' => $notes,
-                ]);
+                $existing->update($data);
                 $reconciliation = $existing;
             } else {
-                // Create new
-                $reconciliation = WaiterDailyReconciliation::create([
-                    'user_id' => $ownerId,
-                    'waiter_id' => $waiter->id,
-                    'reconciliation_date' => $date,
-                    'total_sales' => $totalSales,
-                    'cash_collected' => $cashCollected,
-                    'mobile_money_collected' => $mobileMoneyCollected,
-                    'expected_amount' => $expectedAmount,
-                    'submitted_amount' => $submittedAmount,
-                    'difference' => $difference,
-                    'status' => 'submitted',
-                    'submitted_at' => now(),
-                    'notes' => $notes,
-                ]);
+                $data['user_id'] = $ownerId;
+                $data['waiter_id'] = $waiter->id;
+                $data['reconciliation_date'] = $date;
+                $reconciliation = WaiterDailyReconciliation::create($data);
             }
 
             // Link orders to reconciliation
-            BarOrder::where('user_id', $ownerId)
-                ->where('waiter_id', $waiter->id)
-                ->whereDate('created_at', $date)
-                ->update(['reconciliation_id' => $reconciliation->id]);
+            $ordersUpdateQuery = BarOrder::where('user_id', $ownerId)
+                ->where('waiter_id', $waiter->id);
+
+            if ($activeShift) {
+                $ordersUpdateQuery->where('bar_shift_id', $activeShift->id);
+            } else {
+                $ordersUpdateQuery->whereDate('created_at', $date);
+            }
+            $ordersUpdateQuery->update(['reconciliation_id' => $reconciliation->id]);
 
             DB::commit();
 

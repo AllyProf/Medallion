@@ -73,9 +73,15 @@ class AccountantController extends Controller
         };
 
 
-        // Today's Financial Summary - Include ALL valid orders (Sales Performance)
+        // Today's Financial Summary - Shift-Aware Performance
+        // We look for orders either created on the date OR belonging to a shift that started on the date
         $todayOrders = $applyFilters(BarOrder::query())
-            ->whereDate('created_at', $date)
+            ->where(function($q) use ($date) {
+                $q->whereDate('created_at', $date)
+                  ->orWhereHas('shift', function($sq) use ($date) {
+                      $sq->whereDate('opened_at', $date);
+                  });
+            })
             ->where('status', '!=', 'cancelled')
             ->with(['items', 'kitchenOrderItems', 'orderPayments'])
             ->get();
