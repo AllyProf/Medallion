@@ -2783,8 +2783,11 @@ class AccountantController extends Controller
             $waiter = $waiterOrders->first()->waiter;
             if (!$waiter) continue;
             
-            // Strictly exclude Counter staff from Waiter tracking
+            // Strictly exclude non-waiter staff from Waiter tracking
             if (stripos($waiter->full_name, 'counter') !== false || stripos($waiter->phone, 'counter') !== false) {
+                continue;
+            }
+            if ($waiter->role && strtolower($waiter->role->name) !== 'waiter') {
                 continue;
             }
 
@@ -2821,8 +2824,8 @@ class AccountantController extends Controller
             ]);
         }
 
-        // Sort by revenue, take top 3
-        $waiterData = $waiterData->sortByDesc('revenue')->take(3)->values();
+        // Sort by revenue
+        $waiterData = $waiterData->sortByDesc('revenue')->values();
 
         // Calculate market share
         $waiterData = $waiterData->map(function($data) use ($totalWaitersRevenue) {

@@ -56,11 +56,20 @@
     .verified-row .item-name-text { text-decoration: line-through; opacity: 0.5; }
 
     @media print {
+        @page { size: portrait; margin: 0.5cm; }
         .app-header, .app-sidebar, .d-print-none, .breadcrumb { display: none !important; }
         .app-content { margin: 0 !important; padding: 0 !important; width: 100% !important; }
         .report-page { padding: 0; }
-        .audit-table { border: 2px solid #000; }
-        .audit-table th, .audit-table td { border: 1.5px solid #000; }
+        .audit-table { border: 2px solid #000; font-size: 0.70rem; }
+        .audit-table th, .audit-table td { border: 1.5px solid #000; padding: 4px !important; font-size: 0.75rem !important; }
+        .category-row td { padding: 4px !important; font-size: 0.8rem !important; }
+        .report-header-center h1 { font-size: 1.8rem; }
+        .report-stats-grid { gap: 15px; margin-bottom: 10px; }
+        .stats-row { padding: 2px 0; font-size: 0.75rem; }
+        .qty-bold { font-size: 0.85rem; }
+        .item-name-text { font-size: 0.75rem; }
+        tbody tr { page-break-inside: avoid; }
+        .mt-5.pt-5.row { margin-top: 2rem !important; padding-top: 1rem !important; }
     }
 </style>
 
@@ -88,12 +97,13 @@
 
     <div class="text-center mb-4 d-print-none">
         <button onclick="window.print()" class="btn btn-print shadow-sm"><i class="fa fa-print"></i> Print Report / PDF</button>
+        <div class="mt-2 text-success" style="font-weight:600; font-size:0.85rem;"><i class="fa fa-leaf"></i> Tip: Select "Print on both sides" in your printer dialogue to save paper!</div>
     </div>
 
     @php
         $filteredItems = $location == 'warehouse' 
                           ? $stockData->filter(fn($r) => $r['warehouse_qty'] > 0)
-                          : $stockData->filter(fn($r) => $r['counter_qty'] > 0);
+                          : $stockData->filter(fn($r) => $r['counter_qty'] > 0 || $r['open_tots'] > 0);
     @endphp
 
     <div class="report-stats-grid">
@@ -176,8 +186,13 @@
                                     if(in_array(strtolower($unitLabel), ['ml', 'l', 'tot', 'cl'])) {
                                         $unitLabel = 'Bottle';
                                     }
+                                    $qtyDisplay = $qty > 0 ? (int)$qty . ' ' . $unitLabel . ($qty > 1 ? 's' : '') : '';
+                                    if(isset($item['open_tots']) && $item['open_tots'] > 0) {
+                                        $qtyDisplay .= ($qty > 0 ? ' + ' : '') . $item['open_tots'] . ' Tots';
+                                    }
+                                    if($qtyDisplay === '') $qtyDisplay = '-';
                                 @endphp
-                                {{ $qty > 0 ? (int)$qty . ' ' . $unitLabel . ($qty > 1 ? 's' : '') : '-' }}
+                                {{ $qtyDisplay }}
                             @endif
                         </td>
                         
@@ -190,8 +205,13 @@
                                     if(in_array(strtolower($unitLabel), ['ml', 'l', 'tot', 'cl'])) {
                                         $unitLabel = 'Bottle';
                                     }
+                                    $qtyDisplay = $qty > 0 ? (int)$qty . ' ' . $unitLabel . ($qty > 1 ? 's' : '') : '';
+                                    if(isset($item['open_tots']) && $item['open_tots'] > 0) {
+                                        $qtyDisplay .= ($qty > 0 ? ' + ' : '') . $item['open_tots'] . ' Tots';
+                                    }
+                                    if($qtyDisplay === '') $qtyDisplay = '-';
                                 @endphp
-                                {{ $qty > 0 ? (int)$qty . ' ' . $unitLabel . ($qty > 1 ? 's' : '') : '-' }}
+                                {{ $qtyDisplay }}
                             @endif
                         </td>
                     </tr>

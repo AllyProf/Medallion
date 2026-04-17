@@ -187,47 +187,80 @@ class CounterController extends Controller
                                     ->first();
 
                                 if ($openBottle) {
-                                    if ($openBottle->tots_remaining >= $totsNeeded) {
-                                        $openBottle->decrement('tots_remaining', $totsNeeded);
-                                        if ($openBottle->tots_remaining <= 0) $openBottle->delete();
-                                        $totsNeeded = 0;
-                                    } else {
-                                        $totsNeeded -= $openBottle->tots_remaining;
-                                        $openBottle->delete();
-                                    }
-                                }
-
-                                // 2. Open new bottles if needed
-                                while ($totsNeeded > 0) {
-                                    if ($counterStock->quantity < 1) break;
-
-                                    $counterStock->decrement('quantity', 1);
-                                    app(\App\Services\StockAlertService::class)->checkCounterStock($variant->id, $ownerId);
-
-                                    if ($totsNeeded >= $totsPerBottle) {
-                                        $totsNeeded -= $totsPerBottle;
-                                    } else {
-                                        \App\Models\OpenBottle::create([
-                                            'user_id' => $ownerId,
-                                            'product_variant_id' => $variant->id,
-                                            'tots_remaining' => $totsPerBottle - $totsNeeded,
-                                        ]);
-                                        $totsNeeded = 0;
-                                    }
-
+                                    $deductFromOpen = min($openBottle->tots_remaining, $totsNeeded);
+                                    $openBottle->decrement('tots_remaining', $deductFromOpen);
+                                    
+                                    // Record movement for audit
                                     StockMovement::create([
                                         'user_id' => $ownerId,
                                         'product_variant_id' => $variant->id,
                                         'movement_type' => 'sale',
                                         'from_location' => 'counter',
                                         'to_location' => null,
-                                        'quantity' => 1,
+                                        'quantity' => $deductFromOpen / $totsPerBottle,
                                         'unit_price' => $orderItem->unit_price,
                                         'reference_type' => BarOrder::class,
                                         'reference_id' => $order->id,
                                         'created_by' => $currentUser ? $currentUser->id : $ownerId,
-                                        'notes' => 'Bottle opened (Delayed Serve): '.$order->order_number,
+                                        'notes' => 'Tots sold from open bottle: '.$order->order_number,
                                     ]);
+
+                                    $totsNeeded -= $deductFromOpen;
+                                    if ($openBottle->tots_remaining <= 0) $openBottle->delete();
+                                }
+
+                                // 2. Open bottles if still needed
+                                while ($totsNeeded > 0) {
+                                    if ($counterStock->quantity <= 0) break;
+
+                                    // Use 1 bottle or the remaining partial bottle
+                                    $isPartial = ($counterStock->quantity < 1);
+                                    $btlToUse = $isPartial ? $counterStock->quantity : 1;
+                                    $totsFromThisBtl = round($btlToUse * $totsPerBottle);
+                                    
+                                    $counterStock->decrement('quantity', $btlToUse);
+                                    app(\App\Services\StockAlertService::class)->checkCounterStock($variant->id, $ownerId);
+
+                                    if ($totsNeeded >= $totsFromThisBtl) {
+                                        // Record full use of this (potentially partial) bottle
+                                        StockMovement::create([
+                                            'user_id' => $ownerId,
+                                            'product_variant_id' => $variant->id,
+                                            'movement_type' => 'sale',
+                                            'from_location' => 'counter',
+                                            'to_location' => null,
+                                            'quantity' => $btlToUse,
+                                            'unit_price' => $orderItem->unit_price,
+                                            'reference_type' => BarOrder::class,
+                                            'reference_id' => $order->id,
+                                            'created_by' => $currentUser ? $currentUser->id : $ownerId,
+                                            'notes' => ($isPartial ? 'Partial bottle used: ' : 'Bottle opened: ').$order->order_number,
+                                        ]);
+                                        $totsNeeded -= $totsFromThisBtl;
+                                    } else {
+                                        // Open bottle and record the sale of specific tots
+                                        \App\Models\OpenBottle::create([
+                                            'user_id' => $ownerId,
+                                            'product_variant_id' => $variant->id,
+                                            'tots_remaining' => $totsFromThisBtl - $totsNeeded,
+                                        ]);
+
+                                        StockMovement::create([
+                                            'user_id' => $ownerId,
+                                            'product_variant_id' => $variant->id,
+                                            'movement_type' => 'sale',
+                                            'from_location' => 'counter',
+                                            'to_location' => null,
+                                            'quantity' => $btlToUse, // The whole bottle is removed from inventory count
+                                            'unit_price' => $orderItem->unit_price,
+                                            'reference_type' => BarOrder::class,
+                                            'reference_id' => $order->id,
+                                            'created_by' => $currentUser ? $currentUser->id : $ownerId,
+                                            'notes' => ($isPartial ? 'Partial bottle opened: ' : 'Bottle opened: ').$order->order_number,
+                                        ]);
+                                        
+                                        $totsNeeded = 0;
+                                    }
                                 }
                             } else {
                                 // Standard unit/bottle deduction
@@ -920,17 +953,22 @@ class CounterController extends Controller
         // Basic filtering: warehouse or counter
         // We'll call the general report 'warehouse' by default or 'counter'
 
+        $openBottles = \App\Models\OpenBottle::where('user_id', $ownerId)
+            ->get()
+            ->groupBy('product_variant_id');
+
         $stockData = ProductVariant::with(['product', 'stockLocations' => function ($q) use ($ownerId) {
             $q->where('user_id', $ownerId);
         }])
             ->whereHas('product', fn ($q) => $q->where('user_id', $ownerId))
             ->get()
-            ->map(function ($variant) {
+            ->map(function ($variant) use ($openBottles) {
                 $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
 
                 $warehouseQty = $warehouseStock ? (float) $warehouseStock->quantity : 0;
                 $counterQty = $counterStock ? (float) $counterStock->quantity : 0;
+                $openTots = $openBottles->has($variant->id) ? $openBottles->get($variant->id)->sum('tots_remaining') : 0;
                 $totalQty = $warehouseQty + $counterQty;
 
                 $itemsPerPkg = (int) ($variant->items_per_package ?? 1);
@@ -959,13 +997,17 @@ class CounterController extends Controller
                     'category' => $variant->product->category ?? 'General',
                     'warehouse_qty' => $warehouseQty,
                     'counter_qty' => $counterQty,
+                    'open_tots' => $openTots,
                     'total_in_stock' => $totalQty,
                     'unit' => $variant->inventory_unit,
                     'buying_price' => $warehouseStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0,
                     'selling_price' => $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0,
                 ];
             })
-            ->sortBy('item_name')
+            ->sortBy([
+                ['brand', 'asc'],
+                ['item_name', 'asc']
+            ])
             ->values();
 
         $owner = \App\Models\User::find($ownerId);
@@ -1122,6 +1164,7 @@ class CounterController extends Controller
                     'is_low_stock' => $quantity < ($variant->counter_alert_threshold ?? 10),
                     'counter_alert_threshold' => $variant->counter_alert_threshold ?? 10,
                     'unit' => $variant->inventory_unit,
+                    'measurement_unit' => $variant->unit,
                 ];
             })
             ->filter(fn ($v) => $v['quantity'] > 0 || $v['open_tots'] > 0)
@@ -1873,42 +1916,60 @@ class CounterController extends Controller
                                 ->first();
 
                             if ($openBottle) {
-                                if ($openBottle->tots_remaining >= $totsNeeded) {
-                                    $openBottle->decrement('tots_remaining', $totsNeeded);
-                                    if ($openBottle->tots_remaining <= 0) $openBottle->delete();
-                                    $totsNeeded = 0;
-                                } else {
-                                    $totsNeeded -= $openBottle->tots_remaining;
-                                    $openBottle->delete();
-                                }
+                                $deductFromOpen = min($openBottle->tots_remaining, $totsNeeded);
+                                $openBottle->decrement('tots_remaining', $deductFromOpen);
+                                
+                                // Record movement for audit
+                                StockMovement::create([
+                                    'user_id' => $ownerId,
+                                    'product_variant_id' => $variantId,
+                                    'movement_type' => 'usage',
+                                    'from_location' => 'counter',
+                                    'to_location' => null,
+                                    'quantity' => $deductFromOpen / $totsPerBottle,
+                                    'unit_price' => $item['unit_price'],
+                                    'reference_type' => BarOrder::class,
+                                    'reference_id' => $order->id,
+                                    'created_by' => $ownerId,
+                                    'notes' => 'Tots used from open bottle (Auto-Serve): ' . $order->order_number,
+                                ]);
+
+                                $totsNeeded -= $deductFromOpen;
+                                if ($openBottle->tots_remaining <= 0) $openBottle->delete();
                             }
 
                             while ($totsNeeded > 0) {
-                                if ($counterStock->quantity >= 1) {
-                                    $counterStock->decrement('quantity', 1);
+                                if ($counterStock->quantity > 0) {
+                                    $isPartial = ($counterStock->quantity < 1);
+                                    $btlToUse = $isPartial ? $counterStock->quantity : 1;
+                                    $totsFromThisBtl = round($btlToUse * $totsPerBottle);
+
+                                    $counterStock->decrement('quantity', $btlToUse);
                                     app(\App\Services\StockAlertService::class)->checkCounterStock($variantId, $ownerId);
-                                    if ($totsNeeded >= $totsPerBottle) {
-                                        $totsNeeded -= $totsPerBottle;
+                                    
+                                    if ($totsNeeded >= $totsFromThisBtl) {
+                                        $totsNeeded -= $totsFromThisBtl;
                                     } else {
                                         \App\Models\OpenBottle::create([
                                             'user_id' => $ownerId,
                                             'product_variant_id' => $variantId,
-                                            'tots_remaining' => $totsPerBottle - $totsNeeded,
+                                            'tots_remaining' => $totsFromThisBtl - $totsNeeded,
                                         ]);
                                         $totsNeeded = 0;
                                     }
+                                    
                                     StockMovement::create([
                                         'user_id' => $ownerId,
                                         'product_variant_id' => $variantId,
                                         'movement_type' => 'usage',
                                         'from_location' => 'counter',
                                         'to_location' => null,
-                                        'quantity' => 1,
+                                        'quantity' => $btlToUse,
                                         'unit_price' => $item['unit_price'],
                                         'reference_type' => BarOrder::class,
                                         'reference_id' => $order->id,
                                         'created_by' => $ownerId,
-                                        'notes' => 'Bottle opened (Counter POS Auto-Serve): ' . $order->order_number,
+                                        'notes' => ($isPartial ? 'Partial bottle opened: ' : 'Bottle opened: ') . '(Counter POS Auto-Serve): ' . $order->order_number,
                                     ]);
                                 } else $totsNeeded = 0;
                             }

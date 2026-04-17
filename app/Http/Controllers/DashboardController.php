@@ -122,44 +122,97 @@ class DashboardController extends Controller
                     return $query;
                 };
 
-                // ── Today's revenue (From Master Sheet)
-                $handoversQuery = \App\Models\FinancialHandover::where('handover_date', today())
-                    ->where('handover_type', 'staff_to_accountant');
-                
-                if (!auth()->check() || auth()->user()->role !== 'admin') {
-                    $handoversQuery->where('user_id', $ownerId);
-                }
-                $handovers = $handoversQuery->get();
-                
-                $todayRevenue = 0;
-                foreach ($handovers as $h) {
-                    if ($h->status === 'verified') {
-                        $breakdown = $h->payment_breakdown ?? [];
-                        if (is_string($breakdown)) $breakdown = json_decode($breakdown, true);
-                        if (is_array($breakdown) && !empty($breakdown)) {
-                            foreach ($breakdown as $key => $val) {
-                                if ($key === 'shortage_payment' || $key === 'total') continue;
-                                $todayRevenue += floatval($val);
-                            }
-                        } else {
-                            $todayRevenue += floatval($h->amount);
-                        }
+                // ── Today's revenue (Live Real-Time Orders)
+                $todayBarSales = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $location) {
+                    if (!auth()->check() || auth()->user()->role !== 'admin') {
+                        $q->where('user_id', $ownerId);
                     }
-                }
+                    $q->where('status', '!=', 'cancelled')
+                      ->whereDate('created_at', today());
+                      
+                    if ($location && auth()->user()->role !== 'admin') {
+                        $q->where(function($sq) use ($location) {
+                            $sq->whereExists(function ($ssq) use ($location) {
+                                $ssq->select(\DB::raw(1))
+                                   ->from('staff')
+                                   ->whereColumn('staff.id', 'orders.waiter_id')
+                                   ->where('staff.location_branch', $location);
+                            })->orWhereHas('table', function($ssq) use ($location) {
+                                $ssq->where('location', $location);
+                            });
+                        });
+                    }
+                })->sum('total_price');
 
-                // ── This month revenue (From Master Sheet)
-                $monthLedgersQuery = \App\Models\DailyCashLedger::whereMonth('ledger_date', now()->month)
-                    ->whereYear('ledger_date', now()->year);
-                
-                if (!auth()->check() || auth()->user()->role !== 'admin') {
-                    $monthLedgersQuery->where('user_id', $ownerId);
-                }
-                $monthLedgers = $monthLedgersQuery->get();
-                
-                $monthRevenue = $monthLedgers->sum(function($l) {
-                    return floatval($l->total_cash_received) + floatval($l->total_digital_received);
-                });
-                $monthRevenue += $todayRevenue; // Add today's live revenue since today's ledger might not be closed yet
+                $todayFoodSales = \App\Models\KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $location) {
+                    if (!auth()->check() || auth()->user()->role !== 'admin') {
+                        $q->where('user_id', $ownerId);
+                    }
+                    $q->where('status', '!=', 'cancelled')
+                      ->whereDate('created_at', today());
+                      
+                    if ($location && auth()->user()->role !== 'admin') {
+                        $q->where(function($sq) use ($location) {
+                            $sq->whereExists(function ($ssq) use ($location) {
+                                $ssq->select(\DB::raw(1))
+                                   ->from('staff')
+                                   ->whereColumn('staff.id', 'orders.waiter_id')
+                                   ->where('staff.location_branch', $location);
+                            })->orWhereHas('table', function($ssq) use ($location) {
+                                $ssq->where('location', $location);
+                            });
+                        });
+                    }
+                })->where('status', '!=', 'cancelled')->sum('total_price');
+
+                $todayRevenue = $todayBarSales + $todayFoodSales;
+
+                // ── This month revenue (Live Real-Time Orders)
+                $monthBarSalesRaw = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $location) {
+                    if (!auth()->check() || auth()->user()->role !== 'admin') {
+                        $q->where('user_id', $ownerId);
+                    }
+                    $q->where('status', '!=', 'cancelled')
+                      ->whereMonth('created_at', now()->month)
+                      ->whereYear('created_at', now()->year);
+                      
+                    if ($location && auth()->user()->role !== 'admin') {
+                        $q->where(function($sq) use ($location) {
+                            $sq->whereExists(function ($ssq) use ($location) {
+                                $ssq->select(\DB::raw(1))
+                                   ->from('staff')
+                                   ->whereColumn('staff.id', 'orders.waiter_id')
+                                   ->where('staff.location_branch', $location);
+                            })->orWhereHas('table', function($ssq) use ($location) {
+                                $ssq->where('location', $location);
+                            });
+                        });
+                    }
+                })->sum('total_price');
+
+                $monthFoodSalesRaw = \App\Models\KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $location) {
+                    if (!auth()->check() || auth()->user()->role !== 'admin') {
+                        $q->where('user_id', $ownerId);
+                    }
+                    $q->where('status', '!=', 'cancelled')
+                      ->whereMonth('created_at', now()->month)
+                      ->whereYear('created_at', now()->year);
+                      
+                    if ($location && auth()->user()->role !== 'admin') {
+                        $q->where(function($sq) use ($location) {
+                            $sq->whereExists(function ($ssq) use ($location) {
+                                $ssq->select(\DB::raw(1))
+                                   ->from('staff')
+                                   ->whereColumn('staff.id', 'orders.waiter_id')
+                                   ->where('staff.location_branch', $location);
+                            })->orWhereHas('table', function($ssq) use ($location) {
+                                $ssq->where('location', $location);
+                            });
+                        });
+                    }
+                })->where('status', '!=', 'cancelled')->sum('total_price');
+
+                $monthRevenue = $monthBarSalesRaw + $monthFoodSalesRaw;
 
                 // ── Today's orders
                 $todayOrdersQuery = \App\Models\BarOrder::whereDate('created_at', today())
@@ -574,8 +627,9 @@ class DashboardController extends Controller
                     $waiter = $orders->first()->waiter;
                     if (!$waiter) return null;
 
-                    // Skip 'Counter' from waiter leaderboard
+                    // Skip non-waiters from waiter leaderboard
                     if (stripos($waiter->full_name, 'counter') !== false) return null;
+                    if ($waiter->role && strtolower($waiter->role->name) !== 'waiter') return null;
 
                     $barRev = $orders->sum(fn($o) => $o->items ? $o->items->sum('total_price') : 0);
                     $foodRev = $orders->sum(fn($o) => $o->kitchenOrderItems ? $o->kitchenOrderItems->where('status', '!=', 'cancelled')->sum('total_price') : 0);

@@ -146,7 +146,7 @@
                       </div>
                       @php
                           $vM = $variant['variant'] ?? '';
-                          $vU = $variant['unit'] ?? '';
+                          $vU = $variant['measurement_unit'] ?? '';
                           $fullMeasure = $vM;
                           if (!empty($vM) && !preg_match('/[a-zA-Z]/', $vM)) {
                               $fullMeasure = $vM . ($vU ?: '');
@@ -164,15 +164,27 @@
                              $finalUnit = $qty == 1 ? $u : ($u . 's');
                              
                              $openStr = '';
+                             $totCapacity = $variant['total_tots_capacity'] ?? 0;
+                             $pName = 'Tot';
+                             $cat = strtolower($variant['raw_category'] ?? '');
+                             if (str_contains($cat, 'wine')) $pName = 'Glass';
+                             elseif (str_contains($cat, 'spirit') || str_contains($cat, 'whiskey') || str_contains($cat, 'vodka') || str_contains($cat, 'gin')) $pName = 'Shot';
+                             $pNamePlural = \Illuminate\Support\Str::plural($pName);
+
                              if (($variant['open_tots'] ?? 0) > 0) {
-                                 $pName = 'Tot';
-                                 $cat = strtolower($variant['raw_category'] ?? '');
-                                 if (str_contains($cat, 'wine')) $pName = 'Glass';
-                                 elseif (str_contains($cat, 'spirit') || str_contains($cat, 'whiskey') || str_contains($cat, 'vodka') || str_contains($cat, 'gin')) $pName = 'Shot';
-                                 $openStr = ' <span class="text-info ml-1">+ ' . $variant['open_tots'] . ' ' . ($variant['open_tots'] > 1 ? \Illuminate\Support\Str::plural($pName) : $pName) . '</span>';
+                                 $openStr = ' <span class="text-info ml-1">+ ' . $variant['open_tots'] . ' ' . ($variant['open_tots'] > 1 ? $pNamePlural : $pName) . '</span>';
                              }
+
+                             $totalAvailableTots = ($qty * $totCapacity) + ($variant['open_tots'] ?? 0);
                           @endphp
-                          <strong class="text-{{ $statusColor }} font-weight-bold">{{ number_format($qty) }} {{ $finalUnit }}{!! $openStr !!}</strong>
+                          <div class="text-right">
+                              <strong class="text-{{ $statusColor }} font-weight-bold d-block">{{ number_format($qty) }} {{ $finalUnit }}{!! $openStr !!}</strong>
+                              @if($variant['can_sell_in_tots'] && $totCapacity > 0)
+                                  <small class="text-muted font-italic" style="font-size: 0.85em;">
+                                      ≈ {{ number_format($totalAvailableTots) }} total {{ strtolower($totalAvailableTots == 1 ? $pName : $pNamePlural) }}
+                                  </small>
+                              @endif
+                          </div>
                       </div>
                       {{-- Packages hidden for counter bottles focus --}}
                   </div>
@@ -250,23 +262,31 @@
                             <strong>{{ $variant['brand'] }}</strong><br>
                             <span class="badge badge-light border smallest text-muted">{{ $variant['category'] }}</span>
                           </td>
-                          <td><span class="badge badge-secondary">{{ $variant['variant'] }}</span></td>
+                          <td><span class="badge badge-secondary">{{ $variant['variant'] }}{{ (preg_match('/[a-zA-Z]/', ($variant['variant'] ?? '')) ? '' : ($variant['measurement_unit'] ?? '')) }}</span></td>
                           <td>
                               @php
                                  $u = strtolower($unitLabel);
                                  if (in_array($u, ['ml', 'cl', 'l'])) $u = 'btl';
                                  $finalUnit = $variant['quantity'] == 1 ? $u : ($u . 's');
                                  
+                                 $totCapacity = $variant['total_tots_capacity'] ?? 0;
+                                 $pName = 'Tot';
+                                 $cat = strtolower($variant['raw_category'] ?? '');
+                                 if (str_contains($cat, 'wine')) $pName = 'Glass';
+                                 elseif (str_contains($cat, 'spirit') || str_contains($cat, 'whiskey') || str_contains($cat, 'vodka') || str_contains($cat, 'gin')) $pName = 'Shot';
+                                 $pNamePlural = \Illuminate\Support\Str::plural($pName);
+
                                  $openStr = '';
                                  if (($variant['open_tots'] ?? 0) > 0) {
-                                     $pName = 'Tot';
-                                     $cat = strtolower($variant['raw_category'] ?? '');
-                                     if (str_contains($cat, 'wine')) $pName = 'Glass';
-                                     elseif (str_contains($cat, 'spirit') || str_contains($cat, 'whiskey') || str_contains($cat, 'vodka') || str_contains($cat, 'gin')) $pName = 'Shot';
-                                     $openStr = '<br><span class="text-info smallest font-weight-bold">+ ' . $variant['open_tots'] . ' ' . ($variant['open_tots'] > 1 ? \Illuminate\Support\Str::plural($pName) : $pName) . ' open</span>';
+                                     $openStr = '<br><span class="text-info smallest font-weight-bold">+ ' . $variant['open_tots'] . ' ' . ($variant['open_tots'] > 1 ? $pNamePlural : $pName) . ' open</span>';
                                  }
+                                 
+                                 $totalAvailableTots = ($variant['quantity'] * $totCapacity) + ($variant['open_tots'] ?? 0);
                               @endphp
                               <strong class="text-{{ $variant['quantity'] < 10 ? 'warning' : 'dark' }}">{{ number_format($variant['quantity']) }} {{ $finalUnit }}</strong>{!! $openStr !!}
+                              @if($variant['can_sell_in_tots'] && $totCapacity > 0)
+                                  <div class="smallest text-muted font-italic">Total: {{ number_format($totalAvailableTots) }} {{ strtolower($totalAvailableTots == 1 ? $pName : $pNamePlural) }}</div>
+                              @endif
                               {{-- Packages hidden for counter bottles focus --}}
                           </td>
                           <td>

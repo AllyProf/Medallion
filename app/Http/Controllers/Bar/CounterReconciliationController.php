@@ -34,20 +34,41 @@ class CounterReconciliationController extends Controller
         }
 
         $ownerId = $this->getOwnerId();
-        $date = $request->get('date', now()->format('Y-m-d'));
 
-        // Management role detection
+        // Role detection (Must be top-level for sequence logic)
         $isAccountant = $currentStaff && (
             strtolower($currentStaff->role->slug ?? '') === 'accountant' ||
             strtolower($currentStaff->role->name ?? '') === 'accountant'
         );
         $isManager = $currentStaff && in_array(strtolower($currentStaff->role->slug ?? ''), ['manager', 'admin', 'general-manager']);
         $isManagementRole = $isAccountant || $isManager || $isSuperAdmin;
-
-        // Get location from session (branch switcher)
+        $requestedDate = $request->get('date');
         $location = session('active_location');
+        
+        // Priority logic: Find the first thing that needs attention:
+        // 1. Any PENDING handover (something submitted that needs verification)
+        // 2. Any OPEN shift (something currently active)
+        $pendingHandover = FinancialHandover::where('user_id', $ownerId)
+            ->where('handover_type', 'staff_to_accountant')
+            ->where('status', 'pending')
+            ->when($location && $location !== 'all', function($q) use ($location) {
+                // Approximate location filter for handovers if possible
+                // (Handover doesn't have branch directly, but we can check the staff who submitted it)
+                $q->whereHas('staff', function($sq) use ($location) {
+                    $sq->where('location_branch', $location);
+                });
+            })
+            ->orderBy('created_at', 'desc')
+            ->first();
 
-        // Find the specific active shift context
+        // Determine target date: If no date requested, use the date of the pending handover or today.
+        if (!$requestedDate && $pendingHandover) {
+            $date = $pendingHandover->handover_date->format('Y-m-d');
+        } else {
+            $date = $requestedDate ?: now()->format('Y-m-d');
+        }
+
+        // Find the specific active shift context for the target date
         $bar_shift = \App\Models\BarShift::when(!$isSuperAdmin, function($q) use ($ownerId) {
                 return $q->where('user_id', $ownerId);
             })
@@ -58,29 +79,31 @@ class CounterReconciliationController extends Controller
             ->when($currentStaff && !$isAccountant && !$isSuperAdmin, function ($q) use ($currentStaff) {
                 $q->where('staff_id', $currentStaff->id);
             })
+            ->whereDate('opened_at', $date) // Scope to the date we are viewing!
             ->orderBy('created_at', 'desc')
             ->first();
+
 
         // Check for relevant Handover context
         $todayHandover = null;
         if ($currentStaff) {
-            $handoverQuery = FinancialHandover::where('user_id', $ownerId)
-                ->where('handover_type', 'staff_to_accountant');
-
-            if ($bar_shift) {
-                // IMPORTANT: If there is an active OPEN shift, we ONLY look for its handover.
-                // This allows a NEWLY opened shift to take priority over a PREVIOUS verified handover today.
-                $handoverQuery->where('bar_shift_id', $bar_shift->id);
+            if (!$requestedDate && $pendingHandover) {
+                $todayHandover = $pendingHandover;
             } else {
-                // Otherwise look for the latest handover for this date (Historical View)
-                $handoverQuery->whereDate('handover_date', $date);
+                $handoverQuery = FinancialHandover::where('user_id', $ownerId)
+                    ->where('handover_type', 'staff_to_accountant');
 
-                if (!$isAccountant && !$isSuperAdmin) {
-                    $handoverQuery->where('accountant_id', $currentStaff->id);
+                if ($bar_shift) {
+                    $handoverQuery->where('bar_shift_id', $bar_shift->id);
+                } else {
+                    $handoverQuery->whereDate('handover_date', $date);
+
+                    if (!$isAccountant && !$isSuperAdmin) {
+                        $handoverQuery->where('accountant_id', $currentStaff->id);
+                    }
                 }
+                $todayHandover = $handoverQuery->orderBy('created_at', 'desc')->first();
             }
-
-            $todayHandover = $handoverQuery->orderBy('created_at', 'desc')->first();
         }
 
         // If a handover exists, we derive our shift context and target date from it
@@ -416,8 +439,9 @@ class CounterReconciliationController extends Controller
 
         // Handover was already detected above
 
-        // Management roles (Accountant/Manager/Admin) should not see any waiter data until they receive a handover
-        if ($isManagementRole && ! $todayHandover) {
+        // Management roles (Accountant/Manager/Admin) should only have their view restricted if there is NO active shift AND no handover.
+        // If a shift is OPEN, they can see real-time progress.
+        if ($isManagementRole && ! $todayHandover && ! $bar_shift) {
             $waiters = collect([]);
         }
 
@@ -526,31 +550,32 @@ class CounterReconciliationController extends Controller
         $totalPettyCash = $pettyCashIssues->sum('amount');
         $totalExpensesCombined = $ledger->expenses()->sum('amount') + $totalPettyCash;
 
-        // Financial calculations for the drawer closure
-        $totalRevenueToday = $ledger->total_cash_received + $ledger->total_digital_received; // Consolidated collections (Cash + Withdrawn Digital)
+        // FINANCIAL SYNC: Shift-Isolated Metrics
+        // These ensure that Card 1 (Collections) = Card 2 (COGS) + Card 3 (Profit)
+        $shiftRevenue = $waiters->sum('bar_sales') + $waiters->sum('food_sales');
+        $shiftProfit = $stockProfit; // Already calculated from shift-isolated $waiters
+        $shiftCOGS = max(0, $shiftRevenue - $shiftProfit);
+
+        // Financial calculations for the drawer closure (Daily Context)
+        $totalRevenueToday = $ledger->total_cash_received + $ledger->total_digital_received; // Consolidated Verified collections
         $totalBusinessValue = $ledger->opening_cash + $totalRevenueToday - $totalExpensesCombined;
 
         $expFromProfit = floatval($ledger->total_expenses_from_profit) + floatval($pettyCashIssues->where('fund_source', 'profit')->sum('amount'));
         $expFromCirculation = floatval($ledger->total_expenses_from_circulation) + floatval($pettyCashIssues->where('fund_source', 'circulation')->sum('amount'));
 
-        // 1. Net Earnings (before pullout)
-        $netEarnings = $stockProfit - $expFromProfit;
+        // 1. Net Daily Earnings (including expenses)
+        // Note: For the summary cards, we show Shift Gross Profit, but for the ledger update we track daily context.
+        $netDailyEarnings = $stockProfit - $expFromProfit;
 
-        // 2. Pragmatic Distribution Logic (for the boss):
-        // Boss only pulls out positive profit.
-        $finalProfit = max(0, $netEarnings);
+        // 2. Final Daily Profit (Capped at 0)
+        $finalDailyProfit = max(0, $netDailyEarnings);
 
-        // 3. Practical Rollover (for the accountant bank):
-        // Whatever is actually left in the vault after pullout.
-        $rolloverFloat = max(0, $totalBusinessValue - $finalProfit);
-
-        // 4. Money in Circulation (Isolated Today's Sales Portion):
-        // This is the revenue portion used for restocking (COGS), isolated from opening float and profit.
+        // 3. Money in Circulation (Daily Port)
         $moneyInCirculation = max(0, $totalRevenueToday - $stockProfit - $expFromCirculation);
 
         if ($ledger->status === 'open') {
             $ledger->update([
-                'profit_generated' => $stockProfit,
+                'profit_generated' => $stockProfit, // Currently tracks latest shift profit (could be optimized to additive)
                 'expected_closing_cash' => $totalBusinessValue,
             ]);
         }
@@ -564,8 +589,13 @@ class CounterReconciliationController extends Controller
             'date',
             'accountant',
             'todayHandover',
+            'bar_shift',
             'expectedBreakdowns',
             'accountantLedger',
+            'shiftRevenue',
+            'shiftProfit',
+            'shiftCOGS',
+            'totalBusinessValue',
             'isAccountant',
             'isManager',
             'isManagementRole',
@@ -576,13 +606,9 @@ class CounterReconciliationController extends Controller
             'totalPettyCash',
             'totalExpensesCombined',
             'stockProfit',
-            'finalProfit',
+            'finalDailyProfit',
             'moneyInCirculation',
-            'totalBusinessValue',
-            'rolloverFloat',
-            'stockProfit',
             'staff',
-            'bar_shift',
             'totalRevenueToday'
         ));
     }
@@ -996,35 +1022,74 @@ class CounterReconciliationController extends Controller
 
         $ownerId = $this->getOwnerId();
         $date = $request->get('date', now()->format('Y-m-d'));
+        $location = session('active_location');
 
         // Check if current user is accountant
         $currentStaff = $this->getCurrentStaff();
-        $isAccountant = $currentStaff && strtolower($currentStaff->role->name ?? '') === 'accountant';
+        $isAccountant = $currentStaff && (
+            strtolower($currentStaff->role->slug ?? '') === 'accountant' ||
+            strtolower($currentStaff->role->name ?? '') === 'accountant'
+        );
 
         // Verify waiter belongs to owner (unless accountant)
         if (!$isAccountant && !$isSuperAdmin && $waiter->user_id !== $ownerId) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        // Find if there is an active shift or a specific reconciliation shift for this waiter/date
-        // We look for a reconciliation first to "freeze" the view if it's already reconciled.
+        // 1. Prioritize Provided Shift ID from request (most accurate)
+        $bar_shift_id = $request->get('bar_shift_id');
+        $bar_shift = null;
+        
+        if ($bar_shift_id) {
+            $bar_shift = \App\Models\BarShift::find($bar_shift_id);
+        }
+
+        // 2. Identify context (same sequence as main reconciliation method) if no ID provided
+        if (!$bar_shift) {
+            // First, check if there is a pending handover for this date that we should be looking at
+            $handover = \App\Models\FinancialHandover::where('user_id', $ownerId)
+                ->where('handover_type', 'staff_to_accountant')
+                ->where('status', 'pending')
+                ->whereDate('handover_date', $date)
+                ->orderBy('created_at', 'desc')
+                ->first();
+
+            if ($handover && $handover->bar_shift_id) {
+                $bar_shift = \App\Models\BarShift::find($handover->bar_shift_id);
+            }
+
+            // If still no shift, find an open shift for the date
+            if (!$bar_shift) {
+                $bar_shift = \App\Models\BarShift::when(!$isSuperAdmin, function($q) use ($ownerId) {
+                        return $q->where('user_id', $ownerId);
+                    })
+                    ->where('status', 'open')
+                    ->when($location && $location !== 'all', function($q) use ($location) {
+                        $q->where('location_branch', $location);
+                    })
+                    ->whereDate('opened_at', $date)
+                    ->orderBy('created_at', 'desc')
+                    ->first();
+            }
+        }
+
+        // 3. Find if there is a specific reconciliation record (frozen view)
         $reconciliation = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
             ->where('waiter_id', $waiter->id)
-            ->where('reconciliation_date', $date)
+            ->when($bar_shift, function($q) use ($bar_shift) {
+                return $q->where('bar_shift_id', $bar_shift->id);
+            }, function($q) use ($date) {
+                return $q->where('reconciliation_date', $date);
+            })
             ->where('reconciliation_type', 'bar')
             ->first();
 
-        $allOpenShiftIds = \App\Models\BarShift::where('user_id', $ownerId)
-            ->where('status', 'open')
-            ->pluck('id')
-            ->toArray();
-
         $targetShiftIds = [];
         if ($reconciliation) {
+            // Priority 1: If reconciled, strictly show that shift's orders
             $targetShiftIds = [$reconciliation->bar_shift_id];
-        } elseif ($bar_shift && in_array($bar_shift->id, $allOpenShiftIds)) {
-            $targetShiftIds = $allOpenShiftIds;
         } elseif ($bar_shift) {
+            // Priority 2: If we found a specific shift, strictly show that shift's orders
             $targetShiftIds = [$bar_shift->id];
         }
 
@@ -1041,6 +1106,7 @@ class CounterReconciliationController extends Controller
             ->when(!empty($targetShiftIds), function ($q) use ($targetShiftIds) {
                 return $q->whereIn('bar_shift_id', $targetShiftIds);
             }, function ($q) use ($date) {
+                // FALLBACK: Only if we truly have no shift context (Legacy/Edge Case)
                 return $q->whereDate('created_at', $date);
             })
             ->where('status', '!=', 'cancelled')
