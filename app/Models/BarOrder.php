@@ -158,6 +158,14 @@ class BarOrder extends Model
     }
 
     /**
+     * Get the shift associated with this order.
+     */
+    public function shift()
+    {
+        return $this->belongsTo(BarShift::class, 'bar_shift_id');
+    }
+
+    /**
      * Check if order is pending.
      */
     public function isPending()
