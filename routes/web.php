@@ -97,6 +97,7 @@ Route::group(['prefix' => 'bar/kiosk', 'as' => 'bar.kiosk.'], function () {
     Route::post('/create-order', [\App\Http\Controllers\Bar\WaiterController::class, 'createOrder'])->name('create-order');
     Route::post('/products-json', [\App\Http\Controllers\Bar\WaiterController::class, 'kioskProductsJson'])->name('products-json');
     Route::get('/print-receipt/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'printReceipt'])->name('print-receipt');
+    Route::get('/print-combined-receipt', [\App\Http\Controllers\Bar\WaiterController::class, 'printCombinedReceipt'])->name('print-combined');
     Route::get('/print-docket/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'printFoodDocket'])->name('print-docket');
     Route::post('/add-items/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'addItemsToOrder'])->name('add-items');
     Route::post('/cancel-order/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'cancelOrder'])->name('cancel-order');
@@ -241,7 +242,6 @@ Route::middleware('allow.staff')->group(function () {
         Route::post('waiter/cancel-order/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'cancelOrder'])->name('waiter.cancel-order');
         Route::post('waiter/record-payment/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'recordPayment'])->name('waiter.record-payment');
         Route::get('kiosk/print-receipt/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'printReceipt'])->name('kiosk.print-receipt');
-        Route::get('kiosk/print-combined-receipt', [\App\Http\Controllers\Bar\WaiterController::class, 'printCombinedReceipt'])->name('kiosk.print-combined');
         Route::get('kiosk/print-docket/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'printFoodDocket'])->name('kiosk.print-docket');
         Route::get('waiter/print-receipt/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'printReceipt'])->name('waiter.print-receipt');
         Route::get('waiter/print-docket/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'printFoodDocket'])->name('waiter.print-docket');
