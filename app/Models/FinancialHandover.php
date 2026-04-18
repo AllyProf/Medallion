@@ -44,8 +44,8 @@ class FinancialHandover extends Model
         return $this->belongsTo(Staff::class, 'recipient_id');
     }
 
-    public function recipientUser()
+    public function barShift()
     {
-        return $this->belongsTo(User::class, 'recipient_id');
+        return $this->belongsTo(BarShift::class, 'bar_shift_id');
     }
 }

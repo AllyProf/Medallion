@@ -72,7 +72,7 @@ class CounterReconciliationController extends Controller
         $priorityHandover = FinancialHandover::where('user_id', $ownerId)
             ->where('handover_type', 'staff_to_accountant')
             ->whereIn('status', ['pending', 'verified'])
-            ->where(function($q) use ($ownerId) {
+            ->where(function($q) use ($ownerId, $isAccountant) {
                 $q->where('status', 'pending')
                   ->orWhere(function($sq) use ($ownerId) {
                       $sq->where('status', 'verified')
@@ -84,6 +84,12 @@ class CounterReconciliationController extends Controller
                                 ->where('daily_cash_ledgers.status', 'closed');
                          });
                   });
+            })
+            ->when($isAccountant, function($q) {
+                // Accountants only see handovers from CLOSED shifts
+                $q->whereHas('barShift', function($sq) {
+                    $sq->where('status', '!=', 'open');
+                });
             })
             ->when($searchShift, function($q) use ($searchShift) {
                 // If a specific shift was searched, prioritize that handover
@@ -198,6 +204,9 @@ class CounterReconciliationController extends Controller
                             return $q->whereDate('handover_date', $date);
                         })
                         ->whereIn('status', ['pending', 'verified'])
+                        ->whereHas('barShift', function($sq) {
+                            $sq->where('status', '!=', 'open');
+                        })
                         ->orderBy('status', 'asc') // Pendings first
                         ->first();
                 }
@@ -744,13 +753,18 @@ class CounterReconciliationController extends Controller
         $shiftProfit = $stockProfit; // Already calculated from shift-isolated $waiters
         $shiftCOGS = max(0, $shiftRevenue - $shiftProfit);
 
-        // Financial calculations for the drawer closure (Daily Context)
-        $totalRevenueToday = $ledger->total_cash_received + $ledger->total_digital_received; // Consolidated Verified collections
-        
-        // AUDIT FIX: If ledger is not yet synced for this date but we have a verified handover,
-        // use the handover amount to show the correct financial context in the settlement card.
-        if ($totalRevenueToday <= 0 && $todayHandover && $todayHandover->status === 'verified') {
-            $totalRevenueToday = $todayHandover->amount;
+        // Financial calculations for the drawer closure
+        if ($isAccountant) {
+            // Accountants strictly see what has been officially verified into the ledger
+            $totalRevenueToday = $ledger->total_cash_received + $ledger->total_digital_received; 
+            
+            if ($totalRevenueToday <= 0 && $todayHandover && $todayHandover->status === 'verified') {
+                $totalRevenueToday = $todayHandover->amount;
+            }
+        } else {
+            // Counter staff need to see the practical projection based on their immediate shift sales.
+            // This prevents "Money in Circulation" from going to 0 just because the Accountant hasn't synced yet.
+            $totalRevenueToday = $shiftRevenue;
         }
 
         $totalBusinessValue = $ledger->opening_cash + $totalRevenueToday - $totalExpensesCombined;
@@ -759,17 +773,17 @@ class CounterReconciliationController extends Controller
         $expFromCirculation = floatval($ledger->total_expenses_from_circulation) + floatval($pettyCashIssues->where('fund_source', 'circulation')->sum('amount'));
 
         // 1. Net Daily Earnings (including expenses)
-        // Note: For the summary cards, we show Shift Gross Profit, but for the ledger update we track daily context.
         $netDailyEarnings = $stockProfit - $expFromProfit;
 
         // 2. Final Daily Profit (Capped at 0)
         $finalDailyProfit = max(0, $netDailyEarnings);
         $finalProfit = $finalDailyProfit; // Alias used by the settlement view
 
-        // 3. Money in Circulation (Daily Port)
+        // 3. Money in Circulation (Shift/Daily Projection)
+        // Circulation is the remaining capital returned to restock the fridge.
         $moneyInCirculation = max(0, $totalRevenueToday - $stockProfit - $expFromCirculation);
 
-        // 4. Rollover Float = opening cash carried forward + working capital in circulation
+        // 4. Rollover Float
         $rolloverFloat = $ledger->opening_cash + $moneyInCirculation;
 
         if ($ledger->status === 'open') {
@@ -1182,6 +1196,11 @@ class CounterReconciliationController extends Controller
                 try {
                     $smsService = new \App\Services\HandoverSmsService;
                     $smsService->sendWaiterReconciliationSubmissionSms($reconciliation);
+                    
+                    // NEW: Dedicated Shortage Alert if deficit detected
+                    if ($reconciliation->difference < -100) {
+                        $smsService->sendShortageAlertSms($reconciliation);
+                    }
                 } catch (\Exception $e) {
                     \Log::error('Failed to send Waiter Bar Reconciliation SMS: '.$e->getMessage());
                 }
@@ -1951,6 +1970,11 @@ class CounterReconciliationController extends Controller
             try {
                 $smsService = new \App\Services\HandoverSmsService;
                 $smsService->sendWaiterReconciliationSubmissionSms($reconciliation);
+
+                // NEW: Dedicated Shortage Alert if deficit detected
+                if ($reconciliation->difference < -100) {
+                    $smsService->sendShortageAlertSms($reconciliation);
+                }
             } catch (\Exception $e) {
                 \Log::error('Failed to send Waiter Food Reconciliation SMS: '.$e->getMessage());
             }
@@ -2075,9 +2099,17 @@ class CounterReconciliationController extends Controller
 
             DB::commit();
 
+            // NEW: Trigger SMS notification for the settlement
+            try {
+                $smsService = new \App\Services\HandoverSmsService;
+                $smsService->sendShortageSettlementSms($reconciliation, $amount);
+            } catch (\Exception $e) {
+                \Log::error('Failed to send shortage settlement SMS: ' . $e->getMessage());
+            }
+
             return response()->json([
                 'success' => true,
-                'message' => 'Shortage settled successfully! ' . ($channel === 'salary_deduction' ? 'Applied as salary deduction.' : 'Amount added to accounts.'),
+                'message' => 'Shortage payment of TSh ' . number_format($amount) . ' recorded successfully.'
             ]);
         } catch (\Exception $e) {
             DB::rollBack();

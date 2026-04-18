@@ -408,5 +408,59 @@ class HandoverSmsService
 
         return $this->smsService->sendSms($phone, $message);
     }
+
+    /**
+     * Send Shortage Alert SMS when a deficit is first recorded
+     */
+    public function sendShortageAlertSms(\App\Models\WaiterDailyReconciliation $reconciliation)
+    {
+        $waiter = $reconciliation->waiter;
+        if (!$waiter || !$waiter->phone_number) return false;
+
+        $diff = abs((float)$reconciliation->difference);
+        
+        // Don't send for trivial amounts (e.g. less than 200 TSh)
+        if ($diff < 200) return false;
+
+        $date = \Carbon\Carbon::parse($reconciliation->reconciliation_date)->format('M d, Y');
+        $amount = number_format($diff, 0);
+        $dept = ($reconciliation->reconciliation_type === 'food') ? 'KITCHEN' : 'BAR/DRINKS';
+
+        $message = "SHORTAGE ALERT - MEDALLION\n\n";
+        $message .= "Hello " . ($waiter->full_name ?? 'Staff') . ",\n";
+        $message .= "A deficit of TSh {$amount} has been recorded for your {$dept} shift on {$date}.\n";
+        $message .= "\nThis has been added to your outstanding debt. Please consult the Accountant for verification.";
+        $message .= "\n\nMEDALLION Financial Audit.";
+
+        return $this->smsService->sendSms($waiter->phone_number, $message);
+    }
+
+    /**
+     * Send Shortage Settlement SMS when a staff member pays back a deficit
+     */
+    public function sendShortageSettlementSms(\App\Models\WaiterDailyReconciliation $reconciliation, $amountPaid)
+    {
+        $waiter = $reconciliation->waiter;
+        if (!$waiter || !$waiter->phone_number) return false;
+
+        $paid = number_format((float)$amountPaid, 0);
+        $remaining = abs((float)$reconciliation->difference);
+        $remainingFormatted = number_format($remaining, 0);
+        $date = \Carbon\Carbon::parse($reconciliation->reconciliation_date)->format('M d, Y');
+
+        $message = "PAYMENT RECEIVED - MEDALLION\n\n";
+        $message .= "Hello " . ($waiter->full_name ?? 'Staff') . ",\n";
+        $message .= "Thank you. Your payment of TSh {$paid} for shift {$date} has been recorded.\n";
+        
+        if ($remaining > 10) {
+            $message .= "REMAINING DEBT: TSh {$remainingFormatted}\n";
+        } else {
+            $message .= "STATUS: DEBT FULLY SETTLED ✅\n";
+        }
+        
+        $message .= "\nMEDALLION Financial Audit.";
+
+        return $this->smsService->sendSms($waiter->phone_number, $message);
+    }
 }
 

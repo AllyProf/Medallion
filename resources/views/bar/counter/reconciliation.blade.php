@@ -665,10 +665,13 @@
           @endif
 
           {{-- SHORTAGES (Inside Column 1) --}}
+          {{-- Only flag a REAL shortage if the staff has SUBMITTED a reconciliation with a shortfall --}}
           @php
             $hasShortages = false;
             foreach($waiters as $data) {
-                if ($data['difference'] < 0) { $hasShortages = true; break; }
+                $rec = $data['reconciliation'] ?? null;
+                $isSubmitted = $rec && in_array($rec->status, ['submitted', 'partial', 'verified', 'settled']);
+                if ($isSubmitted && $data['difference'] < 0) { $hasShortages = true; break; }
             }
           @endphp
 
@@ -686,7 +689,11 @@
                   </thead>
                   <tbody>
                     @foreach($waiters as $data)
-                      @if($data['difference'] < 0)
+                      @php
+                        $rec = $data['reconciliation'] ?? null;
+                        $isSubmitted = $rec && in_array($rec->status, ['submitted', 'partial', 'verified', 'settled']);
+                      @endphp
+                      @if($isSubmitted && $data['difference'] < 0)
                       <tr class="text-danger font-weight-bold" style="vertical-align: middle;">
                         <td>{{ $data['waiter']->full_name }}</td>
                         <td class="text-right">- TSh {{ number_format(abs($data['difference']), 0) }}</td>

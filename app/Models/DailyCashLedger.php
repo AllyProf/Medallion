@@ -155,7 +155,7 @@ class DailyCashLedger extends Model
          */
         $this->carried_forward = $totalPhysicalAssets 
                                 - $this->total_expenses_from_circulation 
-                                - $this->profit_submitted_to_boss;
+                                - $this->profit_generated;
         
         // Ensure non-negative rollover
         if ($this->carried_forward < 0) {

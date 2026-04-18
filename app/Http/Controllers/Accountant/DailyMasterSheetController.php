@@ -388,14 +388,19 @@ class DailyMasterSheetController extends Controller
                 ->sum('difference');
             $totalDayShortage = abs($totalDayShortage);
 
-            $currentHandoversTotal = $handovers->where('status', 'verified')->sum('amount');
+            $currentHandoversTotal = $handovers->whereIn('status', ['pending', 'verified'])->sum('amount');
             
             if ($currentHandoversTotal > 100) {
-                // Correctly extract the split from verified handovers
-                foreach ($handovers->where('status', 'verified') as $h) {
+                // Process both verified money and any pending shortage settlements
+                foreach ($handovers as $h) {
+                    // Only process pending handovers if they are shortage settlements
+                    $isShortagePay = false;
                     $breakdown = $h->payment_breakdown ?? [];
                     if (is_string($breakdown)) $breakdown = json_decode($breakdown, true);
+                    if (isset($breakdown['shortage_payment'])) $isShortagePay = true;
                     
+                    if ($h->status !== 'verified' && !$isShortagePay) continue;
+
                     if (is_array($breakdown)) {
                         foreach ($breakdown as $key => $val) {
                             $amt = floatval($val);
@@ -410,21 +415,24 @@ class DailyMasterSheetController extends Controller
                                 $handoverDigital += $amt;
                             }
                         }
-                    } else {
-                        $handoverCash += floatval($h->amount);
                     }
                 }
-            } else {
-                // FALLBACK: Use Order-based projection
-                $handoverTotal = $totalProjectedRevenue;
-                $handoverDigital = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
+            }
+
+            // [NEW LOGIC] Combine handovers with live projections for "Uwazi" (Transparency)
+            if ($hasOpenShift || $currentHandoversTotal <= 100) {
+                // FALLBACK/ADDITION: Use Order-based projection for open shifts
+                $projectedDigital = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
                     ->whereIn('status', ['served', 'delivered'])
                     ->where('payment_method', '!=', 'cash')
                     ->sum('total_amount');
                 
-                // USE NET COLLECTIONS: Deduct shortage from the projected cash collections
-                $projectedCash = $handoverTotal - $handoverDigital;
-                $handoverCash = max(0, $projectedCash - $totalDayShortage);
+                $projectedTotal = $totalProjectedRevenue;
+                $projectedCash = max(0, $projectedTotal - $projectedDigital - $totalDayShortage);
+
+                // If we are in the middle of a shift, we ADD the handovers (debt recoveries) to the projection
+                $handoverCash += $projectedCash;
+                $handoverDigital += $projectedDigital;
             }
 
             // 3. Determine Business Status (Temporary properties, do not save to DB)
@@ -472,10 +480,40 @@ class DailyMasterSheetController extends Controller
                 ->where('purpose', 'NOT LIKE', '[FOOD]%')
                 ->get();
 
-            // For backward compatibility with the dynamic properties used in the view
             $ledger->combined_expenses = $ledger->total_expenses;
             $ledger->total_circulation_outflow = $ledger->total_expenses_from_circulation;
             $ledger->total_profit_outflow = $ledger->total_expenses_from_profit;
+
+            // NEW: Fetch individual debt repayments for the "Uwazi" (Transparency) breakdown
+            $ledger->shortageBreakdown = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
+                ->where(function($q) use ($ledger) {
+                    $q->where('notes', 'LIKE', '%' . $ledger->ledger_date->format('Y-m-d') . '%')
+                      ->where('status', 'reconciled');
+                })
+                ->with('waiter')
+                ->get()
+                ->map(function($rec) use ($ledger) {
+                    $notes = json_decode($rec->notes, true);
+                    $settlements = $notes['settlements'] ?? [];
+                    $amountToday = 0;
+                    foreach($settlements as $s) {
+                        if (isset($s['date']) && str_contains($s['date'], $ledger->ledger_date->format('Y-m-d'))) {
+                            $amountToday += $s['amount'];
+                        }
+                    }
+                    return [
+                        'name' => $rec->waiter->full_name ?? 'Staff',
+                        'amount' => $amountToday
+                    ];
+                })->filter(fn($item) => $item['amount'] > 0);
+
+            // If we have verified handovers but no linked recs (legacy), try to show the handover itself
+            if ($ledger->shortageBreakdown->isEmpty() && $shortageCollected > 0) {
+                 $ledger->shortageBreakdown = collect([[
+                     'name' => 'Debt Recovery',
+                     'amount' => $shortageCollected
+                 ]]);
+            }
 
 
             // Manager Confirmation Status for the Profit

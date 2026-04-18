@@ -197,6 +197,16 @@ class WaiterSalesController extends Controller
 
             DB::commit();
 
+            // NEW: Trigger SMS notification if shortage detected
+            try {
+                if ($reconciliation->difference < -100) {
+                    $smsService = new \App\Services\HandoverSmsService;
+                    $smsService->sendShortageAlertSms($reconciliation);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to send waiter self-submission shortage SMS: ' . $e->getMessage());
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Reconciliation submitted successfully.',
