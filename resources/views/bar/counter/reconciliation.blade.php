@@ -512,12 +512,37 @@
             @csrf
             <input type="hidden" name="date" value="{{ $date }}">
             
-            <div class="alert alert-warning">
-              <h5><i class="fa fa-warning"></i> Ready to Close Your Day?</h5>
-              <p>Please confirm the totals gathered from waiter reconciliations today.</p>
-            </div>
+            @php
+              $pendingWaiters = $waiters->where('status', 'pending')->reject(function($data) {
+                  return in_array(strtolower($data['waiter']->role->slug ?? ''), ['counter', 'counter-staff', 'bar-manager']);
+              });
+              $hasPending = $pendingWaiters->count() > 0;
+            @endphp
+
+            @if($hasPending)
+              <div class="alert alert-danger shadow-sm border-0 mb-4" style="border-radius: 8px; border-left: 5px solid #dc3545 !important;">
+                <div class="d-flex align-items-center">
+                  <i class="fa fa-lock fa-2x mr-3 text-danger"></i>
+                  <div>
+                    <h5 class="alert-heading font-weight-bold mb-1">Submission Locked</h5>
+                    <p class="mb-0">You cannot submit the handover yet. The follow staff still need to be reconciled:</p>
+                    <ul class="mb-0 mt-1">
+                      @foreach($pendingWaiters as $pw)
+                        <li><strong>{{ $pw['waiter']->full_name }}</strong></li>
+                      @endforeach
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            @else
+              <div class="alert alert-warning">
+                <h5><i class="fa fa-warning"></i> Ready to Close Your Day?</h5>
+                <p>Please confirm the totals gathered from waiter reconciliations today.</p>
+              </div>
+            @endif
 
             <div class="row">
+
               @if($totalCashHandover > 0)
               <div class="col-md-3 form-group">
                 <label>Physical Cash</label>
@@ -564,9 +589,10 @@
               </div>
             </div>
             
-            <button type="submit" class="btn btn-primary btn-block">
-              <i class="fa fa-paper-plane"></i> Submit Detailed Handover to Accountant
+            <button type="submit" class="btn {{ $hasPending ? 'btn-secondary disabled' : 'btn-primary' }} btn-block" {{ $hasPending ? 'disabled' : '' }}>
+              <i class="fa fa-{{ $hasPending ? 'lock' : 'paper-plane' }}"></i> {{ $hasPending ? 'Reconcile All Staff to Unlock' : 'Submit Detailed Handover to Accountant' }}
             </button>
+
           </form>
         </div>
       </div>

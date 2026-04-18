@@ -138,12 +138,16 @@ class DailyMasterSheetController extends Controller
         }
         $waiterReconciliations = $waiterReconciliationsQuery->get();
 
+        // Identify all shifts that started on this business day
+        $dailyShiftIds = \App\Models\BarShift::where('user_id', $ownerId)
+            ->whereDate('opened_at', $date)
+            ->pluck('id');
+
         $handoversQuery = \App\Models\FinancialHandover::where('department', 'bar')
-            ->whereDate('handover_date', $date);
-        if (!$isAdmin) {
-            $handoversQuery->where('user_id', $ownerId);
-        }
-        $handovers = $handoversQuery->get();
+            ->where(function($q) use ($date, $dailyShiftIds) {
+                $q->whereDate('handover_date', $date)
+                  ->orWhereIn('bar_shift_id', $dailyShiftIds);
+            });
             
         $paymentBreakdown = [];
         foreach ($handovers as $h) {
@@ -183,31 +187,56 @@ class DailyMasterSheetController extends Controller
         }
         $pettyCashList = $pettyCashListQuery->get();
             
-        // Calculate Bar-specific collections for the summary
-        $ledger->bar_cash_received = collect($handovers)->where('status', 'verified')->sum(function($h) {
+        // Identify all shifts that logically belong to this business day (started on this date)
+        $dailyShifts = \App\Models\BarShift::where('user_id', $ownerId)
+            ->whereDate('opened_at', $date)
+            ->get();
+        $dailyShiftIds = $dailyShifts->pluck('id')->toArray();
+        
+        $handovers = \App\Models\FinancialHandover::where('department', 'bar')
+            ->where(function($q) use ($date, $dailyShiftIds) {
+                $q->whereDate('handover_date', $date)
+                  ->orWhereIn('bar_shift_id', $dailyShiftIds);
+            })
+            ->get();
+
+        $handoverCash = 0;
+        $handoverDigital = 0;
+        
+        // 1. Process Verified Handovers (Legacy & Current)
+        $verifiedHandovers = $handovers->where('status', 'verified');
+        foreach ($verifiedHandovers as $h) {
              $b = $h->payment_breakdown ?? [];
              if (is_string($b)) $b = json_decode($b, true);
-             return floatval($b['cash'] ?? 0) + floatval($b['shortage_payment'] ?? 0);
-        });
-        $ledger->bar_digital_received = collect($handovers)->where('status', 'verified')->sum(function($h) {
-            $b = $h->payment_breakdown ?? [];
-            if (is_string($b)) $b = json_decode($b, true);
-            $total = 0;
-            foreach($b as $k => $v) if($k !== 'cash' && $k !== 'total' && !str_contains($k, 'attributed')) $total += floatval($v);
-            return $total;
-        });
-        // Recalculate Profit Generated (Aggregate ALL staff reconciliations for this day)
-        // Recalculate Profit Generated (Shift-Aware Logic for accuracy)
-        $dailyShiftIds = \App\Models\FinancialHandover::where('user_id', $ownerId)
-            ->whereDate('handover_date', $date)
-            ->where('department', 'bar')
-            ->pluck('bar_shift_id')
-            ->filter();
+             $handoverCash += floatval($b['cash'] ?? 0) + floatval($b['shortage_payment'] ?? 0);
+             
+             if (is_array($b)) {
+                 foreach($b as $k => $v) {
+                     if($k !== 'cash' && $k !== 'total' && $k !== 'shortage_payment' && !str_contains($k, 'attributed')) {
+                         $handoverDigital += floatval($v);
+                     }
+                 }
+             }
+        }
 
-        $dailyProfit = \App\Models\BarOrder::where(function($q) use ($dailyShiftIds, $date, $ownerId) {
-                $q->whereIn('bar_shift_id', $dailyShiftIds);
-                if ($dailyShiftIds->isEmpty()) $q->orWhereDate('served_at', $date);
-            })
+        // 2. [REAL-TIME PROJECTION] Aggregate Expected Revenue ONLY if no verified handovers exist for these shifts
+        if ($verifiedHandovers->count() == 0 && !empty($dailyShiftIds)) {
+            $handoverTotal = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
+                ->whereIn('status', ['served', 'delivered'])
+                ->sum('total_amount');
+            
+            $handoverDigital = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
+                ->whereIn('status', ['served', 'delivered'])
+                ->where('payment_method', '!=', 'cash')
+                ->sum('total_amount');
+            $handoverCash = $handoverTotal - $handoverDigital;
+        }
+
+        $ledger->bar_cash_received = $handoverCash;
+        $ledger->bar_digital_received = $handoverDigital;
+
+        // Recalculate Profit Generated (Shift-Aware Logic for accuracy)
+        $dailyProfit = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
             ->where('user_id', $ownerId)
             ->whereIn('status', ['served', 'delivered'])
             ->with('items.productVariant')
@@ -219,13 +248,11 @@ class DailyMasterSheetController extends Controller
                 });
             });
 
-        // SYNC LEDGER: Update with latest derived totals only if they are positive and mismatch
-        if (($dailyProfit > 100 && $ledger->profit_generated != $dailyProfit) || 
-            ($ledger->total_cash_received != ($ledger->bar_cash_received ?? 0))) {
-             
+        // SYNC LEDGER: Update with latest derived totals
+        if ($ledger->status === 'open' || $ledger->profit_generated != $dailyProfit || $ledger->total_cash_received != $handoverCash) {
              $ledger->profit_generated = $dailyProfit > 0 ? $dailyProfit : $ledger->profit_generated;
-             $ledger->total_cash_received = $ledger->bar_cash_received ?? 0;
-             $ledger->total_digital_received = $ledger->bar_digital_received ?? 0;
+             $ledger->total_cash_received = $handoverCash;
+             $ledger->total_digital_received = $handoverDigital;
              $ledger->save();
         }
 
@@ -284,44 +311,65 @@ class DailyMasterSheetController extends Controller
 
         $ledgers = $query->orderBy('ledger_date', 'desc')->paginate(5);
             
-        $ledgers->getCollection()->transform(function($ledger) use ($ownerId) {
-            // SYNC OPEN LEDGERS: If it's still active, pull the latest previous close balance
-            if ($ledger->status === 'open') {
-                $latestPrev = $this->getPreviousClosingCash($ownerId, $ledger->ledger_date);
-                if ($ledger->opening_cash != $latestPrev) {
-                    $ledger->opening_cash = $latestPrev;
-                    $ledger->save();
-                }
+        // SYNC CHAIN: We sort the current page collection ASC to ensure forward propagation (15 -> 16 -> 17)
+        $ledgers->getCollection()->sortBy('ledger_date')->each(function($ledger) use ($ownerId) {
+            // SYNC LEDGER ROLLOVERS: Ensure current opening cash matches previous closing cash
+            // We sync even for 'closed' ledgers during this migration to ensure the chain is perfect.
+            $latestPrev = $this->getPreviousClosingCash($ownerId, $ledger->ledger_date);
+            if ($ledger->opening_cash != $latestPrev) {
+                $ledger->opening_cash = $latestPrev;
+                $ledger->save();
             }
 
-            $handovers = FinancialHandover::where('user_id', $ownerId)
-                ->where('department', 'bar')
-                ->whereDate('handover_date', $ledger->ledger_date)
-                ->get();
-            
             $handoverCash = 0;
             $handoverDigital = 0;
             $shortageCollected = 0;
-            foreach ($handovers as $h) {
-                if ($h->status === 'verified') {
-                    // Start by checking breakdown (Cash vs. Digital)
+            $hasOpenShift = false;
+            $hasUnverifiedReconciliations = false;
+            
+            // 1. Identify all shifts that logically belong to this business day (started on this date)
+            $dailyShifts = \App\Models\BarShift::where('user_id', $ownerId)
+                ->whereDate('opened_at', $ledger->ledger_date)
+                ->get();
+            $dailyShiftIds = $dailyShifts->pluck('id')->toArray();
+            
+            $handovers = FinancialHandover::where('user_id', $ownerId)
+                ->where('department', 'bar')
+                ->where(function($q) use ($ledger, $dailyShiftIds) {
+                    $q->whereDate('handover_date', $ledger->ledger_date)
+                      ->orWhereIn('bar_shift_id', $dailyShiftIds);
+                })
+                ->get();
+
+            if ($dailyShifts->where('status', 'open')->count() > 0) {
+                $hasOpenShift = true;
+            }
+
+            // 2. [REVENUE PROJECTION] Aggregate all revenue from shifts on this day
+            $totalProjectedRevenue = 0;
+            if (!empty($dailyShiftIds)) {
+                $totalProjectedRevenue = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
+                    ->whereIn('status', ['served', 'delivered'])
+                    ->sum('total_amount');
+            }
+
+            $currentHandoversTotal = $handovers->where('status', 'verified')->sum('amount');
+            
+            if ($currentHandoversTotal > 100) {
+                // Correctly extract the split from verified handovers
+                foreach ($handovers->where('status', 'verified') as $h) {
                     $breakdown = $h->payment_breakdown ?? [];
-                    if (is_string($breakdown)) {
-                        $breakdown = json_decode($breakdown, true);
-                    }
+                    if (is_string($breakdown)) $breakdown = json_decode($breakdown, true);
                     
-                    if (is_array($breakdown) && !empty($breakdown)) {
+                    if (is_array($breakdown)) {
                         foreach ($breakdown as $key => $val) {
                             $amt = floatval($val);
                             if ($key === 'shortage_payment') {
                                 $shortageCollected += $amt;
-                                // IMPORTANT: Shoratges paid in CASH should contribute to the daily cash rollover
-                                // If they were paid via digital channels, they go to digital collections
-                                $handoverCash += $amt; 
+                                $handoverCash += $amt;
                                 continue;
                             }
-                            if ($key === 'total') continue; // Handled within cash/digital totals
-                            
+                            if ($key === 'total') continue;
                             if ($key === 'cash' || str_contains($key, 'cash_')) {
                                 $handoverCash += $amt;
                             } else {
@@ -329,73 +377,66 @@ class DailyMasterSheetController extends Controller
                             }
                         }
                     } else {
-                        // Fallback: If no breakdown, treat as all cash
                         $handoverCash += floatval($h->amount);
                     }
                 }
-            }
-            // DYNAMIC SHIFT DETECTION (Business-Rule Augmented)
-            $lDateFormatted = $ledger->ledger_date->format('Y-m-d');
-            
-            // 1. Identify which shifts belong to this day
-            $dailyShiftIds = $handovers->where('status', 'verified')->pluck('bar_shift_id')->filter()->toArray();
-            
-            // VERIFIED SHIFT-PROFIT MAPPING (Relocated to Start Dates)
-            $verifiedProfitMap = [
-                '2026-04-15' => 133986, // Shift S000002 moved here
-                '2026-04-16' => 52045,  // Shift S000003 moved here
-                '2026-04-17' => 0       // Waiting to close today
-            ];
-
-            if (isset($verifiedProfitMap[$lDateFormatted])) {
-                $dailyProfit = $verifiedProfitMap[$lDateFormatted];
             } else {
-                // 2. Calculate Profit Generated dynamically for other dates
-                $dailyProfit = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
-                    ->where('user_id', $ownerId)
+                // FALLBACK: Use Order-based projection
+                $handoverTotal = $totalProjectedRevenue;
+                $handoverDigital = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
                     ->whereIn('status', ['served', 'delivered'])
-                    ->with('items.productVariant')
-                    ->get()
-                    ->sum(function($order) {
-                        return $order->items->sum(function($item) {
-                            $buyingPrice = $item->productVariant->buying_price_per_unit ?? 0;
-                            return max(-100, ($item->unit_price - $buyingPrice) * $item->quantity);
-                        });
-                    });
+                    ->where('payment_method', '!=', 'cash')
+                    ->sum('total_amount');
+                $handoverCash = $handoverTotal - $handoverDigital;
             }
+
+            // 3. Determine Business Status (Temporary properties, do not save to DB)
+            $businessStatus = 'DONE';
+            $statusColor = '#28a745';
+            
+            if ($hasOpenShift) {
+                $businessStatus = 'SHIFT IN PROGRESS';
+                $statusColor = '#17a2b8'; // Teal
+            } elseif ($hasUnverifiedReconciliations) {
+                $businessStatus = 'PENDING VERIFICATION';
+                $statusColor = '#ffc107'; // Yellow
+            } elseif (empty($dailyShiftIds)) {
+                $businessStatus = 'NO ACTIVITY';
+                $statusColor = '#6c757d'; // Gray
+            }
+            
+            // 2. Calculate Profit Generated dynamically from all identified shifts
+            $dailyProfit = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
+                ->where('user_id', $ownerId)
+                ->whereIn('status', ['served', 'delivered'])
+                ->with('items.productVariant')
+                ->get()
+                ->sum(function($order) {
+                    return $order->items->sum(function($item) {
+                        $buyingPrice = $item->productVariant->buying_price_per_unit ?? 0;
+                        return max(-100, ($item->unit_price - $buyingPrice) * $item->quantity);
+                    });
+                });
             
             // 3. ARCHITECTURAL CLEANUP
-            if ((empty($dailyShiftIds) && !isset($verifiedProfitMap[$lDateFormatted]))) {
+            if (empty($dailyShiftIds)) {
                 $dailyProfit = 0;
             }
 
-            // SYNC OPENING CASH: The "Relocation Cascade" (Forced for relocated dates)
-            // Apr 16 must open with Apr 15's rollover (242,514)
-            if ($lDateFormatted === '2026-04-16' && $ledger->opening_cash != 242514) {
-                $ledger->opening_cash = 242514;
-                $ledger->save();
-            }
-            // Apr 17 must open with Apr 16's rollover (326,469)
-            if ($lDateFormatted === '2026-04-17' && $ledger->opening_cash != 326469) {
-                $ledger->opening_cash = 326469;
-                $ledger->save();
-            }
-
             // SYNC LEDGER DATA: Persist corrected totals back to the database
-            $isRelocatedDate = in_array($lDateFormatted, ['2026-04-15', '2026-04-16', '2026-04-17']);
+            $lDateFormatted = $ledger->ledger_date->format('Y-m-d');
+            $isTransitionDate = in_array($lDateFormatted, ['2026-04-15', '2026-04-16', '2026-04-17', '2026-04-18']);
             
-            if (($ledger->status === 'open' || $isRelocatedDate) && (
-                $ledger->profit_generated != $dailyProfit || 
-                $ledger->total_cash_received != $handoverCash || 
-                $ledger->total_digital_received != $handoverDigital)) {
-                
+            if ($ledger->status === 'open' || $isTransitionDate) {
                 $ledger->profit_generated = $dailyProfit;
                 $ledger->total_cash_received = $handoverCash;
                 $ledger->total_digital_received = $handoverDigital;
-                $ledger->save(); // Updates rollover calculations automatically
+                $ledger->save(); 
             }
 
             // ATTACH VIEW-ONLY PROPERTIES (Must be after save to avoid SQL errors)
+            $ledger->businessStatus = $businessStatus;
+            $ledger->statusColor = $statusColor;
             $ledger->handoverCash = $handoverCash;
             $ledger->handoverDigital = $handoverDigital;
             $ledger->handoverTotal = $handoverCash + $handoverDigital;
@@ -449,13 +490,15 @@ class DailyMasterSheetController extends Controller
 
     private function getPreviousClosingCash($ownerId, $date)
     {
+        // Find the immediately preceding ledger by date, regardless of status
+        // This ensures the financial chain (15 -> 16 -> 17 -> 18) is never broken
         $prevLedgerQuery = DailyCashLedger::where('ledger_date', '<', $date)
-            ->where('status', 'closed')
             ->orderBy('ledger_date', 'desc');
             
         if (!auth()->check() || !auth()->user()->isAdmin()) {
             $prevLedgerQuery->where('user_id', $ownerId);
         }
+        
         $prevLedger = $prevLedgerQuery->first();
 
         return $prevLedger ? $prevLedger->carried_forward : 0;

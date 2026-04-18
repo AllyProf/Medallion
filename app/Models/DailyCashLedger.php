@@ -80,8 +80,20 @@ class DailyCashLedger extends Model
         $this->total_expenses_from_profit = $profExp;
         $this->total_expenses = $circExp + $profExp;
 
-        // Re-calculate expected closing cash based on physical outflows
-        $this->expected_closing_cash = $this->opening_cash + $this->total_cash_received + $this->total_digital_received - $this->total_expenses;
+        // Re-calculate derived financial balances for the rollover cycle
+        // Available = (Opening + Collections) - Profit - Expenses (from circulation)
+        $this->expected_closing_cash = ($this->opening_cash + $this->total_cash_received + $this->total_digital_received) - $this->total_expenses;
+        
+        // Business Rule: Rollover (carried_forward) for next day is the money left after profit is accounted for
+        // and expenses from circulation are deducted.
+        $this->carried_forward = ($this->opening_cash + $this->total_cash_received + $this->total_digital_received) - $this->profit_generated - $this->total_expenses_from_circulation;
+        
+        // Ensure non-negative rollover
+        if ($this->carried_forward < 0) {
+            $this->carried_forward = 0;
+        }
+
+        $this->money_in_circulation = $this->carried_forward;
         
         return $this;
     }

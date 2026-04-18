@@ -125,8 +125,8 @@
                   <td class="text-center text-muted"><i class="fa fa-chevron-down"></i></td>
                   <td class="font-weight-bold text-primary">{{ \Carbon\Carbon::parse($ledger->ledger_date)->format('d M, Y') }}</td>
                   <td class="text-center">
-                    <span class="status-badge" style="border: 1px solid #28a745; color: #28a745;">
-                      DONE
+                    <span class="status-badge" style="border: 1px solid {{ $ledger->statusColor ?? '#28a745' }}; color: {{ $ledger->statusColor ?? '#28a745' }};">
+                      {{ $ledger->businessStatus ?? 'DONE' }}
                     </span>
                   </td>
                   <td class="money-column">{{ number_format($ledger->opening_cash) }}</td>

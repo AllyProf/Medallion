@@ -94,32 +94,51 @@ class CounterReconciliationController extends Controller
         // Compatibility alias
         $pendingHandover = $priorityHandover;
 
-        // Determine target date: If no date requested, use the date of the pending handover or today.
-        if (!$requestedDate && $pendingHandover) {
-            $date = $pendingHandover->handover_date->format('Y-m-d');
-        } else {
-            $date = $requestedDate ?: now()->format('Y-m-d');
-        }
+        // [LOGIC FIX] Priority Shift/Date Discovery
+        // 1. If a specific Shift ID was requested, prioritize it.
+        // 2. If NO shift/date requested, check for an ACTIVE OPEN shift for this staff/location.
+        // 3. Fallback to pending handovers.
+        // 4. Default to today.
 
-        // Find the specific active shift context for the target date
-        $bar_shift = \App\Models\BarShift::when(!$isSuperAdmin, function($q) use ($ownerId) {
-                return $q->where('user_id', $ownerId);
-            })
-            ->when($searchShift, function($q) use ($searchShift) {
-                // If a specific shift was searched, LOAD IT regardless of status
-                return $q->where('id', $searchShift->id);
-            }, function($q) use ($date) {
-                // Default behavior: find an OPEN shift for the viewing date
-                return $q->where('status', 'open')->whereDate('opened_at', $date);
-            })
-            ->when($location && $location !== 'all', function($q) use ($location) {
-                $q->where('location_branch', $location);
-            })
-            ->when($currentStaff && !$isAccountant && !$isSuperAdmin, function ($q) use ($currentStaff) {
-                $q->where('staff_id', $currentStaff->id);
-            })
-            ->orderBy('created_at', 'desc')
-            ->first();
+        if ($requestedShiftId && $searchShift) {
+            $bar_shift = $searchShift;
+            $date = $bar_shift->opened_at->format('Y-m-d');
+        } elseif (!$requestedDate) {
+            // Priority: Find an OPEN shift for the current staff/context first
+            $bar_shift = \App\Models\BarShift::where('user_id', $ownerId)
+                ->where('status', 'open')
+                ->when($location && $location !== 'all', function($q) use ($location) {
+                    $q->where('location_branch', $location);
+                })
+                ->when($currentStaff && !$isAccountant && !$isSuperAdmin, function ($q) use ($currentStaff) {
+                    $q->where('staff_id', $currentStaff->id);
+                })
+                ->orderBy('opened_at', 'desc')
+                ->first();
+
+            if ($bar_shift) {
+                $date = $bar_shift->opened_at->format('Y-m-d');
+            } elseif ($pendingHandover) {
+                // Next: Check for something needing attention
+                $date = $pendingHandover->handover_date->format('Y-m-d');
+            } else {
+                $date = now()->format('Y-m-d');
+            }
+        } else {
+            $date = $requestedDate;
+            
+            // For a specific date, find the shift that belongs to it
+            $bar_shift = \App\Models\BarShift::where('user_id', $ownerId)
+                ->whereDate('opened_at', $date)
+                ->when($location && $location !== 'all', function($q) use ($location) {
+                    $q->where('location_branch', $location);
+                })
+                ->when($currentStaff && !$isAccountant && !$isSuperAdmin, function ($q) use ($currentStaff) {
+                    $q->where('staff_id', $currentStaff->id);
+                })
+                ->orderBy('created_at', 'desc')
+                ->first();
+        }
 
 
         // Check for relevant Handover context
@@ -164,9 +183,10 @@ class CounterReconciliationController extends Controller
         
         // NEW: Collection of all open shifts if we are looking at the current active period
         // This ensures orders from ALL waiters working on DIFFERENT shifts show up in one view.
+        // [LOGIC FIX] Expanded Shift Discovery
+        // We include ALL currently open shifts regardless of date to catch cross-midnight orders.
         $allOpenShiftIds = \App\Models\BarShift::where('user_id', $ownerId)
             ->where('status', 'open')
-            ->whereDate('created_at', $date)
             ->pluck('id')
             ->toArray();
             
@@ -1277,6 +1297,39 @@ class CounterReconciliationController extends Controller
             'airtel_money_amount' => 'nullable|numeric|min:0',
             'halopesa_amount' => 'nullable|numeric|min:0',
         ]);
+
+        // STRICT VALIDATION: Ensure all waiters are reconciled before handover
+        $activeShift = \App\Models\BarShift::where('staff_id', $staff->id)
+            ->where('status', 'open')
+            ->first();
+
+        if ($activeShift) {
+            // Find all waiters who have placed orders in this shift
+            $waiterIds = \App\Models\BarOrder::where('bar_shift_id', $activeShift->id)
+                ->where('status', '!=', 'cancelled')
+                ->whereHas('items') // Bar items only
+                ->distinct()
+                ->pluck('waiter_id')
+                ->toArray();
+
+            foreach ($waiterIds as $wId) {
+                // Skip the counter staff themselves if they are in the list
+                if ($wId == $staff->id) continue;
+
+                $reconciliation = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
+                    ->where('waiter_id', $wId)
+                    ->where('bar_shift_id', $activeShift->id)
+                    ->whereIn('status', ['reconciled', 'verified', 'paid'])
+                    ->first();
+
+                if (!$reconciliation) {
+                    $waiter = \App\Models\Staff::find($wId);
+                    $waiterName = $waiter ? $waiter->full_name : "Staff ID: $wId";
+                    return back()->with('error', "Wait! You cannot submit the handover yet. Waiter '$waiterName' has not been reconciled. Please reconcile all waiters in the table before closing the day.");
+                }
+            }
+        }
+
 
         // Calculate total amount
         $breakdown = [

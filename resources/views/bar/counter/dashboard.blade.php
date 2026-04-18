@@ -449,7 +449,7 @@
                         </table>
                     </div>
                     <div class="mt-3">
-                        {{ $recentOrders->links() }}
+                        {{ $recentOrders->onEachSide(1)->links() }}
                     </div>
                 @else
                     <div class="text-center py-4">
