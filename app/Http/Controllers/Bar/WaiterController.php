@@ -1778,7 +1778,13 @@ class WaiterController extends Controller
     public function printCombinedReceipt(Request $request)
     {
         $ids = explode(',', $request->query('ids', ''));
+        
         $ownerId = $this->getOwnerId();
+        if (!$ownerId) {
+            $waiterId = session('kiosk_waiter_id');
+            $staff = $waiterId ? \App\Models\Staff::find($waiterId) : null;
+            $ownerId = $staff ? $staff->user_id : null;
+        }
 
         if (empty($ids) || $ids[0] === '') {
             abort(400, 'No order IDs provided');
