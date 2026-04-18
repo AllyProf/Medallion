@@ -113,13 +113,19 @@
                     $totalAssets       = $ledger->opening_cash + $subTotal;
                     
                     $margin = ($ledger->expectedRevenue ?? 0) > 0 ? ($ledger->grossProfit / $ledger->expectedRevenue) : 0;
+                    
+                    // NEW: Fallback margin for "Recovery-only" days
+                    if ($margin <= 0 && $shortageCollected > 0) {
+                        $margin = 0.35;
+                    }
+
                     $actualPayout = $ledger->profit_submitted_to_boss ?? 0;
                     $payoutDiff   = $actualPayout - $ledger->netAvailableProfit;
 
                     // Breakdown for transparency (Uwazi)
                     $shiftProfitPart = 0; $recoveryProfitPart = 0;
                     if ($shortageCollected > 0 && $subTotal > 0) {
-                        $recoveryProfitPart = ($shortageCollected / $subTotal) * $ledger->profit_generated;
+                        $recoveryProfitPart = $shortageCollected * $margin;
                         $shiftProfitPart = $ledger->profit_generated - $recoveryProfitPart;
                     }
                 @endphp

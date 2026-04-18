@@ -138,6 +138,13 @@ class DailyCashLedger extends Model
         $safeGrossProfit = max(0, $grossProfit);
         $profitMargin = $expectedRevenue > 0 ? ($safeGrossProfit / $expectedRevenue) : 0;
         
+        // NEW: Fallback margin for "Recovery-only" days or data-entry days
+        // If money was collected (actualCollections > 0) but no sales recorded (Margin = 0),
+        // we use a standard 35% margin to split the recovery between profit and capital.
+        if ($profitMargin <= 0 && $actualCollections > 0) {
+            $profitMargin = 0.35;
+        }
+
         $this->profit_generated = (float)round($actualCollections * $profitMargin);
         
         // [INSIGHT] How much Capital (Circulation) was lost due to the shortage?
