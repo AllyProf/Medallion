@@ -1319,7 +1319,7 @@ class CounterReconciliationController extends Controller
                 $reconciliation = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
                     ->where('waiter_id', $wId)
                     ->where('bar_shift_id', $activeShift->id)
-                    ->whereIn('status', ['reconciled', 'verified', 'paid'])
+                    ->whereIn('status', ['reconciled', 'verified', 'paid', 'partial'])
                     ->first();
 
                 if (!$reconciliation) {
