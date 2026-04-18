@@ -240,6 +240,9 @@ Route::middleware('allow.staff')->group(function () {
         Route::post('waiter/create-order', [\App\Http\Controllers\Bar\WaiterController::class, 'createOrder'])->name('waiter.create-order');
         Route::post('waiter/cancel-order/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'cancelOrder'])->name('waiter.cancel-order');
         Route::post('waiter/record-payment/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'recordPayment'])->name('waiter.record-payment');
+        Route::get('kiosk/print-receipt/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'printReceipt'])->name('kiosk.print-receipt');
+        Route::get('kiosk/print-combined-receipt', [\App\Http\Controllers\Bar\WaiterController::class, 'printCombinedReceipt'])->name('kiosk.print-combined');
+        Route::get('kiosk/print-docket/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'printFoodDocket'])->name('kiosk.print-docket');
         Route::get('waiter/print-receipt/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'printReceipt'])->name('waiter.print-receipt');
         Route::get('waiter/print-docket/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'printFoodDocket'])->name('waiter.print-docket');
         Route::get('waiter/order-history', [\App\Http\Controllers\Bar\WaiterController::class, 'orderHistory'])->name('waiter.order-history');

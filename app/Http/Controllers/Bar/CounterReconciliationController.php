@@ -847,6 +847,13 @@ class CounterReconciliationController extends Controller
 
         $location = session('active_location');
 
+        // REQUIRE ACTIVE SHIFT (Check if ANY shift is open for the business, or the specific staff member)
+        $ownerId = $this->getOwnerId();
+        $allOpenShiftIds = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->pluck('id')
+            ->toArray();
+
         // Get all served bar orders (with drinks) for this waiter on this date that are not yet paid
         // Counter only marks bar orders as paid, not food orders
         $ordersQuery = BarOrder::query()
@@ -880,13 +887,6 @@ class CounterReconciliationController extends Controller
                 'error' => 'No unpaid served orders found for this waiter on this date.',
             ], 400);
         }
-
-        // REQUIRE ACTIVE SHIFT (Check if ANY shift is open for the business, or the specific staff member)
-        $activeShift = $this->getCurrentShift();
-        $allOpenShiftIds = \App\Models\BarShift::where('user_id', $ownerId)
-            ->where('status', 'open')
-            ->pluck('id')
-            ->toArray();
 
         if (empty($allOpenShiftIds) && !$isAccountant && !$isSuperAdmin) {
             return response()->json(['error' => 'Please open a shift before reconciling waiters.'], 403);

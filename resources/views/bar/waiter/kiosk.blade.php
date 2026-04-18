@@ -1706,8 +1706,11 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             }
 
             container.append(`
-                <div class="card mb-3" style="background:var(--bg-card); border-color:${brColor}; border-width: 2px;">
-                    <div class="card-body p-3">
+                <div class="card mb-3 order-selection-card" style="background:var(--bg-card); border-color:${brColor}; border-width: 2px; position:relative;" data-id="${order.id}">
+                    <div style="position:absolute; top:12px; left:12px; z-index:10;">
+                        <input type="checkbox" class="order-cb" value="${order.id}" style="width:24px; height:24px; cursor:pointer;" onclick="event.stopPropagation()">
+                    </div>
+                    <div class="card-body p-3" style="padding-left:45px !important;">
                         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                             <div>
                                 <h5 style="color:var(--text-main); margin-bottom:4px;"><i class="fa fa-hashtag"></i> ${order.order_number}</h5>
@@ -1740,6 +1743,15 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                 </div>
             `);
         });
+
+        // Add Multi-Print Button
+        container.prepend(`
+            <div class="mb-3 d-flex justify-content-between align-items-center bg-dark p-2 rounded">
+                 <span class="text-white font-weight-bold ml-2"><i class="fa fa-check-square-o"></i> Combined Receipt?</span>
+                 <button class="btn btn-warning font-weight-bold px-4" onclick="printCombinedOrders()"><i class="fa fa-print"></i> PRINT SELECTED</button>
+            </div>
+        `);
+
     }
 
     window.prepareAddItem = function(orderId, orderNumber) {
@@ -1760,18 +1772,18 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         }
     };
 
-    window.fetchOrderHistory = function() {
+    window.fetchOrderHistory = function(period = 'today') {
         Swal.fire({ title: 'Loading History...', background: 'var(--bg-surface)', color: 'var(--text-main)', allowOutsideClick: false });
         Swal.showLoading();
 
         $.ajax({
             url: '{{ route("bar.kiosk.history") }}',
             type: 'POST',
-            data: { _token: '{{ csrf_token() }}' },
+            data: { _token: '{{ csrf_token() }}', period: period },
             success: function(res) {
                 Swal.close();
                 if (res.success) {
-                    renderHistory(res.orders, res.stats);
+                    renderHistory(res.orders, res.stats, period);
                     $('#kioskOrdersModal').modal('show');
                 }
             },
@@ -1781,16 +1793,19 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         });
     };
 
-    function renderHistory(orders, stats) {
+    function renderHistory(orders, stats, currentPeriod) {
         const container = $('#kioskOrdersList');
         container.empty();
+
+        const todayBtnClass = currentPeriod === 'today' ? 'btn-info' : 'btn-outline-info';
+        const weekBtnClass = currentPeriod === 'week' ? 'btn-info' : 'btn-outline-info';
 
         if (stats) {
             container.append(`
                 <div class="history-stats">
                     <div class="history-stat-box">
                         <div class="history-stat-val">TSh ${parseFloat(stats.total_sales).toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
-                        <div class="history-stat-label">Today's Sales</div>
+                        <div class="history-stat-label">${stats.period_label || 'Period'} Sales</div>
                     </div>
                     <div class="history-stat-box">
                         <div class="history-stat-val">${stats.total_tickets}</div>
@@ -1801,16 +1816,24 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         }
 
         container.append(`
-            <div class="history-search mb-3">
-                <div class="input-group">
-                    <div class="input-group-prepend">
-                        <span class="input-group-text" style="background:var(--bg-input); border:1px solid var(--border-color); color:var(--text-muted);"><i class="fa fa-search"></i></span>
+            <div class="mb-3">
+                <div class="btn-group w-100 mb-3" role="group">
+                    <button type="button" class="btn ${todayBtnClass} py-2 font-weight-bold" onclick="fetchOrderHistory('today')">Today</button>
+                    <button type="button" class="btn ${weekBtnClass} py-2 font-weight-bold" onclick="fetchOrderHistory('week')">Last 7 Days</button>
+                </div>
+                <div class="history-search">
+                    <div class="input-group">
+                        <div class="input-group-prepend">
+                            <span class="input-group-text" style="background:var(--bg-input); border:1px solid var(--border-color); color:var(--text-muted);"><i class="fa fa-search"></i></span>
+                        </div>
+                        <input type="text" id="history-search-input" class="form-control" placeholder="Search by Order # or Table..." style="background:var(--bg-input); border:1px solid var(--border-color); color:var(--text-main);">
                     </div>
-                    <input type="text" id="history-search-input" class="form-control" placeholder="Search by Order # or Table..." style="background:var(--bg-input); border:1px solid var(--border-color); color:var(--text-main);">
                 </div>
             </div>
         `);
 
+
+        container.append('<div class="d-flex justify-content-between align-items-center bg-dark p-2 rounded mb-3"><span class="text-white font-weight-bold ml-2"><i class="fa fa-check-square-o"></i> Combined Receipt?</span><button class="btn btn-warning font-weight-bold px-4" onclick="printCombinedOrders()"><i class="fa fa-print"></i> PRINT SELECTED</button></div>');
         container.append('<div id="history-items-container"></div>');
         renderHistoryItems(orders);
 
@@ -1874,8 +1897,11 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             }
 
             container.append(`
-                <div class="card mb-2" style="background:var(--bg-card); border-left: 4px solid ${statusColor};">
-                    <div class="card-body p-2" style="display:flex; align-items:center; gap:12px;">
+                <div class="card mb-2" style="background:var(--bg-card); border-left: 4px solid ${statusColor}; position:relative;">
+                    <div style="position:absolute; top:8px; left:8px; z-index:10;">
+                        <input type="checkbox" class="order-cb" value="${order.id}" style="width:20px; height:20px; cursor:pointer;" onclick="event.stopPropagation()">
+                    </div>
+                    <div class="card-body p-2" style="display:flex; align-items:center; gap:12px; padding-left:35px !important;">
                         <div style="flex:1;">
                             <div class="font-weight-bold">#${order.order_number}</div>
                             <div style="font-size:0.75rem; color:var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">
@@ -1896,6 +1922,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                 </div>
             `);
         });
+
     }
 
     window.printKioskOrder = function(orderId) {
@@ -1907,6 +1934,29 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             KioskToast.fire({ icon: 'error', title: 'Pop-up blocked. Please allow pop-ups for this site.' });
         }
     };
+
+    window.printCombinedOrders = function() {
+        const selectedIds = [];
+        $('.order-cb:checked').each(function() {
+            selectedIds.push($(this).val());
+        });
+
+        if (selectedIds.length === 0) {
+            KioskToast.fire({ icon: 'warning', title: 'Please select at least one order to print.' });
+            return;
+        }
+
+        const idsParam = selectedIds.join(',');
+        const receiptUrl = '{{ url("bar/kiosk/print-combined-receipt") }}?ids=' + idsParam;
+        
+        const printWindow = window.open(receiptUrl, '_blank', 'width=400,height=600');
+        if (printWindow) {
+            printWindow.onload = function() { printWindow.print(); };
+        } else {
+            KioskToast.fire({ icon: 'error', title: 'Pop-up blocked. Please authorize pop-ups for combined printing.' });
+        }
+    };
+
 
     window.printKioskDocket = function(orderId) {
         const docketUrl = '{{ url("bar/kiosk/print-docket") }}/' + orderId;

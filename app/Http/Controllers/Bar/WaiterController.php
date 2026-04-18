@@ -1345,24 +1345,36 @@ class WaiterController extends Controller
             return response()->json(['success' => false, 'error' => 'Not authenticated in Kiosk session'], 401);
         }
 
-        $orders = \App\Models\BarOrder::with(['items.productVariant.product', 'table', 'orderPayments', 'kitchenOrderItems'])
-            ->where('waiter_id', $waiterId)
-            ->whereDate('created_at', now()->toDateString())
-            ->orderBy('created_at', 'desc')
-            ->limit(50)
+        $period = $request->input('period', 'today'); // 'today' or 'week'
+
+        $query = \App\Models\BarOrder::with(['items.productVariant.product', 'table', 'orderPayments', 'kitchenOrderItems'])
+            ->where('waiter_id', $waiterId);
+
+        if ($period === 'week') {
+            $query->where('created_at', '>=', now()->subDays(7)->startOfDay());
+            $limit = 100;
+        } else {
+            $query->whereDate('created_at', now()->toDateString());
+            $limit = 50;
+        }
+
+        $orders = $query->orderBy('created_at', 'desc')
+            ->limit($limit)
             ->get();
 
-        // Calculate stats for TODAY
-        $startOfDay = now()->startOfDay();
-        $todayOrders = \App\Models\BarOrder::where('waiter_id', $waiterId)
-            ->where('created_at', '>=', $startOfDay)
+        // Calculate stats for period
+        $startOfPeriod = $period === 'week' ? now()->subDays(7)->startOfDay() : now()->startOfDay();
+        
+        $periodOrders = \App\Models\BarOrder::where('waiter_id', $waiterId)
+            ->where('created_at', '>=', $startOfPeriod)
             ->where('payment_status', 'paid')
             ->where('status', '!=', 'cancelled')
             ->get();
 
         $stats = [
-            'total_sales' => $todayOrders->sum('total_amount'),
-            'total_tickets' => $todayOrders->count(),
+            'total_sales' => $periodOrders->sum('total_amount'),
+            'total_tickets' => $periodOrders->count(),
+            'period_label' => $period === 'week' ? 'Last 7 Days' : "Today's",
         ];
 
         return response()->json([
@@ -1758,5 +1770,30 @@ class WaiterController extends Controller
 
             return response()->json(['error' => 'Cancellation failed: '.$e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Print combined receipt for multiple orders
+     */
+    public function printCombinedReceipt(Request $request)
+    {
+        $ids = explode(',', $request->query('ids', ''));
+        $ownerId = $this->getOwnerId();
+
+        if (empty($ids) || $ids[0] === '') {
+            abort(400, 'No order IDs provided');
+        }
+
+        $orders = BarOrder::whereIn('id', $ids)
+            ->where('user_id', $ownerId)
+            ->with(['items.productVariant.product', 'kitchenOrderItems', 'table', 'waiter', 'orderPayments'])
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        if ($orders->isEmpty()) {
+            abort(404, 'No valid orders found');
+        }
+
+        return view('bar.waiter.combined-receipt', compact('orders'));
     }
 }
