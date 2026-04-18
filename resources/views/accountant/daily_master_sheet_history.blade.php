@@ -79,10 +79,10 @@
               <th rowspan="2">DATE</th>
               <th rowspan="2" class="text-center">STATUS</th>
               <th rowspan="2" class="text-right">OPENING CASH</th>
-              <th colspan="3" class="text-center">DAILY COLLECTIONS</th>
+              <th colspan="3" class="text-center">SUBMITTED COLLECTIONS</th>
 
-              <th class="text-right text-success">STOCK PROFIT</th>
-              <th class="text-right text-info">DISTRIBUTION</th>
+              <th class="text-right text-success">PROFIT CONTENT</th>
+              <th class="text-right text-info">CIRCULATION REFILL</th>
               <th class="text-right text-info">ROLLOVER CYCLE</th>
               <th rowspan="2" class="text-center d-print-none">PRINT</th>
             </tr>
@@ -93,8 +93,8 @@
               <th class="text-right bg-secondary text-white">ASSETS</th>
               <th class="text-right">EXPENSES</th>
 
-              <th class="text-right text-success">STOCK PROFIT</th>
-              <th class="text-right text-info">DISTRIBUTION</th>
+              <th class="text-right text-success">PROFIT CONTENT</th>
+              <th class="text-right text-info">CIRCULATION</th>
               <th class="text-right text-info">ROLLOVER CYCLE</th>
             </tr>
           </thead>
@@ -102,23 +102,19 @@
             @if($ledgers->count() > 0)
               @foreach($ledgers as $index => $ledger)
                 @php
-                    $cashCollected   = $ledger->handoverCash ?? 0;
-                    $digitalCollected = $ledger->handoverDigital ?? 0;
-                    $shortageCollected = $ledger->shortageCollected ?? 0;
-                    $subTotal        = $cashCollected + $digitalCollected; 
-                    $totalAssets     = $ledger->opening_cash + $subTotal;
-                    $totalPhysicalCash = $totalAssets;
                     $isClosed        = $ledger->status === 'closed';
                     $rowClass        = $ledger->isManagerReceived ? 'manager-received' : '';
 
-                    // PRE-CALCULATE SMART VALUES
-                    $netProfit = $ledger->profit_generated - ($ledger->total_profit_outflow ?? $ledger->total_expenses_from_profit);
-                    $actualPayout = $ledger->profit_submitted_to_boss ?? 0;
-                    $payoutDiff = $actualPayout - $netProfit;
+                    // [CENTRALIZED LOGIC] Use model-calculated attributes for all metrics
+                    $cashCollected     = $ledger->total_cash_received ?? 0;
+                    $digitalCollected  = $ledger->total_digital_received ?? 0;
+                    $shortageCollected = $ledger->shortageRecoveredToday ?? 0;
+                    $subTotal          = $cashCollected + $digitalCollected; 
+                    $totalAssets       = $ledger->opening_cash + $subTotal;
                     
-                    // PROTECTED ROLLOVER (Target Float)
-                    // Rollover = Opening + Collections - Expenses - Gross Profit
-                    $rollover = $ledger->opening_cash + $subTotal - ($ledger->total_circulation_outflow ?? $ledger->total_expenses_from_circulation) - ($ledger->profit_generated ?? 0);
+                    $margin = ($ledger->expectedRevenue ?? 0) > 0 ? ($ledger->grossProfit / $ledger->expectedRevenue) : 0;
+                    $actualPayout = $ledger->profit_submitted_to_boss ?? 0;
+                    $payoutDiff   = $actualPayout - $ledger->netAvailableProfit;
                 @endphp
                 {{-- MAIN ROW: Click to Collapse --}}
                 <tr class="main-row {{ $rowClass }}" data-toggle="collapse" data-target="#details-{{ $ledger->id }}">
@@ -132,34 +128,49 @@
                   <td class="money-column">{{ number_format($ledger->opening_cash) }}</td>
                   <td class="money-column">{{ number_format($cashCollected) }}</td>
                   <td class="money-column">{{ number_format($digitalCollected) }}</td>
-                  <td class="money-column font-weight-bold">{{ number_format($subTotal) }}</td>
+                  <td class="money-column font-weight-bold">
+                      {{ number_format($subTotal) }}
+                      @if(($ledger->totalDayShortage ?? 0) > 0)
+                          <br><span class="badge mt-1" style="font-size:0.65rem; font-weight:normal; border: 1px solid #dc3545; color: #dc3545; background: #fff5f5;" title="This money was missing from staff handovers">Short: {{ number_format($ledger->totalDayShortage) }}</span>
+                      @endif
+                      @if($shortageCollected > 0)
+                          <br><span class="badge mt-1" style="font-size:0.65rem; font-weight:normal; border: 1px solid #28a745; color: #28a745; background: #f2fff5;" title="This money was physically handed in today as debt repayment">+{{ number_format($shortageCollected) }} RECOVERED</span>
+                      @endif
+                  </td>
                   <td class="money-column font-weight-bold bg-light">{{ number_format($totalAssets) }}</td>
                   <td class="money-column text-danger">({{ number_format($ledger->combined_expenses ?? $ledger->total_expenses) }})</td>
 
                   <td class="money-column text-success font-weight-bold">
-                     {{ number_format($ledger->profit_generated) }}
-                     @if($ledger->total_profit_outflow > 0)
-                        <br><small class="text-danger">-{{ number_format($ledger->total_profit_outflow) }} deducted</small>
-                     @endif
+                      <span title="This is the profit portion of the money handed in">{{ number_format($ledger->profit_generated) }}</span>
+                      @if(($ledger->totalDayShortage ?? 0) > 0)
+                          <br><small class="text-muted" style="font-size:0.6rem;">Margin: {{ number_format($margin * 100, 1) }}%</small>
+                      @endif
+                      @if($ledger->total_profit_outflow > 0)
+                         <br><small class="text-danger">-{{ number_format($ledger->total_profit_outflow) }} paid</small>
+                      @endif
                   </td>
                   <td class="money-column text-info font-weight-bold">
-                     {{ number_format($netProfit) }}
-                     @if($ledger->isManagerReceived && abs($payoutDiff) > 0)
-                        <br><small class="{{ $payoutDiff > 0 ? 'text-danger' : 'text-success' }}" style="font-weight:normal;">
-                           <i class="fa fa-{{ $payoutDiff > 0 ? 'arrow-up' : 'arrow-down' }}"></i> 
-                           Boss took {{ number_format(abs($payoutDiff)) }} {{ $payoutDiff > 0 ? 'too much' : 'too little' }}
-                        </small>
-                     @elseif(!$ledger->isManagerReceived)
-                        <br><span class="badge badge-light text-muted border" style="font-size:0.6rem; font-weight:normal;">AVAILABLE</span>
-                     @endif
-                     
-                     @if($ledger->isManagerReceived)
-                        <br><span class='status-badge text-success mt-1 d-inline-block' style="border-color: #28a745;"><i class='fa fa-check-circle'></i> Received</span>
-                     @elseif($ledger->managerReceiptStatus === 'pending')
-                        <br><span class='status-badge text-warning mt-1 d-inline-block' style="border-color: #ffc107;">Pending</span>
-                     @endif
+                      <span title="This money must stay in the business to refill stock">{{ number_format($ledger->circulationRefill) }}</span>
+                      @if(($ledger->circulationDebt ?? 0) > 0)
+                         <br><small class="text-danger" title="The shortage was larger than today's profit margin, so it consumed business capital."><i class="fa fa-warning"></i> {{ number_format($ledger->circulationDebt) }} CAPITAL LOSS</small>
+                      @endif
                   </td>
-                  <td class="money-column text-info font-weight-bold" title="Target Rollover Float">{{ number_format(max(0, $rollover)) }}</td>
+                  <td class="money-column font-weight-bold">
+                      {{ number_format($ledger->money_in_circulation) }}
+                      @if($ledger->isManagerReceived && abs($payoutDiff) > 0)
+                         <br><small class="{{ $payoutDiff > 0 ? 'text-danger' : 'text-success' }}" style="font-weight:normal;">
+                            <i class="fa fa-{{ $payoutDiff > 0 ? 'arrow-up' : 'arrow-down' }}"></i> 
+                            Boss took {{ number_format(abs($payoutDiff)) }} {{ $payoutDiff > 0 ? 'too much' : 'too little' }}
+                         </small>
+                      @elseif(!$ledger->isManagerReceived)
+                         <br><span class="badge badge-light text-muted border" style="font-size:0.6rem; font-weight:normal;">AVAILABLE</span>
+                      @endif
+                      @if($ledger->isManagerReceived)
+                         <br><span class='status-badge text-success mt-1 d-inline-block' style="border-color: #28a745;"><i class='fa fa-check-circle'></i> Received</span>
+                      @elseif($ledger->managerReceiptStatus === 'pending')
+                         <br><span class='status-badge text-warning mt-1 d-inline-block' style="border-color: #ffc107;">Pending</span>
+                      @endif
+                  </td>
                   <td class="text-center d-print-none" style="white-space:nowrap; vertical-align: middle;">
                       <div class="btn-group btn-group-sm mb-1">
                           <a href="{{ route('accountant.counter.reconciliation', ['date' => \Carbon\Carbon::parse($ledger->ledger_date)->format('Y-m-d')]) }}" class="btn btn-primary shadow-sm" title="Full Shift View">
@@ -178,11 +189,11 @@
                       @if($ledger->status === 'closed' && !$ledger->isManagerReceived)
                           <div class="">
                               @if($ledger->managerReceiptStatus === 'none')
-                                  <button data-id="{{ $ledger->id }}" data-amount="{{ round($netProfit) }}" class="btn btn-success btn-sm btn-block shadow-sm submit-to-boss-btn" style="font-size: 11px; border-radius: 4px;">
+                                  <button data-id="{{ $ledger->id }}" data-amount="{{ round($ledger->netAvailableProfit) }}" class="btn btn-success btn-sm btn-block shadow-sm submit-to-boss-btn" style="font-size: 11px; border-radius: 4px;">
                                       <i class="fa fa-send"></i> Submit Payout
                                   </button>
                               @elseif($ledger->managerReceiptStatus === 'pending')
-                                  <button data-id="{{ $ledger->id }}" data-amount="{{ round($netProfit) }}" data-mode="update" class="btn btn-warning btn-sm btn-block shadow-sm submit-to-boss-btn" style="font-size: 11px; border-radius: 4px; color: #000;">
+                                  <button data-id="{{ $ledger->id }}" data-amount="{{ round($ledger->netAvailableProfit) }}" data-mode="update" class="btn btn-warning btn-sm btn-block shadow-sm submit-to-boss-btn" style="font-size: 11px; border-radius: 4px; color: #000;">
                                       <i class="fa fa-refresh"></i> Update Payout
                                   </button>
                               @endif
@@ -250,9 +261,21 @@
                                <thead><tr><th>Staff Member</th><th class="text-right">Shortage</th></tr></thead>
                                <tbody>
                                  @foreach($ledger->shortages as $short)
-                                 <tr class="text-danger">
-                                    <td>{{ $short->waiter->full_name ?? 'Unknown' }}</td>
-                                    <td class="text-right font-weight-bold">- TSh {{ number_format(abs($short->difference)) }}</td>
+                                 @php $isPaid = ($short->status === 'settled'); @endphp
+                                 <tr class="{{ $isPaid ? 'text-muted bg-light' : 'text-danger' }}">
+                                    <td>
+                                        {{ $short->waiter->full_name ?? 'Unknown' }}
+                                        @if($isPaid)
+                                            <span class="badge badge-success ml-2" style="font-size: 0.6rem;"><i class="fa fa-check"></i> PAID</span>
+                                        @endif
+                                    </td>
+                                    <td class="text-right font-weight-bold">
+                                        @if($isPaid)
+                                            <s style="opacity:0.6;">- TSh {{ number_format(abs($short->difference)) }}</s>
+                                        @else
+                                            - TSh {{ number_format(abs($short->difference)) }}
+                                        @endif
+                                    </td>
                                  </tr>
                                  @endforeach
                                </tbody>
@@ -275,20 +298,40 @@
                                   <span class="font-weight-bold">TSh {{ number_format($shortageCollected) }}</span>
                                </p>
                                @endif
+                               @if(($ledger->totalDayShortage ?? 0) > 0)
+                               <p class="mb-1 d-flex justify-content-between" style="font-size:0.85em; color:#dc3545;">
+                                  <span><i class="fa fa-exclamation-circle"></i> Unrecovered Shortage (reduces profit):</span>
+                                  <span class="font-weight-bold">- TSh {{ number_format($ledger->totalDayShortage) }}</span>
+                               </p>
+                               <p class="mb-1 d-flex justify-content-between" style="font-size:0.85em;">
+                                  <span>Gross Profit (from orders sold):</span>
+                                  <span><s class="text-muted">TSh {{ number_format($ledger->grossProfit) }}</s></span>
+                               </p>
+                               <p class="mb-1 d-flex justify-content-between font-weight-bold border-top pt-1" style="font-size:0.9em; color: {{ ($ledger->adjustedProfit ?? 0) > 0 ? '#28a745' : '#dc3545' }};">
+                                  <span>Adjusted Profit (after shortage):</span>
+                                  <span>TSh {{ number_format($ledger->adjustedProfit) }}</span>
+                               </p>
+                               @if(($ledger->circulationDebt ?? 0) > 0)
+                               <p class="mb-1 d-flex justify-content-between" style="font-size:0.8em; color:#dc3545;">
+                                  <span><i class="fa fa-warning"></i> Shortage exceeds profit — eating float:</span>
+                                  <span>- TSh {{ number_format($ledger->circulationDebt) }}</span>
+                                </p>
+                               @endif
+                               @endif
                                <p class="mb-1 d-flex justify-content-between border-bottom pb-1">
                                   <span>Total Expenses Paid:</span>
                                   <span class="text-danger">(-) TSh {{ number_format($ledger->combined_expenses ?? $ledger->total_expenses) }}</span>
                                </p>
                                <p class="mb-3 d-flex justify-content-between h6">
                                   <span>Available Cash in Box:</span>
-                                  <span class="font-weight-bold">{{ number_format($isClosed ? $ledger->actual_closing_cash : $ledger->expected_closing_cash) }}</span>
+                                  <span class="font-weight-bold">{{ number_format($ledger->money_in_circulation + $actualPayout) }}</span>
                                </p>
                                
                                <div class="alert alert-info py-2" style="font-size:0.85rem; border-left: 5px solid #17a2b8;">
                                   <strong>Live Settlement Summary:</strong><br>
                                    Today's raw stock performance is <strong>TSh {{ number_format($ledger->profit_generated) }}</strong>. 
-                                   @if($netProfit > 0)
-                                      The currently available net profit to be handed over is <strong>TSh {{ number_format($netProfit) }}</strong>.
+                                   @if($ledger->netAvailableProfit > 0)
+                                      The currently available net profit to be handed over is <strong>TSh {{ number_format($ledger->netAvailableProfit) }}</strong>.
                                       
                                       @if($ledger->isManagerReceived)
                                          @if(abs($payoutDiff) > 0)
@@ -301,21 +344,21 @@
                                             @if($ledger->managerReceiptStatus === 'pending')
                                                <div class="d-flex justify-content-between align-items-center">
                                                   <span class="text-warning font-weight-bold"><i class="fa fa-hourglass-half"></i> Handover of TSh {{ number_format($actualPayout) }} is PENDING</span>
-                                                  <button data-id="{{ $ledger->id }}" data-amount="{{ $netProfit }}" data-mode="update" class="btn btn-sm btn-warning shadow-sm submit-to-boss-btn">
+                                                  <button data-id="{{ $ledger->id }}" data-amount="{{ $ledger->netAvailableProfit }}" data-mode="update" class="btn btn-sm btn-warning shadow-sm submit-to-boss-btn">
                                                      <i class="fa fa-refresh"></i> Update Payout
                                                   </button>
                                                </div>
                                             @else
-                                               <button data-id="{{ $ledger->id }}" data-amount="{{ $netProfit }}" class="btn btn-block btn-primary shadow-sm submit-to-boss-btn py-2">
-                                                  <i class="fa fa-handshake-o"></i> Submit This Profit to Boss (TSh {{ number_format($netProfit) }})
+                                               <button data-id="{{ $ledger->id }}" data-amount="{{ $ledger->netAvailableProfit }}" class="btn btn-block btn-primary shadow-sm submit-to-boss-btn py-2">
+                                                  <i class="fa fa-handshake-o"></i> Submit This Profit to Boss (TSh {{ number_format($ledger->netAvailableProfit) }})
                                                </button>
                                             @endif
                                          </div>
                                       @endif
                                   @else
-                                     Because performance was not positive, the boss payout is <strong>TSh 0</strong>. 
+                                     Profit was unavailable because the shortage was larger than performance. 
                                   @endif
-                                  The currently calculated physical rollover for tomorrow is <strong>TSh {{ number_format(max(0, $rollover)) }}</strong>.
+                                  The actual physical rollover for tomorrow is <strong>TSh {{ number_format(max(0, $ledger->money_in_circulation)) }}</strong>.
                                </div>
                                
                                <div class="text-right">

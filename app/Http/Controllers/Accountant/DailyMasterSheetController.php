@@ -150,6 +150,7 @@ class DailyMasterSheetController extends Controller
             });
             
         $paymentBreakdown = [];
+        $handovers = $handoversQuery->get();
         foreach ($handovers as $h) {
             if ($h->status === 'verified') {
                 $breakdown = $h->payment_breakdown ?? [];
@@ -200,15 +201,36 @@ class DailyMasterSheetController extends Controller
             })
             ->get();
 
+        // 1. Identify all shortages for this day to calculate NET revenue
+        $dailyRecIds = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
+            ->whereNotNull('reconciliation_id')
+            ->pluck('reconciliation_id')
+            ->unique()
+            ->toArray();
+
+        $totalDayShortage = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
+            ->where(function($q) use ($dailyShiftIds, $dailyRecIds) {
+                $q->whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
+                  ->orWhereIn('id', !empty($dailyRecIds) ? $dailyRecIds : [0]);
+            })
+            ->where('difference', '<', 0)
+            ->sum('difference');
+        $totalDayShortage = abs($totalDayShortage);
+        $ledger->totalDayShortage = $totalDayShortage;
+
         $handoverCash = 0;
         $handoverDigital = 0;
+        $shortageCollected = 0;
         
-        // 1. Process Verified Handovers (Legacy & Current)
+        // 2. Process Verified Handovers (Legacy & Current)
         $verifiedHandovers = $handovers->where('status', 'verified');
         foreach ($verifiedHandovers as $h) {
              $b = $h->payment_breakdown ?? [];
              if (is_string($b)) $b = json_decode($b, true);
-             $handoverCash += floatval($b['cash'] ?? 0) + floatval($b['shortage_payment'] ?? 0);
+             
+             // 'shortage_payment' is just a tracker tag. The actual money is already binned inside 'cash' or 'digital' keys.
+             $handoverCash += floatval($b['cash'] ?? 0);
+             $shortageCollected += floatval($b['shortage_payment'] ?? 0);
              
              if (is_array($b)) {
                  foreach($b as $k => $v) {
@@ -219,7 +241,7 @@ class DailyMasterSheetController extends Controller
              }
         }
 
-        // 2. [REAL-TIME PROJECTION] Aggregate Expected Revenue ONLY if no verified handovers exist for these shifts
+        // 3. [REAL-TIME PROJECTION] Aggregate Expected Revenue ONLY if no verified handovers exist for these shifts
         if ($verifiedHandovers->count() == 0 && !empty($dailyShiftIds)) {
             $handoverTotal = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
                 ->whereIn('status', ['served', 'delivered'])
@@ -229,32 +251,28 @@ class DailyMasterSheetController extends Controller
                 ->whereIn('status', ['served', 'delivered'])
                 ->where('payment_method', '!=', 'cash')
                 ->sum('total_amount');
-            $handoverCash = $handoverTotal - $handoverDigital;
+            
+            // USE NET COLLECTIONS: Deduct shortage from the projected cash collections
+            $projectedCash = $handoverTotal - $handoverDigital;
+            $handoverCash = max(0, $projectedCash - $totalDayShortage);
         }
 
-        $ledger->bar_cash_received = $handoverCash;
-        $ledger->bar_digital_received = $handoverDigital;
+        // Define transition dates for the migration to Net Collections
+        $lDateFormatted = $ledger->ledger_date->format('Y-m-d');
+        $isTransitionDate = in_array($lDateFormatted, ['2026-04-15', '2026-04-16', '2026-04-17', '2026-04-18']);
 
-        // Recalculate Profit Generated (Shift-Aware Logic for accuracy)
-        $dailyProfit = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
-            ->where('user_id', $ownerId)
-            ->whereIn('status', ['served', 'delivered'])
-            ->with('items.productVariant')
-            ->get()
-            ->sum(function($order) {
-                return $order->items->sum(function($item) {
-                    $buyingPrice = $item->productVariant->buying_price_per_unit ?? 0;
-                    return ($item->unit_price - $buyingPrice) * $item->quantity;
-                });
-            });
-
-        // SYNC LEDGER: Update with latest derived totals
-        if ($ledger->status === 'open' || $ledger->profit_generated != $dailyProfit || $ledger->total_cash_received != $handoverCash) {
-             $ledger->profit_generated = $dailyProfit > 0 ? $dailyProfit : $ledger->profit_generated;
+        // SYNC LEDGER: Persist the net collections (Model handle Profit/Distribution)
+        if ($ledger->status === 'open' || $isTransitionDate) {
              $ledger->total_cash_received = $handoverCash;
              $ledger->total_digital_received = $handoverDigital;
-             $ledger->save();
+             $ledger->syncTotals()->save();
+        } else {
+             $ledger->syncTotals();
         }
+
+        // Attach UI helpers for the view
+        $ledger->handoverCash = $handoverCash;
+        $ledger->handoverDigital = $handoverDigital;
 
         // Manager Confirmation Status for the Profit (View-only properties assigned after save)
         $managerHandover = FinancialHandover::where('user_id', $ownerId)
@@ -269,14 +287,15 @@ class DailyMasterSheetController extends Controller
 
 
         return view('accountant.daily_master_sheet_report', compact(
-            'ledger', 
+            'ledger',
             'date',
             'variantsData',
             'salesStatistics',
             'waiterReconciliations',
             'paymentBreakdown',
             'expenses',
-            'pettyCashList'
+            'pettyCashList',
+            'shortageCollected'
         ));
     }
 
@@ -353,6 +372,22 @@ class DailyMasterSheetController extends Controller
                     ->sum('total_amount');
             }
 
+            // 1. Identify all shortages for this day to calculate NET revenue
+            $dailyRecIds = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
+                ->whereNotNull('reconciliation_id')
+                ->pluck('reconciliation_id')
+                ->unique()
+                ->toArray();
+
+            $totalDayShortage = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
+                ->where(function($q) use ($dailyShiftIds, $dailyRecIds) {
+                    $q->whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
+                      ->orWhereIn('id', !empty($dailyRecIds) ? $dailyRecIds : [0]);
+                })
+                ->where('difference', '<', 0)
+                ->sum('difference');
+            $totalDayShortage = abs($totalDayShortage);
+
             $currentHandoversTotal = $handovers->where('status', 'verified')->sum('amount');
             
             if ($currentHandoversTotal > 100) {
@@ -366,7 +401,6 @@ class DailyMasterSheetController extends Controller
                             $amt = floatval($val);
                             if ($key === 'shortage_payment') {
                                 $shortageCollected += $amt;
-                                $handoverCash += $amt;
                                 continue;
                             }
                             if ($key === 'total') continue;
@@ -387,7 +421,10 @@ class DailyMasterSheetController extends Controller
                     ->whereIn('status', ['served', 'delivered'])
                     ->where('payment_method', '!=', 'cash')
                     ->sum('total_amount');
-                $handoverCash = $handoverTotal - $handoverDigital;
+                
+                // USE NET COLLECTIONS: Deduct shortage from the projected cash collections
+                $projectedCash = $handoverTotal - $handoverDigital;
+                $handoverCash = max(0, $projectedCash - $totalDayShortage);
             }
 
             // 3. Determine Business Status (Temporary properties, do not save to DB)
@@ -397,44 +434,26 @@ class DailyMasterSheetController extends Controller
             if ($hasOpenShift) {
                 $businessStatus = 'SHIFT IN PROGRESS';
                 $statusColor = '#17a2b8'; // Teal
-            } elseif ($hasUnverifiedReconciliations) {
-                $businessStatus = 'PENDING VERIFICATION';
-                $statusColor = '#ffc107'; // Yellow
             } elseif (empty($dailyShiftIds)) {
                 $businessStatus = 'NO ACTIVITY';
                 $statusColor = '#6c757d'; // Gray
             }
             
-            // 2. Calculate Profit Generated dynamically from all identified shifts
-            $dailyProfit = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
-                ->where('user_id', $ownerId)
-                ->whereIn('status', ['served', 'delivered'])
-                ->with('items.productVariant')
-                ->get()
-                ->sum(function($order) {
-                    return $order->items->sum(function($item) {
-                        $buyingPrice = $item->productVariant->buying_price_per_unit ?? 0;
-                        return max(-100, ($item->unit_price - $buyingPrice) * $item->quantity);
-                    });
-                });
-            
-            // 3. ARCHITECTURAL CLEANUP
-            if (empty($dailyShiftIds)) {
-                $dailyProfit = 0;
-            }
-
-            // SYNC LEDGER DATA: Persist corrected totals back to the database
             $lDateFormatted = $ledger->ledger_date->format('Y-m-d');
             $isTransitionDate = in_array($lDateFormatted, ['2026-04-15', '2026-04-16', '2026-04-17', '2026-04-18']);
-            
+
             if ($ledger->status === 'open' || $isTransitionDate) {
-                $ledger->profit_generated = $dailyProfit;
+                // Important: Persist the NET collections (Model's syncTotals will handle Profit/Deficit)
                 $ledger->total_cash_received = $handoverCash;
                 $ledger->total_digital_received = $handoverDigital;
                 $ledger->save(); 
             }
 
-            // ATTACH VIEW-ONLY PROPERTIES (Must be after save to avoid SQL errors)
+            // 2. ATTACH VIEW-ONLY PROPERTIES
+            // We call syncTotals() manually here to ensure that historical records 
+            // have their virtual attributes (grossProfit, circulationDebt, etc.) populated for the view.
+            $ledger->syncTotals();
+
             $ledger->businessStatus = $businessStatus;
             $ledger->statusColor = $statusColor;
             $ledger->handoverCash = $handoverCash;
@@ -452,9 +471,7 @@ class DailyMasterSheetController extends Controller
                 ->where('status', 'issued')
                 ->where('purpose', 'NOT LIKE', '[FOOD]%')
                 ->get();
-            // Sync ledger totals to ensure petty cash is included in DB fields
-            $ledger->syncTotals();
-            
+
             // For backward compatibility with the dynamic properties used in the view
             $ledger->combined_expenses = $ledger->total_expenses;
             $ledger->total_circulation_outflow = $ledger->total_expenses_from_circulation;
@@ -473,12 +490,25 @@ class DailyMasterSheetController extends Controller
             $ledger->managerReceiptStatus = $managerHandover ? $managerHandover->status : 'none';
             $ledger->isManagerReceived = ($managerHandover && $managerHandover->status === 'confirmed');
 
-            // Attach shortages for this specific date
+            // Attach shortages for this specific date (Robust link via shifts + order-reconciliation links)
+            $dailyRecIds = \App\Models\BarOrder::whereIn('bar_shift_id', $dailyShiftIds)
+                ->whereNotNull('reconciliation_id')
+                ->pluck('reconciliation_id')
+                ->unique()
+                ->toArray();
+
             $ledger->shortages = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
-                ->whereDate('reconciliation_date', $ledger->ledger_date)
+                ->where(function($q) use ($dailyShiftIds, $dailyRecIds) {
+                    $q->whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
+                      ->orWhereIn('id', !empty($dailyRecIds) ? $dailyRecIds : [0]);
+                })
                 ->where('difference', '<', 0)
                 ->with('waiter')
                 ->get();
+
+            // Attach metrics for Blade processing
+            $ledger->handoverCash = $handoverCash;
+            $ledger->handoverDigital = $handoverDigital;
 
             return $ledger;
         });

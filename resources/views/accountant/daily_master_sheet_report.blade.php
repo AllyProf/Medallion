@@ -269,15 +269,15 @@
                         <div class="card-custom-body">
                             <div class="card-custom-row">
                                 <span>Opened At</span>
-                                <span>{{ $ledger->created_at->format('d M Y, H:i') }}</span>
+                                <span style="font-weight: normal;">{{ $ledger->created_at->format('d M Y, H:i') }}</span>
                             </div>
                             <div class="card-custom-row">
                                 <span>Closed At</span>
-                                <span>{{ $ledger->status === 'closed' ? $ledger->updated_at->format('d M Y, H:i') : '--' }}</span>
+                                <span style="font-weight: normal;">{{ $ledger->status === 'closed' ? $ledger->updated_at->format('d M Y, H:i') : '--' }}</span>
                             </div>
                             <div class="card-custom-row">
                                 <span>Duration</span>
-                                <span>
+                                <span style="font-weight: normal;">
                                     @if($ledger->status === 'closed')
                                         @php
                                             $start = $ledger->created_at;
@@ -353,38 +353,54 @@
                    <div class="info-grid mt-4" style="gap:40px;">
                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #eee;">
                            <div class="info-row"><span>Opening Cash:</span> <span>TSh {{ number_format($ledger->opening_cash) }}</span></div>
-                           <div class="info-row"><span>Bar Collections (Cash):</span> <span>TSh {{ number_format($ledger->bar_cash_received ?? 0) }}</span></div>
-                           <div class="info-row"><span>Bar Collections (Digital):</span> <span>TSh {{ number_format($ledger->bar_digital_received ?? 0) }}</span></div>
-                           <div class="info-row"><span>Bar Expenses Paid:</span> <span class="text-danger">(-) TSh {{ number_format($ledger->total_expenses ?? ($expenses->sum('amount') + $pettyCashList->sum('amount'))) }}</span></div>
+                           <div class="info-row"><span>Bar Collections (Cash):</span> <span>TSh {{ number_format($ledger->total_cash_received) }}</span></div>
+                           <div class="info-row border-bottom pb-2"><span>Bar Collections (Digital):</span> <span>TSh {{ number_format($ledger->total_digital_received) }}</span></div>
+                           @if(isset($shortageCollected) && $shortageCollected > 0)
+                               <div class="info-row" style="color: #28a745; font-size: 0.9rem;">
+                                   <span><i class="fa fa-level-up fa-rotate-90"></i> Credit / Shortages Recovered:</span> 
+                                   <span class="font-weight-bold">+ TSh {{ number_format($shortageCollected) }}</span>
+                               </div>
+                           @endif
+                           <div class="info-row pt-2 text-danger"><span>Bar Expenses Paid:</span> <span>(-) TSh {{ number_format($ledger->total_expenses) }}</span></div>
                            @php 
-                             $barSubTotal = ($ledger->bar_cash_received ?? 0) + ($ledger->bar_digital_received ?? 0);
-                             // Physical vault is Assets - ALL expenses
-                             $totalBarVault = ($ledger->opening_cash + ($ledger->bar_cash_received ?? 0)) - ($ledger->total_expenses ?? ($expenses->sum('amount') + $pettyCashList->sum('amount')));
+                             $totalBarVault = ($ledger->opening_cash + $ledger->total_cash_received) - $ledger->total_expenses;
                            @endphp
                            <div class="info-row border-top mt-2 pt-2" style="border-top:1px solid #ccc;"><span>Total Drinks Vault:</span> <span class="font-weight-bold text-success" style="font-size:1.1rem;">TSh {{ number_format($totalBarVault) }}</span></div>
                        </div>
                         <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #eee;">
-                           <div class="info-row"><span>Gross Drink Profit:</span> <span class="{{ $ledger->profit_generated > 0 ? 'text-success' : 'text-danger' }}">TSh {{ number_format($ledger->profit_generated) }}</span></div>
-                           <div class="info-row"><span>Profit Expenses:</span> <span class="text-danger">(-) TSh {{ number_format($ledger->total_expenses_from_profit) }}</span></div>
-                           <div class="info-row"><span>Distributed Payout:</span> 
-                                <span class="{{ $ledger->isManagerReceived ? 'text-success' : 'text-info' }} font-weight-bold">
-                                    @php
-                                        $netProfit = $ledger->profit_generated - ($ledger->total_expenses_from_profit ?? 0);
-                                        $displayPayout = $ledger->isManagerReceived ? $ledger->actualPayout : $netProfit;
-                                    @endphp
-                                    TSh {{ number_format($displayPayout) }}
-                                    @if(!$ledger->isManagerReceived)
-                                        <small class="text-muted">(Available)</small>
-                                    @endif
-                                </span>
-                           </div>
-                            <div class="info-row border-top mt-2 pt-2" style="border-top:1px solid #ccc;"><span>Bar Rollover for Tomorrow:</span> <span class="font-weight-bold text-info" style="font-size:1.1rem;">@php
-                                 $targetRollover = ($ledger->opening_cash + ($ledger->bar_cash_received ?? 0)) - ($ledger->total_expenses_from_circulation ?? 0) - ($ledger->profit_generated ?? 0);
-                                 // Physical rollover logic
-                                 $actualRollover = $totalBarVault - ($ledger->actualPayout ?? 0);
-                                 $displayRollover = ($ledger->isManagerReceived) ? $actualRollover : $targetRollover;
-                              @endphp
-                              TSh {{ number_format(max(0, $displayRollover)) }}</span></div>
+                            @if(($ledger->totalDayShortage ?? 0) > 0)
+                            <div class="info-row">
+                                <span>Gross Drink Profit (from orders):</span>
+                                <span><s class="text-muted">TSh {{ number_format($ledger->grossProfit) }}</s></span>
+                            </div>
+                            <div class="info-row" style="color:#dc3545; font-size:0.9rem;">
+                                <span><i class="fa fa-exclamation-circle"></i> Shortage Deduction:</span>
+                                <span class="font-weight-bold">(-) TSh {{ number_format($ledger->totalDayShortage) }}</span>
+                            </div>
+                            <div class="info-row border-bottom pb-2" style="font-weight:700; color: {{ ($ledger->adjustedProfit ?? 0) > 0 ? '#28a745' : '#dc3545' }};">
+                                <span>Adjusted Profit (after shortage):</span>
+                                <span>TSh {{ number_format($ledger->adjustedProfit) }}</span>
+                            </div>
+                            @if(($ledger->circulationDebt ?? 0) > 0)
+                            <div class="info-row" style="color:#dc3545; font-size:0.85rem;">
+                                <span><i class="fa fa-warning"></i> Excess shortage eating float:</span>
+                                <span>(-) TSh {{ number_format($ledger->circulationDebt) }}</span>
+                            </div>
+                            @endif
+                            @else
+                            <div class="info-row"><span>Gross Drink Profit:</span> <span class="{{ ($ledger->profit_generated ?? 0) > 0 ? 'text-success' : 'text-danger' }}">TSh {{ number_format($ledger->profit_generated) }}</span></div>
+                            @endif
+                            <div class="info-row"><span>Profit Expenses:</span> <span class="text-danger">(-) TSh {{ number_format($ledger->total_expenses_from_profit) }}</span></div>
+                            <div class="info-row"><span>Distributed Payout:</span> 
+                                 <span class="{{ $ledger->isManagerReceived ? 'text-success' : 'text-info' }} font-weight-bold">
+                                     TSh {{ number_format($ledger->profit_submitted_to_boss ?? $ledger->netAvailableProfit) }}
+                                     @if(!$ledger->isManagerReceived)
+                                         <small class="text-muted">(Available)</small>
+                                     @endif
+                                 </span>
+                            </div>
+                             <div class="info-row border-top mt-2 pt-2" style="border-top:1px solid #ccc;"><span>Bar Rollover for Tomorrow:</span> <span class="font-weight-bold text-info" style="font-size:1.1rem;">
+                               TSh {{ number_format(max(0, $ledger->money_in_circulation)) }}</span></div>
                         </div>
                    </div>
                 </div>

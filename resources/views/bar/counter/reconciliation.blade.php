@@ -222,6 +222,11 @@
     <div class="tile">
       <h3 class="tile-title">Waiters Reconciliation</h3>
       <div class="tile-body">
+        @if($isAccountant && $bar_shift && $bar_shift->status === 'open' && $date === now()->format('Y-m-d'))
+          <div class="alert alert-info py-2 mb-3 small shadow-sm border-info" style="border-radius: 8px; border-left: 5px solid #17a2b8;">
+            <i class="fa fa-info-circle mr-1"></i> <strong>Accountant Focus:</strong> Showing only reconciled staff and counter operations for the active shift. Pending waiters are hidden until their work is submitted for verification.
+          </div>
+        @endif
         @if($waiters->count() > 0)
           <div class="table-responsive shadow-sm">
             <table class="table table-hover table-bordered table-striped" id="waiters-table">

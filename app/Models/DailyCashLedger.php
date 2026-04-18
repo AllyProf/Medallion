@@ -6,6 +6,16 @@ use Illuminate\Database\Eloquent\Model;
 
 class DailyCashLedger extends Model
 {
+    // Virtual attributes for view logic (Not persisted in DB)
+    public $grossProfit;
+    public $expectedRevenue;
+    public $totalDayShortage;
+    public $circulationDebt;
+    public $adjustedProfit;
+    public $circulationRefill;
+    public $netAvailableProfit;
+    public $shortageRecoveredToday;
+
     protected static function booted()
     {
         static::saving(function ($ledger) {
@@ -55,7 +65,7 @@ class DailyCashLedger extends Model
     }
 
     /**
-     * Synchronize all expenses (DailyExpense + PettyCashIssue) for this ledger day.
+     * Synchronize all metrics for this ledger day.
      */
     public function syncTotals()
     {
@@ -80,13 +90,72 @@ class DailyCashLedger extends Model
         $this->total_expenses_from_profit = $profExp;
         $this->total_expenses = $circExp + $profExp;
 
-        // Re-calculate derived financial balances for the rollover cycle
-        // Available = (Opening + Collections) - Profit - Expenses (from circulation)
-        $this->expected_closing_cash = ($this->opening_cash + $this->total_cash_received + $this->total_digital_received) - $this->total_expenses;
+        // 3. CALCULATE EXPECTED TOTALS & GROSS PROFIT (Shift-Aware)
+        $dailyShiftIds = \App\Models\BarShift::where('user_id', $this->user_id)
+            ->whereDate('opened_at', $this->ledger_date)
+            ->pluck('id')
+            ->toArray();
+
+        $dailyRecIds = \App\Models\BarOrder::whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
+            ->whereNotNull('reconciliation_id')
+            ->pluck('reconciliation_id')
+            ->unique()
+            ->toArray();
+
+        // [EXPECTED REVENUE] Total sum of all served/delivered orders for the day
+        $expectedRevenue = \App\Models\BarOrder::whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
+            ->whereIn('status', ['served', 'delivered'])
+            ->sum('total_amount');
+
+        // [GROSS PROFIT] Expected margin (Selling - Buying) for the day
+        $grossProfit = \App\Models\BarOrder::whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
+            ->whereIn('status', ['served', 'delivered'])
+            ->with('items.productVariant')
+            ->get()
+            ->sum(function($order) {
+                return $order->items->sum(function($item) {
+                    $buyingPrice = $item->productVariant->buying_price_per_unit ?? 0;
+                    return ($item->unit_price - $buyingPrice) * $item->quantity;
+                });
+            });
+
+        // [SHORTAGES] Total missing money from waiter handovers (Only include finalized reconciliations)
+        $totalDayShortage = \App\Models\WaiterDailyReconciliation::where('user_id', $this->user_id)
+            ->where(function($q) use ($dailyShiftIds, $dailyRecIds) {
+                $q->whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
+                  ->orWhereIn('id', !empty($dailyRecIds) ? $dailyRecIds : [0]);
+            })
+            ->whereIn('status', ['submitted', 'verified', 'settled']) // Ignore draft/pending/cancelled
+            ->where('difference', '<', 0)
+            ->sum('difference');
+        $totalDayShortage = abs($totalDayShortage);
+
+        // 4. PROPORTIONAL PROFIT CALCULATION
+        // Profit is the proportional share of the ACTUAL money collected (Net Collections)
+        $actualCollections = $this->total_cash_received + $this->total_digital_received;
         
-        // Business Rule: Rollover (carried_forward) for next day is the money left after profit is accounted for
-        // and expenses from circulation are deducted.
-        $this->carried_forward = ($this->opening_cash + $this->total_cash_received + $this->total_digital_received) - $this->profit_generated - $this->total_expenses_from_circulation;
+        // Use max(0, ...) to ensure negative margins (data errors) don't break the ratio
+        $safeGrossProfit = max(0, $grossProfit);
+        $profitMargin = $expectedRevenue > 0 ? ($safeGrossProfit / $expectedRevenue) : 0;
+        
+        $this->profit_generated = (float)round($actualCollections * $profitMargin);
+        
+        // [INSIGHT] How much Capital (Circulation) was lost due to the shortage?
+        // We proportion the shortage: part of it was "would-be profit", the rest is "business capital" (COGS).
+        $this->circulationDebt = max(0, $totalDayShortage * (1 - $profitMargin));
+
+        // 5. CALCULATE BALANCES
+        $totalPhysicalAssets = ($this->opening_cash + $actualCollections);
+        $this->expected_closing_cash = $totalPhysicalAssets - $this->total_expenses;
+        
+        /**
+         * BUSINESS RULE: Rollover (carried_forward)
+         * Shortages are excluded upfront in collection totals.
+         * Rollover = (Opening + Net Collections) - ExpensesFromCirculation - ProfitPayouts.
+         */
+        $this->carried_forward = $totalPhysicalAssets 
+                                - $this->total_expenses_from_circulation 
+                                - $this->profit_submitted_to_boss;
         
         // Ensure non-negative rollover
         if ($this->carried_forward < 0) {
@@ -94,6 +163,19 @@ class DailyCashLedger extends Model
         }
 
         $this->money_in_circulation = $this->carried_forward;
+        
+        $this->shortageRecoveredToday = \App\Models\WaiterDailyReconciliation::where('user_id', $this->user_id)
+            ->whereDate('updated_at', $this->ledger_date)
+            ->where('status', 'settled')
+            ->sum(\Illuminate\Support\Facades\DB::raw('ABS(difference)'));
+
+        // Attach virtual properties for view insight
+        $this->grossProfit = $grossProfit;
+        $this->expectedRevenue = $expectedRevenue;
+        $this->totalDayShortage = $totalDayShortage;
+        $this->adjustedProfit = $grossProfit - $totalDayShortage;
+        $this->circulationRefill = $actualCollections - $this->profit_generated;
+        $this->netAvailableProfit = $this->profit_generated - $this->total_expenses_from_profit;
         
         return $this;
     }
