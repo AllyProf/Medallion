@@ -2077,6 +2077,36 @@ class AccountantController extends Controller
                 ->whereDate('ledger_date', $request->issue_date)
                 ->first();
 
+            $autoBinderMessage = null;
+
+            if ($request->fund_source === 'profit') {
+                $isValidLedger = false;
+                if ($ledger) {
+                    $available = max(0, $ledger->profit_generated - $ledger->total_expenses_from_profit);
+                    if ($available >= $request->amount) {
+                        $isValidLedger = true;
+                    }
+                }
+                
+                // Auto-Binder: If current date has no profit, look backwards for the closest unsubmitted profit envelope
+                if (!$isValidLedger) {
+                    $targetLedger = \App\Models\DailyCashLedger::where('user_id', $ownerId)
+                        ->whereDate('ledger_date', '<=', $request->issue_date)
+                        ->orderBy('ledger_date', 'desc')
+                        ->get()
+                        ->first(function($l) use ($request) {
+                            $av = max(0, $l->profit_generated - $l->total_expenses_from_profit);
+                            return $av >= $request->amount;
+                        });
+                        
+                    if ($targetLedger) {
+                        $ledger = $targetLedger;
+                        $request->merge(['issue_date' => \Carbon\Carbon::parse($ledger->ledger_date)->format('Y-m-d')]);
+                        $autoBinderMessage = "Funds issued successfully! The amount was auto-deducted from the " . \Carbon\Carbon::parse($ledger->ledger_date)->format('M d') . " Profit Envelope.";
+                    }
+                }
+            }
+
             if (!$ledger) {
                 return back()->with('error', 'No cash ledger found for the selected date.');
             }
@@ -2097,13 +2127,13 @@ class AccountantController extends Controller
                 ->sum('amount');
 
             if ($request->fund_source === 'profit') {
-                $available = max(0, $ledger->profit_generated - $ledger->total_expenses_from_profit - $issuedProfit);
+                $available = max(0, $ledger->profit_generated - $ledger->total_expenses_from_profit);
                 if ($request->amount > $available) {
                     return back()->with('error', "Insufficient Profit! Available profit remaining is TSh " . number_format($available) . ".");
                 }
             } else {
                 // For bar circulation, we check against the bar's handover total if possible, or ledger as fallback
-                $available = max(0, $ledger->expected_closing_cash - $issuedCirculation);
+                $available = max(0, $ledger->expected_closing_cash);
                 if ($request->amount > $available) {
                     return back()->with('error', "Insufficient Funds! Available vault cash is TSh " . number_format($available) . ".");
                 }
@@ -2130,7 +2160,8 @@ class AccountantController extends Controller
             $ledger->syncTotals()->save();
         }
 
-        return back()->with('success', 'Funds issued successfully and SMS sent to staff.');
+        $successMsg = isset($autoBinderMessage) ? $autoBinderMessage : 'Funds issued successfully and SMS sent to staff.';
+        return back()->with('success', $successMsg);
     }
 
     /**
@@ -2159,12 +2190,55 @@ class AccountantController extends Controller
             ->whereDate('ledger_date', $request->issue_date)
             ->first();
 
+        $autoBinderMessage = null;
+
+        if ($request->fund_source === 'profit') {
+            $isValidLedger = false;
+            if ($ledger) {
+                // Ensure there is actual profit remaining (ignoring THIS specific issue since we are editing it)
+                $tempExpenses = $ledger->total_expenses_from_profit;
+                if ($issue->fund_source === 'profit' && \Carbon\Carbon::parse($issue->issue_date)->format('Y-m-d') === \Carbon\Carbon::parse($ledger->ledger_date)->format('Y-m-d')) {
+                    $tempExpenses -= $issue->amount; // Remove the old value of this exact expense before checking limit
+                }
+                
+                $available = max(0, $ledger->profit_generated - $tempExpenses);
+                if ($available >= $request->amount) {
+                    $isValidLedger = true;
+                }
+            }
+
+            if (!$isValidLedger) {
+                $targetLedger = \App\Models\DailyCashLedger::where('user_id', $ownerId)
+                    ->whereDate('ledger_date', '<=', $request->issue_date)
+                    ->orderBy('ledger_date', 'desc')
+                    ->get()
+                    ->first(function($l) use ($request, $issue) {
+                        $tempExpenses = $l->total_expenses_from_profit;
+                        if ($issue->fund_source === 'profit' && \Carbon\Carbon::parse($issue->issue_date)->format('Y-m-d') === \Carbon\Carbon::parse($l->ledger_date)->format('Y-m-d')) {
+                            $tempExpenses -= $issue->amount;
+                        }
+                        $av = max(0, $l->profit_generated - $tempExpenses);
+                        return $av >= $request->amount;
+                    });
+                    
+                if ($targetLedger) {
+                    $ledger = $targetLedger;
+                    $request->merge(['issue_date' => \Carbon\Carbon::parse($ledger->ledger_date)->format('Y-m-d')]);
+                    $autoBinderMessage = "Record updated! Amount was auto-deducted from " . \Carbon\Carbon::parse($ledger->ledger_date)->format('M d') . " Profit account.";
+                }
+            }
+        }
+
         if (!$ledger) {
             return back()->with('error', 'No cash ledger found for the selected date. Please open the shift first.');
         }
 
         if ($request->fund_source === 'profit') {
-            $available = $ledger->profit_generated;
+            $tempExpenses = $ledger->total_expenses_from_profit;
+            if ($issue->fund_source === 'profit' && \Carbon\Carbon::parse($issue->issue_date)->format('Y-m-d') === \Carbon\Carbon::parse($ledger->ledger_date)->format('Y-m-d')) {
+                $tempExpenses -= $issue->amount;
+            }
+            $available = max(0, $ledger->profit_generated - $tempExpenses);
             if ($request->amount > $available) {
                 return back()->with('error', "Insufficient Profit! (Available: TSh " . number_format($available) . ")");
             }

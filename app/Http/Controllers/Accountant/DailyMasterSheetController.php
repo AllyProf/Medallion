@@ -439,10 +439,15 @@ class DailyMasterSheetController extends Controller
             $businessStatus = 'DONE';
             $statusColor = '#28a745';
             
+            $hasPendingHandover = $handovers->where('status', 'pending')->count() > 0;
+
             if ($hasOpenShift) {
                 $businessStatus = 'SHIFT IN PROGRESS';
                 $statusColor = '#17a2b8'; // Teal
-            } elseif (empty($dailyShiftIds)) {
+            } elseif ($hasPendingHandover) {
+                $businessStatus = 'PENDING';
+                $statusColor = '#ffc107'; // Gold
+            } elseif (empty($dailyShiftIds) && ($handoverCash + $handoverDigital) <= 0) {
                 $businessStatus = 'NO ACTIVITY';
                 $statusColor = '#6c757d'; // Gray
             }

@@ -769,19 +769,24 @@ class CounterReconciliationController extends Controller
 
         $totalBusinessValue = $ledger->opening_cash + $totalRevenueToday - $totalExpensesCombined;
 
+        // 1. Profit Margin & Proportional Profit (Profit Isolation)
+        $shiftProfitMargin = $shiftRevenue > 0 ? ($stockProfit / $shiftRevenue) : 0;
+        
+        // Final Profit is the PROPORTIONAL share of the money actually collected
+        // This ensures the Boss only takes profit from cash/digital receipts actually in the box.
+        $pullableProfit = $totalRevenueToday * $shiftProfitMargin;
+        $waitingProfit = ($shiftRevenue - $totalRevenueToday) * $shiftProfitMargin;
+
         $expFromProfit = floatval($ledger->total_expenses_from_profit) + floatval($pettyCashIssues->where('fund_source', 'profit')->sum('amount'));
         $expFromCirculation = floatval($ledger->total_expenses_from_circulation) + floatval($pettyCashIssues->where('fund_source', 'circulation')->sum('amount'));
 
-        // 1. Net Daily Earnings (including expenses)
-        $netDailyEarnings = $stockProfit - $expFromProfit;
-
-        // 2. Final Daily Profit (Capped at 0)
-        $finalDailyProfit = max(0, $netDailyEarnings);
+        // Final Daily Profit (Capped at 0)
+        $finalDailyProfit = max(0, $pullableProfit - $expFromProfit);
         $finalProfit = $finalDailyProfit; // Alias used by the settlement view
 
         // 3. Money in Circulation (Shift/Daily Projection)
-        // Circulation is the remaining capital returned to restock the fridge.
-        $moneyInCirculation = max(0, $totalRevenueToday - $stockProfit - $expFromCirculation);
+        // Circulation is exactly the money returned to restock the fridge.
+        $moneyInCirculation = max(0, $totalRevenueToday - $pullableProfit - $expFromCirculation);
 
         // 4. Rollover Float
         $rolloverFloat = $ledger->opening_cash + $moneyInCirculation;
@@ -825,7 +830,9 @@ class CounterReconciliationController extends Controller
             'moneyInCirculation',
             'staff',
             'totalRevenueToday',
-            'closedPriorShifts'
+            'closedPriorShifts',
+            'waitingProfit',
+            'shiftProfitMargin'
         ));
     }
 

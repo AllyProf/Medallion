@@ -112,22 +112,18 @@
                     $subTotal          = $cashCollected + $digitalCollected; 
                     $totalAssets       = $ledger->opening_cash + $subTotal;
                     
-                    $margin = ($ledger->expectedRevenue ?? 0) > 0 ? ($ledger->grossProfit / $ledger->expectedRevenue) : 0;
-                    
-                    // NEW: Fallback margin for "Recovery-only" days
-                    if ($margin <= 0 && $shortageCollected > 0) {
-                        $margin = 0.35;
-                    }
+                                    $margin = $subTotal > 0 ? ($ledger->profit_generated / $subTotal) : 0.35;
+                                    $recoveryProfitPart = 0;
+                                    if ($shortageCollected > 0) {
+                                        $recoveryProfitPart = $shortageCollected * $margin;
+                                    }
+                                    
+                                    $finalProfitDisplay = $ledger->profit_generated + $recoveryProfitPart;
+                                    $finalCircDisplay = $ledger->total_expenses_from_circulation + ($subTotal - $ledger->profit_generated) + ($shortageCollected - $recoveryProfitPart);
+                                    $shiftProfitPart = $ledger->profit_generated - $recoveryProfitPart;
 
-                    $actualPayout = $ledger->profit_submitted_to_boss ?? 0;
-                    $payoutDiff   = $actualPayout - $ledger->netAvailableProfit;
-
-                    // Breakdown for transparency (Uwazi)
-                    $shiftProfitPart = 0; $recoveryProfitPart = 0;
-                    if ($shortageCollected > 0 && $subTotal > 0) {
-                        $recoveryProfitPart = $shortageCollected * $margin;
-                        $shiftProfitPart = $ledger->profit_generated - $recoveryProfitPart;
-                    }
+                                    $actualPayout = $ledger->profit_submitted_to_boss ?? 0;
+                                    $payoutDiff   = $actualPayout - $ledger->netAvailableProfit;
                 @endphp
                 {{-- MAIN ROW: Click to Collapse --}}
                 <tr class="main-row {{ $rowClass }}" data-toggle="collapse" data-target="#details-{{ $ledger->id }}">
@@ -178,6 +174,9 @@
                       @endif
                       @if($ledger->total_profit_outflow > 0)
                          <div class="text-danger" style="font-size:0.65rem;">-{{ number_format($ledger->total_profit_outflow) }} paid out</div>
+                         <div style="font-size:0.75rem; border-top:1px dashed #ccc; margin-top:2px; padding-top:2px;">
+                             <span class="text-muted" style="font-weight:normal;">Remains:</span> <span class="text-success">{{ number_format($ledger->netAvailableProfit) }}</span>
+                         </div>
                       @endif
                   </td>
                    <td class="money-column text-info font-weight-bold">

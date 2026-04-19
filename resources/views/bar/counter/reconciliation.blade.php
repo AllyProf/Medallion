@@ -314,9 +314,9 @@
                     @endif
                   </td>
                   <td class="diff-col-bg text-center">
-                    @if($isCounter)
+                    @if($isCounter && $data['difference'] == 0)
                       <span class="text-muted">-</span>
-                    @elseif($data['submitted_amount'] > 0 || $data['reconciliation'])
+                    @elseif($isCounter || $data['submitted_amount'] > 0 || $data['reconciliation'])
                       <strong class="{{ $data['difference'] >= 0 ? 'text-success' : 'text-danger' }}">
                         @if($data['difference'] > 0)
                           +{{ number_format($data['difference'], 0) }}
@@ -745,29 +745,30 @@
                         <br><small class="text-muted" style="font-size:0.55rem;">({{ number_format($ledger->opening_cash) }} bf + {{ number_format($moneyInCirculation) }} circ)</small>
                      </div>
                      <div class="col-6 border-right px-1">
-                        <small class="text-muted font-weight-bold d-block" style="font-size: 0.6rem;">GENERATED PROFIT</small>
-                        <span class="font-weight-bold small" style="color: #940000;" title="Actual pullable sum after expenses">TSh {{ number_format($finPrf) }}</span>
-                        @if($stockProfit > $finPrf)
-                           <br><small class="text-muted" style="font-size:0.55rem;">({{ number_format($stockProfit) }} - {{ number_format($stockProfit - $finPrf) }} exp)</small>
+                        <small class="text-muted font-weight-bold d-block" style="font-size: 0.6rem;">PULLABLE PROFIT</small>
+                        <span class="font-weight-bold small" style="color: #28a745;" title="Actual pullable sum after expenses">TSh {{ number_format($finPrf) }}</span>
+                        @if($waitingProfit > 50)
+                            <br><small class="text-muted" style="font-size: 0.55rem;"><i class="fa fa-clock-o"></i> Waiting: {{ number_format($waitingProfit) }}</small>
                         @endif
                      </div>
                      <div class="col-6 px-1">
                         <small class="text-muted font-weight-bold d-block" style="font-size: 0.6rem;">MONEY IN CIRCULATION</small>
-                        <span class="font-weight-bold small" style="color: #940000;">TSh {{ number_format($moneyInCirculation) }}</span>
+                        <span class="font-weight-bold small {{ ($moneyInCirculation < ($shiftRevenue - $stockProfit) - 50 ? 'text-danger' : 'text-primary') }}" style="font-size: 0.75rem;">
+                            TSh {{ number_format($moneyInCirculation) }}
+                        </span>
+                        @if($moneyInCirculation < ($shiftRevenue - $stockProfit) - 50)
+                            <br><small class="text-danger font-weight-bold" style="font-size: 0.5rem;"><i class="fa fa-warning"></i> CAPITAL DEFICIT</small>
+                        @endif
                      </div>
                    </div>
                 </div>
 
-                <div class="p-2 mb-3 rounded border bg-white small">
-                   <p class="text-dark mb-0 font-italic" style="font-size: 0.75rem;">
-                     <i class="fa fa-info-circle text-info"></i> Today you generated <strong>TSh {{ number_format($finPrf) }}</strong> in pullable profit (Boss share)
-                     @if($stockProfit > $finPrf)
-                        (after deducting TSh {{ number_format($stockProfit - $finPrf) }} for expenses).
-                     @else
-                        .
-                     @endif
-                     The remaining <strong>TSh {{ number_format($circVal) }}</strong> will roll over as <strong>Tomorrow's Opening Float</strong>.
-                   </p>
+                <div class="alert {{ $waitingProfit > 100 ? 'alert-warning' : 'alert-info' }} py-2 mt-2" style="font-size: 0.75rem; border-left: 4px solid {{ $waitingProfit > 100 ? '#ffc107' : '#17a2b8' }};">
+                    @if($waitingProfit > 100)
+                        <strong><i class="fa fa-shield"></i> Capital Security:</strong> Profit is restricted to protect your stock capital because of the <strong>TSh {{ number_format($shiftRevenue - $totalRevenueToday) }}</strong> outstanding debt.
+                    @else
+                        <strong><i class="fa fa-check-circle"></i> Clean Settlement:</strong> Today you generated <strong>TSh {{ number_format($finPrf) }}</strong> in pullable profit (Boss share + Expenses). The remaining <strong>TSh {{ number_format($circVal) }}</strong> will roll over as Tomorrow's Opening Float.
+                    @endif
                 </div>
 
                 <form id="closingForm" action="{{ route('accountant.daily-master-sheet.close') }}" method="POST" onsubmit="event.preventDefault(); Swal.fire({title: 'Are you sure?', text: 'Once the ledger is finalized and locked, financial balances cannot be changed. Proceed?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Yes, lock it!', confirmButtonColor: '#28a745', cancelButtonColor: '#d33'}).then((result) => { if (result.isConfirmed) { this.submit(); } });">

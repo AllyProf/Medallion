@@ -90,11 +90,48 @@ class DailyCashLedger extends Model
         $this->total_expenses_from_profit = $profExp;
         $this->total_expenses = $circExp + $profExp;
 
-        // 3. CALCULATE EXPECTED TOTALS & GROSS PROFIT (Shift-Aware)
+        // 3. CALCULATE EXPECTED TOTALS & RECEIPTS (Shift-Aware)
         $dailyShiftIds = \App\Models\BarShift::where('user_id', $this->user_id)
             ->whereDate('opened_at', $this->ledger_date)
             ->pluck('id')
             ->toArray();
+
+        // [RECEIPTS] Recalculate collected amounts from shifts to keep data in sync
+        // if shifts are moved.
+        $handoversForDay = \App\Models\FinancialHandover::where(function($q) use ($dailyShiftIds) {
+                $q->whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
+                  ->orWhere(function($sub) {
+                      $sub->whereNull('bar_shift_id')
+                          ->whereDate('handover_date', $this->ledger_date);
+                  });
+            })
+            ->whereIn('status', ['verified', 'pending'])
+            ->get();
+
+        $calcCash = 0; $calcDigital = 0;
+        foreach($handoversForDay as $h) {
+            $breakdown = $h->payment_breakdown ?? [];
+            if (is_string($breakdown)) $breakdown = json_decode($breakdown, true);
+            foreach($breakdown as $key => $val) {
+                if ($key === 'total' || $key === 'shortage_payment') continue;
+                if ($key === 'cash' || str_contains($key, 'cash_')) {
+                    $calcCash += (float)$val;
+                } else {
+                    $calcDigital += (float)$val;
+                }
+            }
+        }
+        
+        // Also capture "Recovery Payouts" made directly on this day
+        $recoveryPayments = \App\Models\WaiterDailyReconciliation::where('user_id', $this->user_id)
+            ->whereDate('updated_at', $this->ledger_date)
+            ->where('notes', 'LIKE', '%"shortage_payment"%')
+            ->get();
+        // Since recovery payments are already in handovers, we usually don't need to add them here 
+        // IF the handover date is the ledger date.
+        
+        $this->total_cash_received = $calcCash;
+        $this->total_digital_received = $calcDigital;
 
         $dailyRecIds = \App\Models\BarOrder::whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
             ->whereNotNull('reconciliation_id')
