@@ -305,13 +305,11 @@
                     @endif
                   </td>
                   <td class="audit-col-bg">
-                  <td class="audit-col-bg">
                     @if(isset($data['submitted_amount']) && ($data['reconciliation'] || $data['status'] !== 'pending'))
                       <strong class="text-success">TSh {{ number_format($data['submitted_amount'], 0) }}</strong>
                     @else
                       <span class="text-muted">Waiting</span>
                     @endif
-                  </td>
                   </td>
                   <td class="diff-col-bg text-center">
                     @if($isCounter && $data['difference'] == 0)
@@ -330,7 +328,6 @@
                       <span class="text-muted">-</span>
                     @endif
                   </td>
-                  <td class="text-center">
                   <td class="text-center">
                     @if($data['status'] === 'reconciled')
                       <span class="badge badge-success"><i class="fa fa-check-circle"></i> Reconciled</span>
