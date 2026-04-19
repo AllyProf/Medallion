@@ -26,11 +26,29 @@ class LiveSalesController extends Controller
         $location = session('active_location');
         $today = Carbon::today();
 
+        // [SHIFT DISCOVERY] - Prioritize active trading shift
+        $activeShift = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->when($location && $location !== 'all', function($q) use ($location) {
+                $q->where('location_branch', $location);
+            })
+            ->orderBy('opened_at', 'desc')
+            ->first();
+
+        // Define a contextual filter closure for reuse
+        $applyContext = function($query, $table = 'orders') use ($activeShift, $today) {
+            if ($activeShift) {
+                return $query->where($table . '.bar_shift_id', $activeShift->id);
+            }
+            return $query->whereDate($table . '.created_at', $today);
+        };
+
         // 1. Live Revenue (Today) - Join with payments for accurate split
-        $paymentsToday = OrderPayment::whereHas('order', function($q) use ($ownerId, $location, $today) {
+        $paymentsToday = OrderPayment::whereHas('order', function($q) use ($ownerId, $location, $applyContext) {
                 $q->where('user_id', $ownerId)
-                  ->where('status', '!=', 'cancelled')
-                  ->whereDate('created_at', $today);
+                  ->where('status', '!=', 'cancelled');
+                
+                $applyContext($q, 'orders');
                 
                 if ($location) {
                     $q->where(function($sq) use ($location) {
@@ -55,8 +73,8 @@ class LiveSalesController extends Controller
 
         // 2. Order Volume & Pulse
         $ordersTodayQuery = BarOrder::where('orders.user_id', $ownerId)
-            ->whereDate('orders.created_at', $today)
             ->where('orders.status', '!=', 'cancelled');
+        $applyContext($ordersTodayQuery, 'orders');
         
         if ($location) {
             $ordersTodayQuery->where(function($q) use ($location) {
@@ -75,11 +93,12 @@ class LiveSalesController extends Controller
         $activeOrders = (clone $ordersTodayQuery)->whereIn('status', ['pending', 'preparing', 'ready'])->count();
         $servedOrders = (clone $ordersTodayQuery)->where('status', 'served')->count();
 
-        // 3. Hourly Velocity (Today)
-        $hourlySales = BarOrder::where('user_id', $ownerId)
-            ->whereDate('created_at', $today)
-            ->where('status', '!=', 'cancelled')
-            ->selectRaw('HOUR(created_at) as hour, COUNT(*) as count')
+        // 3. Hourly Velocity (Contextual)
+        $hourlySalesQuery = BarOrder::where('user_id', $ownerId)
+            ->where('status', '!=', 'cancelled');
+        $applyContext($hourlySalesQuery, 'orders');
+
+        $hourlySales = $hourlySalesQuery->selectRaw('HOUR(created_at) as hour, COUNT(*) as count')
             ->groupBy('hour')
             ->orderBy('hour')
             ->get()
@@ -108,9 +127,10 @@ class LiveSalesController extends Controller
             ->limit(10)
             ->get();
 
-        // 6. Top Items Pulse (Today)
-        $topDrinks = OrderItem::whereHas('order', function($q) use ($ownerId, $today, $location) {
-                $q->where('orders.user_id', $ownerId)->whereDate('orders.created_at', $today)->where('orders.status', '!=', 'cancelled');
+        // 6. Top Items Pulse (Contextual)
+        $topDrinks = OrderItem::whereHas('order', function($q) use ($ownerId, $applyContext) {
+                $q->where('orders.user_id', $ownerId)->where('orders.status', '!=', 'cancelled');
+                $applyContext($q, 'orders');
                 if ($location) {
                     $q->whereExists(function($sq) use ($location) {
                         $sq->select(DB::raw(1))->from('staff')->whereColumn('staff.id', 'orders.waiter_id')->where('staff.location_branch', $location);
@@ -128,8 +148,9 @@ class LiveSalesController extends Controller
                 return $item;
             });
 
-        $topFood = KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $today) {
-                $q->where('orders.user_id', $ownerId)->whereDate('orders.created_at', $today)->where('orders.status', '!=', 'cancelled');
+        $topFood = KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $applyContext) {
+                $q->where('orders.user_id', $ownerId)->where('orders.status', '!=', 'cancelled');
+                $applyContext($q, 'orders');
             })
             ->select('food_item_name', DB::raw('SUM(quantity) as total_qty'), DB::raw('SUM(total_price) as total_rev'))
             ->groupBy('food_item_name')
@@ -158,7 +179,8 @@ class LiveSalesController extends Controller
         return view('manager.live_sales', compact(
             'totalRevenue', 'todayCash', 'todayDigital',
             'totalOrders', 'activeOrders', 'servedOrders',
-            'hourlyData', 'liveFeed', 'staffPulse', 'topDrinks', 'topFood'
+            'hourlyData', 'liveFeed', 'staffPulse', 'topDrinks', 'topFood',
+            'activeShift'
         ));
     }
 }

@@ -42,8 +42,14 @@
 
 <div class="app-title">
     <div>
-        <h1><i class="fa fa-bolt"></i> Live Sales Dashboard</h1>
-        <p>Real-time operational pulse for {{ now()->format('l, F j, Y') }}</p>
+        <h1><i class="fa fa-bolt"></i> {{ $activeShift ? 'Live Shift Pulse' : 'Daily Sales Monitor' }}</h1>
+        <p>
+            @if($activeShift)
+                Monitoring <strong>Shift #{{ $activeShift->id }}</strong> (Started {{ $activeShift->opened_at->format('H:i') }})
+            @else
+                Real-time operational pulse for today, {{ now()->format('l, F j') }}
+            @endif
+        </p>
     </div>
     <ul class="app-breadcrumb breadcrumb">
         <li class="breadcrumb-item"><i class="fa fa-home fa-lg"></i></li>
@@ -58,7 +64,7 @@
         <div class="widget-small primary coloured-icon">
             <i class="icon fa fa-money fa-3x"></i>
             <div class="info">
-                <h4>Today Revenue</h4>
+                <h4>{{ $activeShift ? 'Shift Revenue' : 'Today Revenue' }}</h4>
                 <p><b id="total-revenue-text">TSh {{ number_format($totalRevenue) }}</b></p>
                 <small>Cash: <span id="cash-revenue-text">{{ number_format($todayCash) }}</span> | Digital: <span id="digital-revenue-text">{{ number_format($todayDigital) }}</span></small>
             </div>
@@ -70,7 +76,7 @@
         <div class="widget-small info coloured-icon">
             <i class="icon fa fa-shopping-cart fa-3x"></i>
             <div class="info">
-                <h4>Order Flow</h4>
+                <h4>{{ $activeShift ? 'Shift Orders' : 'Today Orders' }}</h4>
                 <p>
                     <b id="total-orders-count">{{ $totalOrders }}</b> <small>Total</small> | 
                     <b class="text-primary" id="active-orders-count">{{ $activeOrders }}</b> <small>Live</small>
@@ -84,7 +90,7 @@
     <div class="col-md-4">
         <div class="tile p-2 mb-3" style="min-height: 100px; display: flex; flex-direction: column; justify-content: center;">
             <div class="d-flex justify-content-between align-items-center px-2">
-                <h6 class="mb-0 text-muted small font-weight-bold uppercase">HOURLY VELOCITY</h6>
+                <h6 class="mb-0 text-muted small font-weight-bold uppercase">{{ $activeShift ? 'SHIFT VELOCITY' : 'HOURLY VELOCITY' }}</h6>
                 <span class="badge badge-primary">LIVE</span>
             </div>
             <div class="velocity-chart-container mt-1">
@@ -111,7 +117,7 @@
     <div class="col-md-4">
         <!-- Staff Performance -->
         <div class="tile mb-4">
-            <h3 class="tile-title border-bottom pb-2"><i class="fa fa-users text-primary mr-2"></i> Active Staff Pulse</h3>
+            <h3 class="tile-title border-bottom pb-2"><i class="fa fa-users text-primary mr-2"></i> {{ $activeShift ? 'Shift Staff Pulse' : 'Active Staff Pulse' }}</h3>
             <div class="tile-body">
                 <ul class="list-group list-group-flush" id="staff-pulse-container">
                     @include('manager.partials.staff_pulse_items', ['staffPulse' => $staffPulse])
@@ -121,10 +127,10 @@
 
         <!-- Today's Stars -->
         <div class="tile">
-            <h3 class="tile-title border-bottom pb-2"><i class="fa fa-star text-warning mr-2"></i> Today's Hot Items</h3>
+            <h3 class="tile-title border-bottom pb-2"><i class="fa fa-star text-warning mr-2"></i> {{ $activeShift ? 'Shift Top Items' : "Today's Hot Items" }}</h3>
             <div class="tile-body">
                 <div class="mb-3">
-                    <h6 class="text-muted small font-weight-bold mb-3">TOP DRINKS</h6>
+                    <h6 class="text-muted small font-weight-bold mb-3">{{ $activeShift ? 'DRINKS (SHIFT)' : 'TOP DRINKS' }}</h6>
                     @foreach($topDrinks as $drink)
                     <div class="d-flex justify-content-between align-items-center mb-2 px-1">
                         <span class="small font-weight-bold">{{ $drink->display_name }}</span>
@@ -134,7 +140,7 @@
                 </div>
                 <hr>
                 <div>
-                    <h6 class="text-muted small font-weight-bold mb-3">TOP DISHES</h6>
+                    <h6 class="text-muted small font-weight-bold mb-3">{{ $activeShift ? 'FOOD (SHIFT)' : 'TOP DISHES' }}</h6>
                     @foreach($topFood as $food)
                     <div class="d-flex justify-content-between align-items-center mb-2 px-1">
                         <span class="small">{{ $food->food_item_name }}</span>
