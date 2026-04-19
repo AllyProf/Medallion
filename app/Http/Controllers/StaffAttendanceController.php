@@ -22,7 +22,27 @@ class StaffAttendanceController extends Controller
     public function managerIndex(Request $request)
     {
         $ownerId = $this->getOwnerId();
-        $date = $request->get('date', now()->format('Y-m-d'));
+        
+        // Handle Range Presets
+        $range = $request->get('range', 'today'); // today, week, month, custom
+        $startDate = $request->get('start_date');
+        $endDate = $request->get('end_date');
+
+        if ($range === 'today') {
+            $startDate = $endDate = now()->format('Y-m-d');
+        } elseif ($range === 'week') {
+            $startDate = now()->startOfWeek()->format('Y-m-d');
+            $endDate = now()->endOfWeek()->format('Y-m-d');
+        } elseif ($range === 'month') {
+            $startDate = now()->startOfMonth()->format('Y-m-d');
+            $endDate = now()->endOfMonth()->format('Y-m-d');
+        } elseif (!$startDate || !$endDate) {
+            $startDate = $endDate = now()->format('Y-m-d');
+            $range = 'today';
+        } else {
+            $range = 'custom';
+        }
+
         $statusFilter = $request->get('status', 'all');
 
         // Fetch shift settings
@@ -31,8 +51,8 @@ class StaffAttendanceController extends Controller
 
         $query = StaffAttendance::with('staff.role')
             ->where('user_id', $ownerId)
-            ->whereDate('check_in', $date)
-            ->orderBy('check_in', 'asc'); // Ascending to find first arrival easily
+            ->whereBetween('check_in', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
+            ->orderBy('check_in', 'desc');
 
         if ($statusFilter !== 'all') {
             $query->where('status', $statusFilter);
@@ -40,16 +60,24 @@ class StaffAttendanceController extends Controller
 
         $attendances = $query->get();
         
-        // Find first arrival record ID
-        $firstArrivalId = $attendances->first() ? $attendances->first()->id : null;
-
+        // Performance helpers
         $activeNow = StaffAttendance::where('user_id', $ownerId)
             ->where('status', 'active')
             ->count();
 
+        // For "First Arrival" badges, we ideally want to know the first arrival PER day in the range
+        // but for simplicity we'll just show the latest set of arrivals or allow the view to handle it.
+        // We'll pass the firstArrivalIds as a collection of IDs.
+        $firstArrivalIds = StaffAttendance::where('user_id', $ownerId)
+            ->whereBetween('check_in', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
+            ->selectRaw('MIN(id) as id')
+            ->groupBy(\DB::raw('DATE(check_in)'))
+            ->pluck('id')
+            ->toArray();
+
         return view('manager.attendance.index', compact(
-            'attendances', 'date', 'activeNow', 'statusFilter', 
-            'shiftStart', 'shiftEnd', 'firstArrivalId'
+            'attendances', 'startDate', 'endDate', 'range', 'activeNow', 'statusFilter', 
+            'shiftStart', 'shiftEnd', 'firstArrivalIds'
         ));
     }
 
