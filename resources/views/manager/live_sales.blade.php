@@ -86,7 +86,7 @@
             <div class="info">
                 <h4>In Circulation</h4>
                 <p><b id="total-circulation-text">TSh {{ number_format($moneyInCirculation) }}</b></p>
-                <small>Rev - Exp (Shift)</small>
+                <small>Rev - Profit - Exp</small>
             </div>
         </div>
     </div>
