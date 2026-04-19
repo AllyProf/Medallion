@@ -36,12 +36,20 @@
     </p>
   </div>
   <div>
+    @if($staff->whereNull('pin')->count() > 0 || $staff->where('pin', '')->count() > 0)
+      <form action="{{ route('staff.generate-missing-pins') }}" method="POST" class="d-inline">
+          @csrf
+          <button type="submit" class="btn btn-warning mr-2 shadow-sm">
+            <i class="fa fa-magic"></i> Fix Missing PINs
+          </button>
+      </form>
+    @endif
     @if(session('active_location'))
       <a href="javascript:void(0)" onclick="switchLocation('all')" class="btn btn-secondary mr-2">
         <i class="fa fa-globe"></i> Show All Branches
       </a>
     @endif
-    <a href="{{ route('staff.create') }}" class="btn btn-primary">
+    <a href="{{ route('staff.create') }}" class="btn btn-primary shadow-sm">
       <i class="fa fa-plus"></i> Register New Staff
     </a>
   </div>
@@ -61,7 +69,7 @@
     <div class="widget-small info coloured-icon">
       <i class="icon fa fa-check-circle fa-3x"></i>
       <div class="info">
-        <h4>Active</h4>
+        <h4>Active Staff</h4>
         <p><b>{{ $stats['active'] }}</b></p>
       </div>
     </div>
@@ -90,7 +98,15 @@
     <div class="tile">
       @if(session('success'))
         <div class="alert alert-success alert-dismissible fade show" role="alert">
-          {{ session('success') }}
+          <i class="fa fa-check-circle"></i> {{ session('success') }}
+          <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+      @endif
+      @if(session('error'))
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+          <i class="fa fa-exclamation-triangle"></i> {{ session('error') }}
           <button type="button" class="close" data-dismiss="alert" aria-label="Close">
             <span aria-hidden="true">&times;</span>
           </button>
@@ -103,19 +119,19 @@
             <div class="input-group-prepend">
               <span class="input-group-text bg-white border-right-0"><i class="fa fa-search text-muted"></i></span>
             </div>
-            <input type="text" id="staffSearch" class="form-control border-left-0" placeholder="Search staff members..." style="width: 250px;">
+            <input type="text" id="staffSearch" class="form-control border-left-0" placeholder="Search staff or PIN..." style="width: 250px;">
           </div>
         </div>
       </div>
       @if($staff->count() > 0)
         <div class="table-responsive">
-          <table class="table table-hover table-bordered bg-white">
+          <table class="table table-hover table-bordered bg-white" id="staffTable">
             <thead class="bg-light">
               <tr>
-                <th width="120">Staff ID</th>
+                <th width="100">Staff ID</th>
                 <th>Full Name</th>
                 <th>Staff Role</th>
-                <th width="100" class="text-center">Kiosk PIN</th>
+                <th width="110" class="text-center">Kiosk PIN</th>
                 <th>Location</th>
                 <th width="100">Status</th>
                 <th width="120" class="text-center">Actions</th>
@@ -123,7 +139,7 @@
             </thead>
             <tbody>
               @foreach($staff as $member)
-                <tr class="align-middle">
+                <tr class="align-middle staff-row">
                   <td><strong>{{ $member->staff_id }}</strong></td>
                   <td>
                     <div class="d-flex align-items-center">
@@ -150,13 +166,10 @@
                     @endif
                   </td>
                   <td class="text-center">
-                    @php
-                      $isWaiter = $member->role && stripos($member->role->name, 'waiter') !== false;
-                    @endphp
-                    @if($isWaiter)
-                      <span class="badge badge-light border px-3 py-1 font-weight-bold" style="letter-spacing: 2px;">{{ $member->pin ?? '----' }}</span>
+                    @if($member->pin)
+                      <span class="badge badge-light border px-3 py-1 font-weight-bold" style="letter-spacing: 2px; font-size: 0.9rem;">{{ $member->pin }}</span>
                     @else
-                      <span class="text-muted">-</span>
+                      <span class="badge badge-danger badge-pill px-2 py-1" style="font-size: 0.7rem;"><i class="fa fa-warning"></i> MISSING</span>
                     @endif
                   </td>
                   <td>
@@ -205,6 +218,16 @@
 
 @push('scripts')
 <script>
+$(document).ready(function() {
+    // Staff search
+    $("#staffSearch").on("keyup", function() {
+        var value = $(this).val().toLowerCase();
+        $("#staffTable tbody tr").filter(function() {
+            $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1)
+        });
+    });
+});
+
 function deleteStaff(staffId, staffName) {
   Swal.fire({
     title: 'Delete Staff Member?',
@@ -243,7 +266,3 @@ function deleteStaff(staffId, staffName) {
 }
 </script>
 @endpush
-
-
-
-

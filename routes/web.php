@@ -105,6 +105,7 @@ Route::group(['prefix' => 'bar/kiosk', 'as' => 'bar.kiosk.'], function () {
     
     // Staff Attendance Toggle
     Route::post('/attendance/toggle', [\App\Http\Controllers\StaffAttendanceController::class, 'toggle'])->name('attendance.toggle');
+    Route::post('/staff/generate-missing-pins', [\App\Http\Controllers\StaffController::class, 'generateMissingPins'])->name('staff.generate-missing-pins');
 });
 
 // Dashboard Routes (Protected - allow both users and staff)

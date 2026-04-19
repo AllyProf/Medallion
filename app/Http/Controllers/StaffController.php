@@ -546,9 +546,8 @@ class StaffController extends Controller
             'salary_paid' => 'nullable|numeric|min:0',
             'religion' => 'nullable|string|max:100',
             'is_active' => 'nullable|boolean',
-            'nida_attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
-            'voter_id_attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
             'professional_certificate_attachment' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+            'pin' => 'nullable|string|size:4|regex:/^[0-9]+$/',
         ]);
 
         // Verify role belongs to the owner (Super Admin can use any role)
@@ -739,5 +738,32 @@ class StaffController extends Controller
                 $seenNames[$nameLower] = $role->id;
             }
         }
+    /**
+     * Bulk generate unique PINs for all staff members who don't have one.
+     */
+    public function generateMissingPins()
+    {
+        $user = $this->getCurrentUser();
+        if (!$user || !$this->hasPermission('staff', 'edit')) {
+            return redirect()->back()->with('error', 'You do not have permission to perform this action.');
+        }
+
+        $ownerId = $this->getOwnerId();
+        
+        // Find staff with NULL pins belonging to this owner
+        $staffWithoutPin = Staff::where('user_id', $ownerId)
+            ->where(function($q) {
+                $q->whereNull('pin')->orWhere('pin', '');
+            })
+            ->get();
+
+        $count = 0;
+        foreach ($staffWithoutPin as $staff) {
+            $staff->update(['pin' => Staff::generatePin()]);
+            $count++;
+        }
+
+        return redirect()->route('staff.index')
+            ->with('success', "Success! Generated secondary Kiosk PINs for {$count} staff members. They can now use the Attendance Kiosk.");
     }
 }

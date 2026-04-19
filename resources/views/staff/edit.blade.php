@@ -175,6 +175,7 @@
             </div>
           </div>
           
+        <div class="row">
           <div class="col-md-6">
             <div class="form-group">
               <label>Religion (Optional)</label>
@@ -183,6 +184,23 @@
               @error('religion')
                 <div class="invalid-feedback">{{ $message }}</div>
               @enderror
+            </div>
+          </div>
+          
+          <div class="col-md-6">
+            <div class="form-group">
+              <label>Kiosk PIN <span class="text-danger">*</span></label>
+              <div class="input-group">
+                <input type="text" class="form-control @error('pin') is-invalid @enderror" 
+                       id="custom_pin" name="pin" value="{{ old('pin', $staff->pin) }}" placeholder="Enter 4-digit PIN" maxlength="4" pattern="\d{4}">
+                <div class="input-group-append">
+                  <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('custom_pin').value = Math.floor(1000 + Math.random() * 9000)"><i class="fa fa-refresh"></i> Generate</button>
+                </div>
+              </div>
+              @error('pin')
+                <div class="invalid-feedback d-block">{{ $message }}</div>
+              @enderror
+              <small class="form-text text-muted">Used for Kiosk login and Attendance clock-in/out.</small>
             </div>
           </div>
         </div>
