@@ -128,7 +128,7 @@ class LiveSalesController extends Controller
             ->get();
 
         // 6. Top Items Pulse (Contextual)
-        $topDrinks = OrderItem::whereHas('order', function($q) use ($ownerId, $applyContext) {
+        $topDrinks = OrderItem::whereHas('order', function($q) use ($ownerId, $applyContext, $location) {
                 $q->where('orders.user_id', $ownerId)->where('orders.status', '!=', 'cancelled');
                 $applyContext($q, 'orders');
                 if ($location) {
@@ -148,9 +148,14 @@ class LiveSalesController extends Controller
                 return $item;
             });
 
-        $topFood = KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $applyContext) {
+        $topFood = KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $applyContext, $location) {
                 $q->where('orders.user_id', $ownerId)->where('orders.status', '!=', 'cancelled');
                 $applyContext($q, 'orders');
+                if ($location) {
+                    $q->whereExists(function($sq) use ($location) {
+                        $sq->select(DB::raw(1))->from('staff')->whereColumn('staff.id', 'orders.waiter_id')->where('staff.location_branch', $location);
+                    });
+                }
             })
             ->select('food_item_name', DB::raw('SUM(quantity) as total_qty'), DB::raw('SUM(total_price) as total_rev'))
             ->groupBy('food_item_name')
