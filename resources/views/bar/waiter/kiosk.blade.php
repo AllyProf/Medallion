@@ -441,11 +441,9 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         <button class="top-btn ml-3" style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color);" onclick="toggleTheme()"><i class="fa fa-moon-o" id="theme-icon"></i> Mode</button>
         <button class="top-btn" style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color);" onclick="toggleLang()">EN | SW</button>
 
-        <div class="network-indicator" id="network-indicator" title="Connection Status">
-            <span class="network-dot"></span>
-            <span id="network-status-text">Online</span>
-            <span class="network-status-sub" id="network-status-sub">Live</span>
-        </div>
+        <button class="top-btn ml-auto" style="background:#dc3545; color:white; border:none; display:flex; align-items:center; gap:8px;" onclick="$('#attendanceModal').modal('show')">
+            <i class="fa fa-clock-o"></i> SIGN ATTENDANCE
+        </button>
 
         <div class="brand-logo">
             {{ \App\Models\User::first()->business_name ?? 'RESTAURANT POS' }}
@@ -777,25 +775,52 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 
 <!-- Action Authentication Modal (For specific buttons like My Orders) -->
 <div class="modal fade" id="actionAuthModal" tabindex="-1" role="dialog" aria-hidden="true" style="background: rgba(0,0,0,0.8);">
-    <div class="modal-dialog modal-dialog-centered" role="document" style="max-width: 380px;">
-        <div class="modal-content shadow-lg border-0" style="border-radius: 12px; overflow: hidden; background:#242424;">
-            <div class="text-white p-3 text-center" style="background:var(--accent-cyan);">
-                <h5 class="m-0"><i class="fa fa-lock"></i> Authorize</h5>
+    <!-- ... existing actionAuthModal code ... -->
+</div>
+
+<!-- Attendance Clock In/Out Modal -->
+<div class="modal fade" id="attendanceModal" tabindex="-1" role="dialog" aria-hidden="true" style="background: rgba(0,0,0,0.9);">
+    <div class="modal-dialog modal-dialog-centered" role="document" style="max-width: 400px;">
+        <div class="modal-content shadow-lg border-0" style="border-radius: 16px; overflow: hidden; background:#1a1a1a; border: 1px solid #333;">
+            <div class="text-white p-4 text-center" style="background:linear-gradient(45deg, #dc3545, #940000);">
+                <h4 class="m-0 font-weight-bold"><i class="fa fa-clock-o"></i> STAFF ATTENDANCE</h4>
+                <p class="small mb-0 opacity-75">Sign In or Sign Out</p>
             </div>
-            <div class="modal-body p-3" style="background:#1a1a1a;">
-                <form id="action-auth-form">
-                    <input type="hidden" id="auth-action-type">
-                    <div class="mb-3 text-center" style="display:none;">
-                        <div id="action-waiter-name-display" class="mb-2"></div>
-                        <input type="hidden" id="action-waiter-id">
+            <div class="modal-body p-4">
+                <div class="mb-4 text-center">
+                    <input type="password" class="form-control text-center font-weight-bold" id="attendance-pin" 
+                           placeholder="ENTER PIN" inputmode="numeric" pattern="\d*" maxlength="4"
+                           style="font-size: 2.5rem; height: 80px; background:#000; color:#ffb822; border:2px solid #444; border-radius:12px; letter-spacing: 12px; -webkit-text-security: disc;">
+                </div>
+
+                <!-- Numpad for Touch Screens -->
+                <div class="row no-gutters mb-3">
+                    @foreach([1,2,3,4,5,6,7,8,9] as $num)
+                    <div class="col-4 p-1">
+                        <button class="kiosk-num-btn" onclick="appendAttendancePin('{{ $num }}')">{{ $num }}</button>
                     </div>
-                    
-                    <div class="mb-3">
-                        <input type="password" class="form-control text-center shadow-sm font-weight-bold" id="action-pin" 
-                               name="pin" placeholder="PIN" inputmode="numeric" pattern="\d*" maxlength="4"
-                               autocomplete="new-password"
-                               style="font-size: 2rem; height: 60px; background:#111; color:var(--accent-yellow); border:1px solid #333;">
+                    @endforeach
+                    <div class="col-4 p-1">
+                        <button class="kiosk-num-btn text-danger" onclick="$('#attendance-pin').val('')"><i class="fa fa-times"></i></button>
                     </div>
+                    <div class="col-4 p-1">
+                        <button class="kiosk-num-btn" onclick="appendAttendancePin('0')">0</button>
+                    </div>
+                    <div class="col-4 p-1">
+                        <button class="kiosk-num-btn text-warning" onclick="backspaceAttendancePin()"><i class="fa fa-long-arrow-left"></i></button>
+                    </div>
+                </div>
+
+                <button class="btn btn-block btn-lg font-weight-bold py-3" 
+                        style="background: #28a745; color:#fff; border-radius:12px; font-size:1.3rem;"
+                        onclick="submitAttendance()">
+                    <i class="fa fa-check-circle"></i> SIGN NOW
+                </button>
+                <button class="btn btn-block btn-link text-muted mt-2" data-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
 
                     <!-- Number Pad -->
                     <div class="row m-0 mx-n1">
@@ -2187,21 +2212,75 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         }
     };
 
-    function updateNetworkIndicator() {
-        const indicator = document.getElementById('network-indicator');
-        const statusText = document.getElementById('network-status-text');
-        const statusSub = document.getElementById('network-status-sub');
-        if (!indicator || !statusText || !statusSub) return;
+    // --- STAFF ATTENDANCE LOGIC ---
+    window.appendAttendancePin = function(n) {
+        const pin = $('#attendance-pin');
+        if(pin.val().length < 4) pin.val(pin.val() + n);
+    };
+    window.backspaceAttendancePin = function() {
+        const pin = $('#attendance-pin');
+        pin.val(pin.val().slice(0, -1));
+    };
 
-        if (navigator.onLine) {
-            indicator.classList.remove('offline');
-            statusText.textContent = 'Online';
-            statusSub.textContent = 'Live';
-        } else {
-            indicator.classList.add('offline');
-            statusText.textContent = 'Offline';
-            statusSub.textContent = 'No Internet';
+    window.submitAttendance = function() {
+        const pin = $('#attendance-pin').val();
+        if(pin.length < 4) {
+            KioskToast.fire({ icon: 'warning', title: 'Please enter your 4-digit PIN' });
+            return;
         }
+
+        const btn = $('#attendanceModal button.btn-success');
+        const originalHtml = btn.html();
+        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Processing...');
+
+        $.ajax({
+            url: '{{ route("bar.kiosk.attendance.toggle") }}',
+            method: 'POST',
+            data: { pin: pin, _token: '{{ csrf_token() }}' },
+            success: function(res) {
+                btn.prop('disabled', false).html(originalHtml);
+                $('#attendanceModal').modal('hide');
+                $('#attendance-pin').val('');
+
+                // 1. Show Success Message
+                Swal.fire({
+                    icon: 'success',
+                    title: res.status === 'in' ? 'Welcome, ' + res.staff_name : 'Goodbye, ' + res.staff_name,
+                    text: res.message,
+                    timer: 4000,
+                    background: '#1a1a1a',
+                    color: '#fff',
+                    showConfirmButton: false
+                });
+
+                // 2. VOICE FEEDBACK: "Thank you [Name]"
+                speakAttendanceGreeting(res.staff_name, res.status);
+            },
+            error: function(xhr) {
+                btn.prop('disabled', false).html(originalHtml);
+                const msg = xhr.responseJSON ? xhr.responseJSON.message : 'Invalid PIN';
+                KioskToast.fire({ icon: 'error', title: msg });
+                $('#attendance-pin').val('');
+            }
+        });
+    };
+
+    function speakAttendanceGreeting(name, status) {
+        try {
+            const text = status === 'in' ? `Thank you ${name}. Successfully signed in.` : `Thank you ${name}. Successfully signed out. Have a good rest.`;
+            const utter = new SpeechSynthesisUtterance(text);
+            utter.lang = 'en-US';
+            utter.rate = 0.9;
+            utter.pitch = 1.1;
+            
+            // Try to find a professional female voice
+            const voices = window.speechSynthesis.getVoices();
+            const preferred = voices.find(v => v.name.includes('Female') || v.name.includes('Google US English') || v.name.includes('Samantha'));
+            if(preferred) utter.voice = preferred;
+
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.speak(utter);
+        } catch(e) { console.error("Speech error", e); }
     }
     $(document).ready(function() {
         $('#form-waiter-pin').val('');

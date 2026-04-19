@@ -178,4 +178,12 @@ class Staff extends Model
     {
          return $this->hasMany(PerformanceReview::class, 'staff_id');
     }
+
+    /**
+     * Get the attendances for this staff member.
+     */
+    public function attendances()
+    {
+        return $this->hasMany(StaffAttendance::class, 'staff_id');
+    }
 }

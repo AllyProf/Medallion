@@ -102,6 +102,9 @@ Route::group(['prefix' => 'bar/kiosk', 'as' => 'bar.kiosk.'], function () {
     Route::post('/add-items/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'addItemsToOrder'])->name('add-items');
     Route::post('/cancel-order/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'cancelOrder'])->name('cancel-order');
     Route::post('/cancel-food-item/{item}', [\App\Http\Controllers\Bar\WaiterController::class, 'cancelFoodItem'])->name('cancel-food-item');
+    
+    // Staff Attendance Toggle
+    Route::post('/attendance/toggle', [\App\Http\Controllers\StaffAttendanceController::class, 'toggle'])->name('attendance.toggle');
 });
 
 // Dashboard Routes (Protected - allow both users and staff)
@@ -446,6 +449,9 @@ Route::middleware('allow.staff')->group(function () {
 
         // Live Sales Monitoring
         Route::get('live-sales', [\App\Http\Controllers\Manager\LiveSalesController::class, 'index'])->name('live-sales');
+
+        // Staff Attendance Monitoring
+        Route::get('attendance', [\App\Http\Controllers\StaffAttendanceController::class, 'managerIndex'])->name('attendance.index');
     });
 
     // Marketing Routes (Require Payment & Configuration)
