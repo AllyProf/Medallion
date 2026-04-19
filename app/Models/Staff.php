@@ -176,6 +176,6 @@ class Staff extends Model
      */
     public function performanceReviews()
     {
-        return $this->hasMany(PerformanceReview::class, 'staff_id');
+         return $this->hasMany(PerformanceReview::class, 'staff_id');
     }
 }

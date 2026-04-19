@@ -443,6 +443,9 @@ Route::middleware('allow.staff')->group(function () {
         // QR & Feedback Portal
         Route::get('qr-codes', [\App\Http\Controllers\Manager\QrMenuController::class, 'index'])->name('qr-codes.index');
         Route::get('feedback', [\App\Http\Controllers\Manager\QrMenuController::class, 'feedbackInbox'])->name('feedback.index');
+
+        // Live Sales Monitoring
+        Route::get('live-sales', [\App\Http\Controllers\Manager\LiveSalesController::class, 'index'])->name('live-sales');
     });
 
     // Marketing Routes (Require Payment & Configuration)

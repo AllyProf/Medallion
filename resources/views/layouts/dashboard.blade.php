@@ -671,6 +671,13 @@
 
         @if($isOwnerForSidebar || $isManagerForSidebar)
           <li style="border-bottom: 1px solid rgba(255,255,255,0.1); margin: 2px 15px;"></li>
+          <li>
+            <a class="app-menu__item {{ request()->routeIs('manager.live-sales') ? 'active' : '' }}" href="{{ route('manager.live-sales') }}">
+              <i class="app-menu__icon fa fa-bolt"></i>
+              <span class="app-menu__label">Live Sales Pulse</span>
+            </a>
+          </li>
+          <li style="border-bottom: 1px solid rgba(255,255,255,0.1); margin: 2px 15px;"></li>
           <li class="treeview {{ request()->routeIs('manager.qr-codes.index') || request()->routeIs('manager.feedback.index') ? 'is-expanded' : '' }}">
             <a class="app-menu__item" href="#" data-toggle="treeview">
               <i class="app-menu__icon fa fa-qrcode"></i>
