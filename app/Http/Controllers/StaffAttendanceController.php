@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Staff;
 use App\Models\StaffAttendance;
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -24,22 +25,48 @@ class StaffAttendanceController extends Controller
         $date = $request->get('date', now()->format('Y-m-d'));
         $statusFilter = $request->get('status', 'all');
 
-        $query = StaffAttendance::with('staff')
+        // Fetch shift settings
+        $shiftStart = SystemSetting::get('attendance_shift_start', '08:00');
+        $shiftEnd = SystemSetting::get('attendance_shift_end', '17:00');
+
+        $query = StaffAttendance::with('staff.role')
             ->where('user_id', $ownerId)
             ->whereDate('check_in', $date)
-            ->orderBy('check_in', 'desc');
+            ->orderBy('check_in', 'asc'); // Ascending to find first arrival easily
 
         if ($statusFilter !== 'all') {
             $query->where('status', $statusFilter);
         }
 
         $attendances = $query->get();
+        
+        // Find first arrival record ID
+        $firstArrivalId = $attendances->first() ? $attendances->first()->id : null;
 
         $activeNow = StaffAttendance::where('user_id', $ownerId)
             ->where('status', 'active')
             ->count();
 
-        return view('manager.attendance.index', compact('attendances', 'date', 'activeNow', 'statusFilter'));
+        return view('manager.attendance.index', compact(
+            'attendances', 'date', 'activeNow', 'statusFilter', 
+            'shiftStart', 'shiftEnd', 'firstArrivalId'
+        ));
+    }
+
+    /**
+     * Update attendance settings
+     */
+    public function updateSettings(Request $request)
+    {
+        $request->validate([
+            'shift_start' => 'required|string',
+            'shift_end' => 'required|string',
+        ]);
+
+        SystemSetting::set('attendance_shift_start', $request->shift_start, 'text', 'attendance', 'Standard shift start time');
+        SystemSetting::set('attendance_shift_end', $request->shift_end, 'text', 'attendance', 'Standard shift end time');
+
+        return redirect()->back()->with('success', 'Attendance settings updated successfully!');
     }
 
     /**

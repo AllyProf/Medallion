@@ -450,8 +450,8 @@ Route::middleware('allow.staff')->group(function () {
         // Live Sales Monitoring
         Route::get('live-sales', [\App\Http\Controllers\Manager\LiveSalesController::class, 'index'])->name('live-sales');
 
-        // Staff Attendance Monitoring
         Route::get('attendance', [\App\Http\Controllers\StaffAttendanceController::class, 'managerIndex'])->name('attendance.index');
+        Route::post('attendance/settings', [\App\Http\Controllers\StaffAttendanceController::class, 'updateSettings'])->name('attendance.settings.update');
     });
 
     // Marketing Routes (Require Payment & Configuration)
