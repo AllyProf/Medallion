@@ -184,7 +184,18 @@ class LiveSalesController extends Controller
 
         $openingCash = (float)($ledger->opening_cash ?? 0);
         $expensesToday = (float)($ledger->total_expenses ?? 0);
-        $moneyInCirculation = $openingCash + $todayCash - $expensesToday;
+        $moneyInCirculation = $openingCash + $totalRevenue - $expensesToday;
+
+        // 8. Category Mix (Drinks vs Food)
+        $barRevenueShift = OrderItem::whereHas('order', function($q) use ($ownerId, $applyContext) {
+                $q->where('orders.user_id', $ownerId)->where('orders.status', '!=', 'cancelled');
+                $applyContext($q, 'orders');
+            })->sum('total_price');
+
+        $foodRevenueShift = KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $applyContext) {
+                $q->where('orders.user_id', $ownerId)->where('orders.status', '!=', 'cancelled');
+                $applyContext($q, 'orders');
+            })->sum('total_price');
 
         if ($request->ajax()) {
             return response()->json([
@@ -201,6 +212,10 @@ class LiveSalesController extends Controller
                     'served_orders' => $servedOrders,
                 ],
                 'hourly_data' => array_values($hourlyData),
+                'category_mix' => [
+                    'bar' => (float)$barRevenueShift,
+                    'food' => (float)$foodRevenueShift,
+                ],
                 'live_feed' => view('manager.partials.live_feed_items', compact('liveFeed'))->render(),
                 'staff_pulse' => view('manager.partials.staff_pulse_items', compact('staffPulse'))->render(),
             ]);
@@ -210,7 +225,7 @@ class LiveSalesController extends Controller
             'totalRevenue', 'todayCash', 'todayDigital',
             'totalOrders', 'activeOrders', 'servedOrders',
             'hourlyData', 'liveFeed', 'staffPulse', 'topDrinks', 'topFood',
-            'activeShift', 'shiftProfit', 'moneyInCirculation'
+            'activeShift', 'shiftProfit', 'moneyInCirculation', 'barRevenueShift', 'foodRevenueShift'
         ));
     }
 }

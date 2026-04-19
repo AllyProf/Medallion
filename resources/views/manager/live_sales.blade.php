@@ -112,15 +112,31 @@
 </div>
 
 <div class="row">
+<div class="row">
     <!-- Velocity Summary -->
-    <div class="col-md-12">
-        <div class="tile p-2 mb-4" style="min-height: 120px; display: flex; flex-direction: column; justify-content: center;">
-            <div class="d-flex justify-content-between align-items-center px-3">
+    <div class="col-md-8">
+        <div class="tile p-3 mb-4" style="min-height: 250px; display: flex; flex-direction: column;">
+            <div class="d-flex justify-content-between align-items-center mb-3">
                 <h6 class="mb-0 text-muted small font-weight-bold uppercase">{{ $activeShift ? 'SHIFT VELOCITY' : 'HOURLY VELOCITY' }}</h6>
-                <span class="badge badge-primary">LIVE ORDERS PER HOUR</span>
+                <span class="badge badge-primary">ORDERS PER HOUR</span>
             </div>
-            <div class="velocity-chart-container mt-1">
+            <div class="velocity-chart-container flex-grow-1">
                 <canvas id="velocityChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Category Mix -->
+    <div class="col-md-4">
+        <div class="tile p-3 mb-4" style="min-height: 250px; display: flex; flex-direction: column;">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="mb-0 text-muted small font-weight-bold uppercase">CATEGORY MIX</h6>
+                <span class="badge badge-info">DRINKS vs FOOD</span>
+            </div>
+            <div class="flex-grow-1 d-flex align-items-center justify-content-center">
+                <div style="width: 180px; height: 180px;">
+                    <canvas id="categoryChart"></canvas>
+                </div>
             </div>
         </div>
     </div>
@@ -183,13 +199,13 @@
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    let velocityChart;
+    let velocityChart, categoryChart;
     const refreshInterval = 30000; // 30 seconds
     let lastRefresh = Date.now();
 
     function initChart() {
-        const ctx = document.getElementById('velocityChart').getContext('2d');
-        velocityChart = new Chart(ctx, {
+        const velCtx = document.getElementById('velocityChart').getContext('2d');
+        velocityChart = new Chart(velCtx, {
             type: 'line',
             data: {
                 labels: Array.from({length: 24}, (_, i) => i + ':00'),
@@ -198,8 +214,8 @@
                     data: @json(array_values($hourlyData)),
                     borderColor: '#940000',
                     backgroundColor: 'rgba(148, 0, 0, 0.05)',
-                    borderWidth: 2,
-                    pointRadius: 1,
+                    borderWidth: 3,
+                    pointRadius: 2,
                     tension: 0.4,
                     fill: true
                 }]
@@ -209,9 +225,38 @@
                 maintainAspectRatio: false,
                 plugins: { legend: { display: false }, tooltip: { enabled: true } },
                 scales: {
-                    x: { display: false },
-                    y: { display: false }
+                    x: { ticks: { color: '#666', font: { size: 10 } }, grid: { display: false } },
+                    y: { ticks: { precision: 0 }, grid: { borderDash: [5, 5] } }
                 }
+            }
+        });
+
+        const catCtx = document.getElementById('categoryChart').getContext('2d');
+        categoryChart = new Chart(catCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Drinks', 'Food'],
+                datasets: [{
+                    data: [{{ $barRevenueShift }}, {{ $foodRevenueShift }}],
+                    backgroundColor: ['#940000', '#17a2b8'],
+                    hoverOffset: 4,
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { 
+                    legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+                    tooltip: { 
+                        callbacks: {
+                            label: function(context) {
+                                return context.label + ': TSh ' + context.raw.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                cutout: '70%'
             }
         });
     }
@@ -238,9 +283,13 @@
             document.getElementById('live-feed-container').innerHTML = data.live_feed;
             document.getElementById('staff-pulse-container').innerHTML = data.staff_pulse;
 
-            // Update Chart
+            // Update Velocity Chart
             velocityChart.data.datasets[0].data = data.hourly_data;
             velocityChart.update('none');
+
+            // Update Category Chart
+            categoryChart.data.datasets[0].data = [data.category_mix.bar, data.category_mix.food];
+            categoryChart.update('none');
 
             // Reset UI
             document.getElementById('last-updated-text').innerText = 'Synced: ' + new Date().toLocaleTimeString();
