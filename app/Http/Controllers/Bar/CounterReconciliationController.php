@@ -358,7 +358,8 @@ class CounterReconciliationController extends Controller
                                });
                         });
                     }, function ($q) use ($date) {
-                        return $q->whereDate('created_at', $date);
+                        return $q->whereDate('created_at', $date)
+                                 ->whereNull('bar_shift_id');
                     })
                     ->where('status', '!=', 'cancelled')
                     ->with(['items.transferSales.stockTransfer', 'items.productVariant.product', 'kitchenOrderItems', 'table', 'orderPayments'])
