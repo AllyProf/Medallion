@@ -1,7 +1,7 @@
 <?php
 /**
  * MEDALLION - Database Maintenance Utility
- * Purpose: Cleanup duplicate active bar shifts (S000008, S000009, S000010, S000011)
+ * Purpose: Cleanup duplicate active bar shifts and reconciliation records
  * Usage: php fix_duplicate_shifts.php
  */
 
@@ -14,40 +14,52 @@ use App\Models\BarOrder;
 use App\Models\WaiterDailyReconciliation;
 use App\Models\FinancialHandover;
 
-// The specific duplicate IDs identified by the user to be removed
-$idsToDelete = [8, 9, 10, 11];
+echo "--- Medallion Shift & Reconciliation Cleanup Utility ---\n";
 
-echo "--- Medallion Shift Cleanup Utility ---\n";
+// 1. DELETE DUPLICATE SHIFTS (8, 9, 10, 11)
+$idsToDelete = [8, 9, 10, 11];
 
 foreach ($idsToDelete as $id) {
     echo "\n[Shift ID: $id]\n";
     $shift = BarShift::find($id);
     
     if (!$shift) {
-        echo "Status: Not found. (Already cleaned or ID incorrect)\n";
+        echo "Status: Not found.\n";
         continue;
     }
 
-    // Safety checks for tied production data
     $orderCount = BarOrder::where('bar_shift_id', $id)->count();
     $recCount = WaiterDailyReconciliation::where('bar_shift_id', $id)->count();
     $handoverCount = FinancialHandover::where('bar_shift_id', $id)->count();
 
-    echo "Data Profile:\n";
-    echo "- Orders: $orderCount\n";
-    echo "- Reconciliations: $recCount\n";
-    echo "- Handovers: $handoverCount\n";
+    echo "Data Profile: Orders($orderCount), Recs($recCount), Handovers($handoverCount)\n";
+    $shift->delete();
+    echo ">>> SHIFT DELETED.\n";
+}
 
-    if ($orderCount == 0 && $recCount == 0 && $handoverCount == 0) {
-        echo "Result: CLEAN. Proceeding with safe deletion...\n";
-        $shift->delete();
-        echo ">>> DELETED SUCCESSFULLY.\n";
-    } else {
-        echo "Result: ACTIVE DATA DETECTED.\n";
-        echo "Action: FORCED DELETE (As per Accountant Request)...\n";
-        $shift->delete();
-        echo ">>> DELETED (Force mode applied).\n";
+// 2. DEDUPLICATE RECONCILIATIONS (WAITERS)
+echo "\n--- Deduplicating Reconciliation Records (Hawa Mswaki / ID 47) ---\n";
+
+$reconciliations = WaiterDailyReconciliation::where('waiter_id', 47)
+    ->orderBy('created_at', 'asc')
+    ->get()
+    ->groupBy(function($item) {
+        // Group by date and type to find duplicates
+        return \Carbon\Carbon::parse($item->reconciliation_date)->format('Y-m-d') . '_' . $item->reconciliation_type . '_' . $item->difference;
+    });
+
+foreach ($reconciliations as $groupKey => $group) {
+    if ($group->count() > 1) {
+        echo "Found " . $group->count() . " duplicates for group $groupKey\n";
+        // Keep the first one (oldest created_at), delete the others
+        $keep = $group->first();
+        echo "Keeping ID: {$keep->id}\n";
+        
+        $group->slice(1)->each(function($dup) {
+            echo "Deleting duplicate ID: {$dup->id}\n";
+            $dup->delete();
+        });
     }
 }
 
-echo "\n--- Cleanup Complete. Shift 07 is now the primary active shift. ---\n";
+echo "\n--- Cleanup Complete. Everything is now synchronized! ---\n";

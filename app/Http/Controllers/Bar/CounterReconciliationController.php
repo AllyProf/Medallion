@@ -496,26 +496,25 @@ class CounterReconciliationController extends Controller
                 // Auto-generate a reconciliation record for Counter staff with shortages so the Accountant can settle them
                 $isCounterRole = strtolower($waiter->role->name ?? '') === 'counter';
                 if ($isCounterRole && $difference < 0) {
-                    if (!$reconciliation) {
-                        $reconciliation = \App\Models\WaiterDailyReconciliation::create([
+                    $targetShiftId = $bar_shift ? $bar_shift->id : ($targetShiftIds[0] ?? null);
+                    
+                    $reconciliation = \App\Models\WaiterDailyReconciliation::updateOrCreate(
+                        [
                             'user_id' => $ownerId,
-                            'shift_id' => $bar_shift ? $bar_shift->id : ($targetShiftIds[0] ?? null),
                             'waiter_id' => $waiter->id,
+                            'bar_shift_id' => $targetShiftId,
                             'reconciliation_date' => $date,
+                            'reconciliation_type' => 'bar',
+                        ],
+                        [
                             'expected_amount' => $totalSales,
                             'submitted_amount' => $totalRecordedAmount,
                             'difference' => $difference,
                             'cash_collected' => $cashCollected,
                             'mobile_money_collected' => $mobileMoneyCollected,
-                            'reconciliation_type' => 'bar',
                             'status' => 'submitted',
-                        ]);
-                    } else {
-                        $reconciliation->update([
-                            'expected_amount' => $totalSales,
-                            'difference' => $difference,
-                        ]);
-                    }
+                        ]
+                    );
                     $submittedAmount = $totalRecordedAmount;
                 }
 
