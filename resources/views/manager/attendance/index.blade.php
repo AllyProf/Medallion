@@ -37,62 +37,6 @@
     </div>
 </div>
 
-{{-- Summary Cards --}}
-<div class="row mb-4">
-    <div class="col-md-3">
-        <div class="widget-small primary coloured-icon">
-            <i class="icon fa fa-calendar-check-o fa-3x"></i>
-            <div class="info">
-                <p class="text-uppercase small font-weight-bold">Total Sessions</p>
-                <p><b>{{ $attendances->count() }}</b></p>
-                <small class="text-muted">In selected period</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="widget-small success coloured-icon">
-            <i class="icon fa fa-user-circle fa-3x"></i>
-            <div class="info">
-                <p class="text-uppercase small font-weight-bold" style="color:#000!important">Active Now</p>
-                <p><b style="color:#000!important">{{ $activeNow }}</b></p>
-                <small class="text-muted">Staff signed in</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        @php
-            $lateCount = 0;
-            $shiftStartTime = \Carbon\Carbon::createFromFormat('H:i', $shiftStart);
-            foreach($attendances as $record) {
-                if (\Carbon\Carbon::parse($record->check_in->format('H:i'))->gt($shiftStartTime)) $lateCount++;
-            }
-        @endphp
-        <div class="widget-small danger coloured-icon">
-            <i class="icon fa fa-clock-o fa-3x"></i>
-            <div class="info">
-                <p class="text-uppercase small font-weight-bold">Total Lates</p>
-                <p><b>{{ $lateCount }}</b></p>
-                <small class="text-muted">Punctuality alert</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="widget-small info coloured-icon">
-            <i class="icon fa fa-hourglass-half fa-3x"></i>
-            <div class="info">
-                @php
-                    $completed = $attendances->where('status','completed')->where('duration_minutes','>',0);
-                    $avgMin = $completed->count() ? $completed->avg('duration_minutes') : 0;
-                    $h = floor($avgMin / 60);
-                    $m = floor($avgMin % 60);
-                @endphp
-                <p class="text-uppercase small font-weight-bold">Avg Shift</p>
-                <p><b>{{ $h }}h {{ $m }}m</b></p>
-                <small class="text-muted">Work duration avg</small>
-            </div>
-        </div>
-    </div>
-</div>
 
 {{-- Custom Filter Form (Togglabel) --}}
 <div class="row mb-3" id="custom-filter" style="{{ $range !== 'custom' ? 'display:none;' : '' }}">
