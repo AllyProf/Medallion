@@ -738,6 +738,8 @@ class StaffController extends Controller
                 $seenNames[$nameLower] = $role->id;
             }
         }
+    }
+
     /**
      * Bulk generate unique PINs for all staff members who don't have one.
      */
