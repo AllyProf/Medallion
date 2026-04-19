@@ -6,7 +6,7 @@
         </div>
         <div>
             <div class="font-weight-bold text-dark">{{ $staff->full_name }}</div>
-            <small class="text-muted">{{ $staff->orders_count }} orders сегодня</small>
+            <small class="text-muted">{{ $staff->orders_count }} orders today</small>
         </div>
     </div>
     <div class="text-right">
