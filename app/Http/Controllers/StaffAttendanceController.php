@@ -22,18 +22,24 @@ class StaffAttendanceController extends Controller
     {
         $ownerId = $this->getOwnerId();
         $date = $request->get('date', now()->format('Y-m-d'));
-        
-        $attendances = StaffAttendance::with('staff')
+        $statusFilter = $request->get('status', 'all');
+
+        $query = StaffAttendance::with('staff')
             ->where('user_id', $ownerId)
             ->whereDate('check_in', $date)
-            ->orderBy('check_in', 'desc')
-            ->get();
+            ->orderBy('check_in', 'desc');
+
+        if ($statusFilter !== 'all') {
+            $query->where('status', $statusFilter);
+        }
+
+        $attendances = $query->get();
 
         $activeNow = StaffAttendance::where('user_id', $ownerId)
             ->where('status', 'active')
             ->count();
 
-        return view('manager.attendance.index', compact('attendances', 'date', 'activeNow'));
+        return view('manager.attendance.index', compact('attendances', 'date', 'activeNow', 'statusFilter'));
     }
 
     /**

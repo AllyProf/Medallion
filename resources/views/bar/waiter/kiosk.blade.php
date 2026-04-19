@@ -900,11 +900,8 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                                 style="transition: stroke-dashoffset 0.05s linear;"/>
                         </svg>
                         <!-- The button itself -->
-                        <button id="att-confirm-btn"
-                            style="width:160px; height:160px; border-radius:50%; border:none; font-size:1rem; font-weight:800; letter-spacing:1px; cursor:pointer; position:relative; z-index:2; user-select:none; -webkit-user-select:none;"
-                            onmousedown="startHoldConfirm(event)" ontouchstart="startHoldConfirm(event)"
-                            onmouseup="cancelHoldConfirm()" ontouchend="cancelHoldConfirm()"
-                            onmouseleave="cancelHoldConfirm()">
+                        <button id="att-confirm-btn" type="button"
+                            style="width:160px; height:160px; border-radius:50%; border:none; font-size:1rem; font-weight:800; letter-spacing:1px; cursor:pointer; position:relative; z-index:2; user-select:none; -webkit-user-select:none;">
                         </button>
                     </div>
                     <p class="small mt-3" style="color:#555;">Hold to confirm</p>
@@ -2488,42 +2485,45 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
     // Keep old submitAttendance for any other callers
     window.submitAttendance = window.confirmAttendance;
 
-    // --- HOLD-TO-CONFIRM LOGIC ---
-    let _holdTimer = null;
-    let _holdRafId = null;
-    const HOLD_DURATION = 2000; // ms
+    // --- HOLD-TO-CONFIRM LOGIC (setInterval — reliable inside Bootstrap modals) ---
+    let _holdInterval = null;
+    let _holdProgress = 0;
+    const HOLD_DURATION = 2000;
+    const HOLD_TICK     = 30; // ms per tick
+    const CIRCUMFERENCE = 439.82;
 
-    window.startHoldConfirm = function(e) {
-        e.preventDefault();
-        const arc = document.getElementById('att-hold-arc');
-        const circumference = 439.82;
-        let start = null;
+    function startHoldProgress() {
+        if (_holdInterval) return; // already running
 
-        function frame(ts) {
-            if (!start) start = ts;
-            const elapsed = ts - start;
-            const progress = Math.min(elapsed / HOLD_DURATION, 1);
-            arc.setAttribute('stroke-dashoffset', circumference * (1 - progress));
+        _holdInterval = setInterval(function() {
+            _holdProgress += HOLD_TICK;
+            const ratio  = Math.min(_holdProgress / HOLD_DURATION, 1);
+            const offset = CIRCUMFERENCE * (1 - ratio);
+            const arc    = document.getElementById('att-hold-arc');
+            if (arc) arc.setAttribute('stroke-dashoffset', String(offset));
 
-            if (progress < 1) {
-                _holdRafId = requestAnimationFrame(frame);
-            } else {
-                // Ring complete — submit!
-                confirmAttendance();
+            if (_holdProgress >= HOLD_DURATION) {
+                stopHoldProgress();
+                window.confirmAttendance();
             }
-        }
-        _holdRafId = requestAnimationFrame(frame);
-    };
+        }, HOLD_TICK);
+    }
 
-    window.cancelHoldConfirm = function() {
-        if (_holdRafId) {
-            cancelAnimationFrame(_holdRafId);
-            _holdRafId = null;
-        }
-        // Reset the arc
+    function stopHoldProgress() {
+        if (_holdInterval) { clearInterval(_holdInterval); _holdInterval = null; }
+        _holdProgress = 0;
         const arc = document.getElementById('att-hold-arc');
-        if (arc) arc.setAttribute('stroke-dashoffset', '439.82');
-    };
+        if (arc) arc.setAttribute('stroke-dashoffset', String(CIRCUMFERENCE));
+    }
+
+    // jQuery delegation — works even when #att-confirm-btn is hidden/shown dynamically
+    $(document)
+        .on('mousedown touchstart', '#att-confirm-btn', function(e) { e.preventDefault(); startHoldProgress(); })
+        .on('mouseup mouseleave touchend touchcancel', '#att-confirm-btn', function() { stopHoldProgress(); });
+
+    // Expose legacy names
+    window.startHoldConfirm  = startHoldProgress;
+    window.cancelHoldConfirm = stopHoldProgress;
 
     function speakAttendanceGreeting(name, status) {
         try {
