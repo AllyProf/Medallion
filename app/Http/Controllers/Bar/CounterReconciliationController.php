@@ -86,13 +86,12 @@ class CounterReconciliationController extends Controller
                   });
             })
             ->when($isAccountant, function($q) {
-                // Accountants only see handovers from CLOSED shifts
+                // Accountants see handovers from CLOSED shifts or those needing verification
                 $q->whereHas('barShift', function($sq) {
                     $sq->where('status', '!=', 'open');
                 });
             })
             ->when($searchShift, function($q) use ($searchShift) {
-                // If a specific shift was searched, prioritize that handover
                 $q->where('bar_shift_id', $searchShift->id);
             })
             ->when($location && $location !== 'all' && !$isAccountant && !$isSuperAdmin, function($q) use ($location) {
@@ -100,8 +99,8 @@ class CounterReconciliationController extends Controller
                     $sq->where('location_branch', $location);
                 });
             })
-            ->orderBy('status', 'asc') // 'pending' (verification) first, then 'verified' (settlement)
-            ->orderBy('handover_date', 'asc') // Oldest first
+            ->orderBy('status', 'asc')
+            ->orderBy('handover_date', 'desc') // [OPTIMIZATION] Show most recent pending work first
             ->first();
 
         // Compatibility alias
@@ -187,9 +186,9 @@ class CounterReconciliationController extends Controller
 
         $todayHandover = null;
         if ($currentStaff) {
-            // Priority Rule: If the staff has an active open shift, prioritize that over pending historical handovers.
-            // This prevents "locking" the dashboard to a previous shift that is awaiting accountant verification.
-            if (!$requestedDate && $pendingHandover && (!$bar_shift || $isAccountant)) {
+            // Priority Rule: Always prioritize an active open shift over historical pending work.
+            // This ensures the dashboard doesn't get "locked" to a previous day if today is already trading.
+            if (!$requestedDate && $pendingHandover && !$bar_shift) {
                 $todayHandover = $pendingHandover;
             } else {
                 $handoverQuery = FinancialHandover::where('user_id', $ownerId)

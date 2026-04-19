@@ -36,19 +36,37 @@ class CounterController extends Controller
 
         $ownerId = $this->getOwnerId();
 
+        // Get active shift context for sorting and UI
+        $activeShift = $this->getCurrentShift();
+        $allOpenShiftIds = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->pluck('id')
+            ->toArray();
+
         $search = $request->get('search');
         $waiter_id = $request->get('waiter_id');
         $status = $request->get('status');
 
         // Get all orders from waiters with filters
+        // [INCLUSIVITY FIX] Include orders that have EITHER Drink Items OR Kitchen Order Items
         $ordersQuery = BarOrder::where('user_id', $ownerId)
             ->whereNotNull('waiter_id')
             ->where(function ($q) {
                 $q->whereHas('items')
+                    ->orWhereHas('kitchenOrderItems')
                     ->orWhere('status', 'cancelled');
             })
-            ->with(['waiter', 'items.productVariant.product', 'table', 'paidByWaiter', 'orderPayments'])
-            ->orderBy('created_at', 'desc');
+            ->with(['waiter', 'items.productVariant.product', 'kitchenOrderItems', 'table', 'paidByWaiter', 'orderPayments']);
+
+        // [SORTING FIX] Prioritize orders from currently active open shifts
+        if (!empty($allOpenShiftIds)) {
+            $idsString = implode(',', array_map('intval', $allOpenShiftIds));
+            // In MySQL, FIELD(bar_shift_id, ...) returns the index; 
+            // if not in list, it returns 0. So we order DESC.
+            $ordersQuery->orderByRaw("FIELD(bar_shift_id, $idsString) DESC");
+        }
+
+        $ordersQuery->orderBy('created_at', 'desc');
 
         if ($search) {
             $ordersQuery->where(function ($q) use ($search) {
@@ -76,13 +94,17 @@ class CounterController extends Controller
         // Get order counts by status (total, ignoring search filters for overview)
         $pendingCount = BarOrder::where('user_id', $ownerId)
             ->whereNotNull('waiter_id')
-            ->whereHas('items')
+            ->where(function($q) {
+                $q->whereHas('items')->orWhereHas('kitchenOrderItems');
+            })
             ->where('status', 'pending')
             ->count();
 
         $servedCount = BarOrder::where('user_id', $ownerId)
             ->whereNotNull('waiter_id')
-            ->whereHas('items')
+            ->where(function($q) {
+                $q->whereHas('items')->orWhereHas('kitchenOrderItems');
+            })
             ->where('status', 'served')
             ->where('payment_status', 'pending')
             ->count();
@@ -94,12 +116,6 @@ class CounterController extends Controller
                 $query->where('name', 'Waiter');
             })
             ->get();
-
-        $activeShift = $this->getCurrentShift();
-        $allOpenShiftIds = \App\Models\BarShift::where('user_id', $ownerId)
-            ->where('status', 'open')
-            ->pluck('id')
-            ->toArray();
 
         if ($request->ajax()) {
             return view('bar.counter.partials._waiter_orders_table_body', compact('orders', 'pendingCount', 'servedCount', 'waiters', 'activeShift', 'allOpenShiftIds'))->render();
