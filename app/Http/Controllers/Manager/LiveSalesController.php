@@ -77,10 +77,11 @@ class LiveSalesController extends Controller
         $totalRevenue = $todayCash + $todayDigital;
 
         // 2. Order Volume & Pulse
+        // 2. Order Volume & Pulse
         $ordersTodayQuery = BarOrder::where('orders.user_id', $ownerId)
             ->where('orders.status', '!=', 'cancelled');
         $applyContext($ordersTodayQuery, 'orders');
-        
+
         if ($location) {
             $ordersTodayQuery->where(function($q) use ($location) {
                 $q->whereExists(function ($sq) use ($location) {
@@ -94,6 +95,7 @@ class LiveSalesController extends Controller
             });
         }
 
+        $totalRevenue = (clone $ordersTodayQuery)->sum('total_amount');
         $totalOrders = (clone $ordersTodayQuery)->count();
         $activeOrders = (clone $ordersTodayQuery)->whereIn('status', ['pending', 'preparing', 'ready'])->count();
         $servedOrders = (clone $ordersTodayQuery)->where('status', 'served')->count();

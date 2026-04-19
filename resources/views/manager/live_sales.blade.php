@@ -4,34 +4,35 @@
 
 @push('styles')
 <style>
-    .velocity-chart-container {
-        height: 180px;
+    /* ── Live Tracking Animations ── */
+    .live-pulse-dot {
+        height: 10px; width: 10px; background-color: #ff0000; border-radius: 50%;
+        display: inline-block; margin-right: 8px;
+        box-shadow: 0 0 0 rgba(255, 0, 0, 0.4);
+        animation: pulse-red 2s infinite;
     }
-    .refresh-bar-container {
-        position: fixed;
-        top: 50px;
-        left: 0;
-        width: 100%;
-        height: 3px;
-        z-index: 9999;
-        background: transparent;
+    @keyframes pulse-red {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+        70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
     }
-    #refresh-progress {
-        height: 100%;
-        background: #940000;
-        width: 100%;
-        transition: width 1s linear;
+    .live-shimmer {
+        background: linear-gradient(90deg, #333 0%, #000 50%, #333 100%);
+        background-size: 200% 100%; animation: shimmer 5s infinite linear;
+        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
-    .widget-small .info h4 {
-        text-transform: uppercase;
-        font-size: 12px;
-        margin-bottom: 5px;
-        font-weight: 600;
+    .text-white .live-shimmer {
+        background: linear-gradient(90deg, #fff 0%, #eee 50%, #fff 100%);
+        background-size: 200% 100%; -webkit-background-clip: text;
     }
-    .widget-small .info p {
-        margin-bottom: 0px;
-        font-size: 18px;
-    }
+    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+    .status-badge-breathing { animation: breathe 3s infinite ease-in-out; }
+    @keyframes breathe { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(0.98); } }
+    .widget-small { transition: all 0.3s ease; border: none; }
+    .widget-small:hover { transform: translateY(-3px); box-shadow: 0 8px 15px rgba(0,0,0,0.1); }
+    .refresh-bar-container { position: fixed; top: 50px; left: 0; width: 100%; height: 4px; z-index: 9999; }
+    #refresh-progress { height: 100%; background: #ff0000; width: 100%; box-shadow: 0 0 10px rgba(255, 0, 0, 0.5); }
+    .card-pulse-indicator { position: absolute; top: 10px; right: 15px; font-size: 0.6rem; font-weight: 700; opacity: 0.6; }
 </style>
 @endpush
 
@@ -42,30 +43,35 @@
 
 <div class="app-title">
     <div>
-        <h1><i class="fa fa-bolt"></i> {{ $activeShift ? 'Live Shift Pulse' : 'Daily Sales Monitor' }}</h1>
+        <h1>
+            <span class="live-pulse-dot"></span>
+            LIVE SALES PULSE
+            <span class="badge badge-danger ml-2 status-badge-breathing" style="font-size: 0.7rem;">REAL-TIME</span>
+        </h1>
         <p>
             @if($activeShift)
                 Monitoring <strong>Shift #{{ $activeShift->id }}</strong> (Started {{ $activeShift->opened_at->format('H:i') }})
             @else
-                Real-time operational pulse for today, {{ now()->format('l, F j') }}
+                Tracking <strong>General Session</strong> ({{ now()->format('l, F j') }})
             @endif
         </p>
     </div>
     <ul class="app-breadcrumb breadcrumb">
-        <li class="breadcrumb-item"><i class="fa fa-home fa-lg"></i></li>
-        <li class="breadcrumb-item"><a href="{{ route('manager.live-sales') }}">Live Monitor</a></li>
-        <li class="breadcrumb-item" id="last-updated-text" style="font-weight: bold; color: #940000;">Synced: Just Now</li>
+        <li class="breadcrumb-item" id="last-updated-text" style="font-weight: bold; color: #ff0000;">
+            <i class="fa fa-refresh fa-spin mr-1"></i> SYNCED: JUST NOW
+        </li>
     </ul>
 </div>
 
 <div class="row">
     <!-- Revenue Pulse -->
     <div class="col-md-3">
-        <div class="widget-small primary coloured-icon">
-            <i class="icon fa fa-money fa-3x"></i>
+        <div class="widget-small primary coloured-icon position-relative">
+            <div class="card-pulse-indicator"><i class="fa fa-circle text-white mr-1"></i> LIVE</div>
+            <i class="icon fa fa-bolt fa-3x"></i>
             <div class="info">
                 <h4>{{ $activeShift ? 'Shift Revenue' : 'Today Revenue' }}</h4>
-                <p><b id="total-revenue-text">TSh {{ number_format($totalRevenue) }}</b></p>
+                <p><b class="live-shimmer" id="total-revenue-text">TSh {{ number_format($totalRevenue) }}</b></p>
                 <small>Cash: <span id="cash-revenue-text">{{ number_format($todayCash) }}</span> | Digital: <span id="digital-revenue-text">{{ number_format($todayDigital) }}</span></small>
             </div>
         </div>
@@ -73,11 +79,12 @@
 
     <!-- Profit Pulse -->
     <div class="col-md-3">
-        <div class="widget-small info coloured-icon" style="background-color: #28a745;">
+        <div class="widget-small info coloured-icon position-relative" style="background-color: #28a745 !important;">
+            <div class="card-pulse-indicator"><i class="fa fa-circle text-white mr-1"></i> LIVE</div>
             <i class="icon fa fa-line-chart fa-3x"></i>
             <div class="info">
                 <h4>{{ $activeShift ? 'Shift Profit' : 'Est. Profit' }}</h4>
-                <p><b id="total-profit-text">TSh {{ number_format($shiftProfit) }}</b></p>
+                <p><b class="live-shimmer" id="total-profit-text">TSh {{ number_format($shiftProfit) }}</b></p>
                 <small class="text-white">Margin: Approx 40%+</small>
             </div>
         </div>
@@ -85,11 +92,12 @@
 
     <!-- Circulation Pulse -->
     <div class="col-md-3">
-        <div class="widget-small warning coloured-icon">
-            <i class="icon fa fa-refresh fa-3x"></i>
+        <div class="widget-small warning coloured-icon position-relative" style="background-color: #e67e22 !important;">
+            <div class="card-pulse-indicator"><i class="fa fa-circle text-white mr-1"></i> LIVE</div>
+            <i class="icon fa fa-exchange fa-3x"></i>
             <div class="info">
                 <h4>In Circulation</h4>
-                <p><b id="total-circulation-text">TSh {{ number_format($moneyInCirculation) }}</b></p>
+                <p><b class="live-shimmer" id="total-circulation-text">TSh {{ number_format($moneyInCirculation) }}</b></p>
                 <small>Opening + Rev - Exp</small>
             </div>
         </div>
@@ -97,7 +105,8 @@
 
     <!-- Active Orders Pulse -->
     <div class="col-md-3">
-        <div class="widget-small danger coloured-icon">
+        <div class="widget-small danger coloured-icon position-relative">
+            <div class="card-pulse-indicator"><i class="fa fa-circle text-white mr-1"></i> LIVE</div>
             <i class="icon fa fa-shopping-cart fa-3x"></i>
             <div class="info">
                 <h4>{{ $activeShift ? 'Shift Orders' : 'Today Orders' }}</h4>
@@ -111,7 +120,6 @@
     </div>
 </div>
 
-<div class="row">
 <div class="row">
     <!-- Velocity Summary -->
     <div class="col-md-8">
