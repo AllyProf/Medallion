@@ -39,9 +39,16 @@
 
 @section('content')
 <div class="app-title">
-  <div>
-    <h1><i class="fa fa-calculator"></i> Accountant Dashboard</h1>
-    <p>Financial Overview & Reconciliation Management</p>
+  <div class="d-flex align-items-center">
+    <div>
+      <h1><i class="fa fa-calculator"></i> Accountant Dashboard</h1>
+      <p>Financial Overview & Reconciliation Management</p>
+    </div>
+    <div class="ml-4">
+      <a href="{{ route('manager.live-sales') }}" class="btn btn-primary shadow-sm" style="background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%); border: none; border-radius: 20px; padding: 10px 20px; font-weight: 700; letter-spacing: 0.5px;">
+        <i class="fa fa-bolt pulse mr-2"></i> LIVE SALES PULSE
+      </a>
+    </div>
   </div>
   <ul class="app-breadcrumb breadcrumb">
     <li class="breadcrumb-item"><i class="fa fa-home fa-lg"></i></li>
@@ -212,6 +219,13 @@
       <h3 class="tile-title">Quick Actions</h3>
       <div class="tile-body">
         <div class="row">
+          <div class="col-md-4 mb-3">
+            <a href="{{ route('manager.live-sales') }}" class="btn btn-primary btn-block p-3 text-center shadow-sm" style="background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%); border: none;">
+              <i class="fa fa-bolt fa-2x mb-2 pulse"></i><br>
+              LIVE SALES PULSE
+              <span class="badge badge-light ml-1" style="color: #00d2ff;">REAL-TIME</span>
+            </a>
+          </div>
           <div class="col-md-4 mb-3">
             <a href="{{ route('accountant.reconciliations') }}" class="btn btn-outline-primary btn-block p-3">
               <i class="fa fa-beer fa-2x mb-2"></i><br>
