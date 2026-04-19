@@ -305,13 +305,13 @@
                     @endif
                   </td>
                   <td class="audit-col-bg">
-                    @if($isCounter)
-                      <span class="badge badge-light border text-muted">At Counter</span>
-                    @elseif($data['submitted_amount'] > 0)
+                  <td class="audit-col-bg">
+                    @if(isset($data['submitted_amount']) && ($data['reconciliation'] || $data['status'] !== 'pending'))
                       <strong class="text-success">TSh {{ number_format($data['submitted_amount'], 0) }}</strong>
                     @else
                       <span class="text-muted">Waiting</span>
                     @endif
+                  </td>
                   </td>
                   <td class="diff-col-bg text-center">
                     @if($isCounter && $data['difference'] == 0)
@@ -331,9 +331,8 @@
                     @endif
                   </td>
                   <td class="text-center">
-                    @if($isCounter)
-                      <span class="badge badge-dark">Self-Managed</span>
-                    @elseif($data['status'] === 'reconciled')
+                  <td class="text-center">
+                    @if($data['status'] === 'reconciled')
                       <span class="badge badge-success"><i class="fa fa-check-circle"></i> Reconciled</span>
                     @elseif($data['status'] === 'verified')
                       <span class="badge badge-success">Verified</span>
@@ -357,46 +356,62 @@
                       <i class="fa fa-eye"></i> View
                     </button>
                     
-                    @if(!$isCounter)
-                      @if(Route::currentRouteName() === 'accountant.counter.reconciliation' && $data['reconciliation'] && $data['status'] === 'submitted')
-                        <button class="btn btn-sm btn-success verify-btn mr-1 mb-1" 
-                                data-reconciliation-id="{{ $data['reconciliation']->id }}" title="Verify">
-                          <i class="fa fa-check"></i> Verify
-                        </button>
-                      @endif
+                    @if(Route::currentRouteName() === 'accountant.counter.reconciliation' && $data['reconciliation'] && $data['status'] === 'submitted' && !$isCounter)
+                      <button class="btn btn-sm btn-success verify-btn mr-1 mb-1" 
+                              data-reconciliation-id="{{ $data['reconciliation']->id }}" title="Verify">
+                        <i class="fa fa-check"></i> Verify
+                      </button>
+                    @endif
 
-                      {{-- Accountant Settle Shortage Button --}}
-                      @if(Route::currentRouteName() === 'accountant.counter.reconciliation' && $data['reconciliation'] && $data['difference'] < 0)
-                        <button class="btn btn-sm btn-warning settle-shortage-btn mr-1 mb-1 font-weight-bold" 
-                                data-id="{{ $data['reconciliation']->id }}" 
-                                data-name="{{ $data['waiter']->full_name }}"
-                                data-shortage="{{ abs($data['difference']) }}" title="Settle Shortage">
-                          <i class="fa fa-money text-dark"></i> <span class="text-dark">Settle</span>
-                        </button>
-                      @endif
+                    {{-- Accountant Settle Shortage Button --}}
+                    @if(Route::currentRouteName() === 'accountant.counter.reconciliation' && $data['reconciliation'] && $data['difference'] < 0)
+                      <button class="btn btn-sm btn-warning settle-shortage-btn mr-1 mb-1 font-weight-bold" 
+                              data-id="{{ $data['reconciliation']->id }}" 
+                              data-name="{{ $data['waiter']->full_name }}"
+                              data-shortage="{{ abs($data['difference']) }}" title="Settle Shortage">
+                        <i class="fa fa-money text-dark"></i> <span class="text-dark">Settle</span>
+                      </button>
+                    @endif
 
-                      {{-- Show Reconcile button ONLY IF no formal reconciliation has been submitted yet AND NOT accountant view --}}
-                      @if(!$data['reconciliation'] && Route::currentRouteName() !== 'accountant.counter.reconciliation')
-                        <button class="btn btn-sm btn-success mark-all-paid-btn mr-1 mb-1 font-weight-bold" 
-                                data-waiter-id="{{ $data['waiter']->id }}"
-                                data-date="{{ $date }}"
-                                data-total-amount="{{ $data['expected_amount'] }}"
-                                data-recorded-amount="{{ $data['recorded_amount'] ?? 0 }}"
-                                data-submitted-amount="{{ $data['submitted_amount'] ?? 0 }}"
-                                data-difference="{{ $data['difference'] ?? 0 }}"
-                                data-breakdown="{{ json_encode($data['platform_totals'] ?? []) }}"
-                                data-waiter-name="{{ $data['waiter']->full_name }}" title="Reconcile Staff">
-                          <i class="fa fa-hand-holding-usd"></i> Reconcile
-                        </button>
-                      @endif
+                    {{-- Accountant Add Expense Button --}}
+                    @if(Route::currentRouteName() === 'accountant.counter.reconciliation' && $data['reconciliation'] && $data['status'] !== 'reconciled' && !$isCounter)
+                      <button class="btn btn-sm btn-outline-danger add-expense-btn mr-1 mb-1" 
+                              data-id="{{ $data['reconciliation']->id }}" 
+                              data-name="{{ $data['waiter']->full_name }}" title="Add Expense">
+                        <i class="fa fa-minus-circle"></i> Expense
+                      </button>
+                    @endif
 
-                      {{-- Show Undo button if a reconciliation record exists and it's not verified AND NOT accountant view --}}
-                      @if($data['reconciliation'] && $data['status'] !== 'verified' && Route::currentRouteName() !== 'accountant.counter.reconciliation')
-                        <button class="btn btn-sm btn-sm btn-outline-danger reset-btn mb-1" 
-                                data-reconciliation-id="{{ $data['reconciliation']->id }}" title="Reset/Undo Reconciliation">
-                          <i class="fa fa-undo"></i> Undo
-                        </button>
-                      @endif
+                    {{-- Add Tip Button --}}
+                    @if(Route::currentRouteName() === 'accountant.counter.reconciliation' && $data['reconciliation'] && $data['status'] !== 'reconciled' && !$isCounter)
+                      <button class="btn btn-sm btn-outline-success add-tip-btn mb-1" 
+                              data-id="{{ $data['reconciliation']->id }}" 
+                              data-name="{{ $data['waiter']->full_name }}" title="Add Tip">
+                        <i class="fa fa-gift"></i> Tip
+                      </button>
+                    @endif
+
+                    {{-- Show Reconcile button ONLY IF no formal reconciliation has been submitted yet AND NOT accountant view --}}
+                    @if(!$data['reconciliation'] && Route::currentRouteName() !== 'accountant.counter.reconciliation')
+                      <button class="btn btn-sm btn-success mark-all-paid-btn mr-1 mb-1 font-weight-bold" 
+                              data-waiter-id="{{ $data['waiter']->id }}"
+                              data-date="{{ $date }}"
+                              data-total-amount="{{ $data['expected_amount'] }}"
+                              data-recorded-amount="{{ $data['recorded_amount'] ?? 0 }}"
+                              data-submitted-amount="{{ $data['submitted_amount'] ?? 0 }}"
+                              data-difference="{{ $data['difference'] ?? 0 }}"
+                              data-breakdown="{{ json_encode($data['platform_totals'] ?? []) }}"
+                              data-waiter-name="{{ $data['waiter']->full_name }}" title="Reconcile Staff">
+                        <i class="fa fa-hand-holding-usd"></i> Reconcile
+                      </button>
+                    @endif
+
+                    {{-- Show Undo button if a reconciliation record exists and it's not verified AND NOT accountant view --}}
+                    @if($data['reconciliation'] && $data['status'] !== 'verified' && Route::currentRouteName() !== 'accountant.counter.reconciliation')
+                      <button class="btn btn-sm btn-sm btn-outline-danger reset-btn mb-1" 
+                              data-reconciliation-id="{{ $data['reconciliation']->id }}" title="Reset/Undo Reconciliation">
+                        <i class="fa fa-undo"></i> Undo
+                      </button>
                     @endif
                   </td>
                 </tr>
