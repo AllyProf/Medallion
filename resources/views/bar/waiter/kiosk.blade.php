@@ -775,7 +775,41 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 
 <!-- Action Authentication Modal (For specific buttons like My Orders) -->
 <div class="modal fade" id="actionAuthModal" tabindex="-1" role="dialog" aria-hidden="true" style="background: rgba(0,0,0,0.8);">
-    <!-- ... existing actionAuthModal code ... -->
+    <div class="modal-dialog modal-dialog-centered" role="document" style="max-width: 380px;">
+        <div class="modal-content shadow-lg border-0" style="border-radius: 12px; overflow: hidden; background:#242424;">
+            <div class="text-white p-3 text-center" style="background:var(--accent-cyan);">
+                <h5 class="m-0"><i class="fa fa-lock"></i> Authorize</h5>
+            </div>
+            <div class="modal-body p-3" style="background:#1a1a1a;">
+                <form id="action-auth-form">
+                    <input type="hidden" id="auth-action-type">
+                    <div class="mb-3 text-center" style="display:none;">
+                        <div id="action-waiter-name-display" class="mb-2"></div>
+                        <input type="hidden" id="action-waiter-id">
+                    </div>
+                    <div class="mb-3">
+                        <input type="password" class="form-control text-center shadow-sm font-weight-bold" id="action-pin" 
+                               name="pin" placeholder="PIN" inputmode="numeric" pattern="\d*" maxlength="4"
+                               autocomplete="new-password"
+                               style="font-size: 2rem; height: 60px; background:#111; color:var(--accent-yellow); border:1px solid #333;">
+                    </div>
+                    <!-- Number Pad -->
+                    <div class="row m-0 mx-n1">
+                        @for($i=1; $i<=9; $i++)
+                            <div class="col-4 px-1 py-1"><button type="button" class="kiosk-num-btn shadow-sm" onclick="actionPressKey('{{$i}}')">{{$i}}</button></div>
+                        @endfor
+                        <div class="col-4 px-1 py-1"><button type="button" class="kiosk-num-btn shadow-sm" style="color:var(--accent-red);" onclick="actionClearPIN()">C</button></div>
+                        <div class="col-4 px-1 py-1"><button type="button" class="kiosk-num-btn shadow-sm" onclick="actionPressKey('0')">0</button></div>
+                        <div class="col-4 px-1 py-1"><button type="submit" class="kiosk-num-btn shadow-sm text-white border-0" style="background:var(--accent-green);"><i class="fa fa-sign-in"></i></button></div>
+                    </div>
+                </form>
+                <div id="action-auth-error" class="alert alert-danger mt-3 mb-0 p-2 text-center" style="display: none; font-size: 0.85rem; background:rgba(220,53,69,0.2); border:none; color:#ff8080;"></div>
+            </div>
+            <div class="p-2 text-center border-top border-dark">
+                <button type="button" class="btn btn-link text-muted p-0" data-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Attendance Clock In/Out Modal -->
@@ -817,25 +851,6 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     <i class="fa fa-check-circle"></i> SIGN NOW
                 </button>
                 <button class="btn btn-block btn-link text-muted mt-2" data-dismiss="modal">Cancel</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-                    <!-- Number Pad -->
-                    <div class="row m-0 mx-n1">
-                        @for($i=1; $i<=9; $i++)
-                            <div class="col-4 px-1 py-1"><button type="button" class="kiosk-num-btn shadow-sm" onclick="actionPressKey('{{$i}}')">{{$i}}</button></div>
-                        @endfor
-                        <div class="col-4 px-1 py-1"><button type="button" class="kiosk-num-btn shadow-sm" style="color:var(--accent-red);" onclick="actionClearPIN()">C</button></div>
-                        <div class="col-4 px-1 py-1"><button type="button" class="kiosk-num-btn shadow-sm" onclick="actionPressKey('0')">0</button></div>
-                        <div class="col-4 px-1 py-1"><button type="submit" class="kiosk-num-btn shadow-sm text-white border-0" style="background:var(--accent-green);"><i class="fa fa-sign-in"></i></button></div>
-                    </div>
-                </form>
-                <div id="action-auth-error" class="alert alert-danger mt-3 mb-0 p-2 text-center" style="display: none; font-size: 0.85rem; background:rgba(220,53,69,0.2); border:none; color:#ff8080;"></div>
-            </div>
-            <div class="p-2 text-center border-top border-dark">
-                <button type="button" class="btn btn-link text-muted p-0" data-dismiss="modal">Cancel</button>
             </div>
         </div>
     </div>
@@ -2288,10 +2303,6 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         $('#form-waiter-id').val('');
         $('#form-customer-name').val('');
         $('#form-customer-phone').val('');
-        
-        updateNetworkIndicator();
-        window.addEventListener('online', updateNetworkIndicator);
-        window.addEventListener('offline', updateNetworkIndicator);
 
         // Auto-refresh every 60 seconds
         setInterval(refreshKioskData, 60000);
