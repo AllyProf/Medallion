@@ -13,8 +13,9 @@ use App\Models\BarShift;
 use App\Models\BarOrder;
 use App\Models\WaiterDailyReconciliation;
 use App\Models\FinancialHandover;
+use App\Models\DailyCashLedger;
 
-echo "--- Medallion Database Cleanup Utility v2 ---\n";
+echo "--- Medallion Database Cleanup Utility v3 ---\n";
 
 // 1. DELETE DUPLICATE SHIFTS
 $idsToDelete = [8, 9, 10, 11];
@@ -31,7 +32,6 @@ foreach ($idsToDelete as $id) {
 
 // 2. DEDUPLICATE RECONCILIATIONS
 echo "\n--- Deduplicating Reconciliation Records (Hawa Mswaki / ID 47) ---\n";
-// Specifically clean up the duplicate entries for Hawa
 $reconciliations = WaiterDailyReconciliation::where('waiter_id', 47)
     ->orderBy('created_at', 'asc')
     ->get()
@@ -52,8 +52,6 @@ foreach ($reconciliations as $groupKey => $group) {
 }
 
 // 3. REMOVE GHOST DEBT (Cross-midnight leak)
-// Hawa's orders happened after midnight but belong to the 18th's shift.
-// We remove the entry dated the 19th if the user confirms only one 3500 exists.
 echo "\n--- Removing Ghost Debt (Apr 19 Cross-Midnight Leak) ---\n";
 $ghost = WaiterDailyReconciliation::where('waiter_id', 47)
     ->whereDate('reconciliation_date', '2026-04-19')
@@ -65,7 +63,19 @@ if ($ghost) {
     $ghost->delete();
     echo ">>> DELETED.\n";
 } else {
-    echo "No ghost debt found.\n";
+    echo "No ghost debt found on Apr 19.\n";
 }
 
-echo "\n--- Cleanup Complete ---\n";
+// 4. SYNC MASTER SHEET
+echo "\n--- Synchronizing Master Sheet Totals ---\n";
+$datesToSync = ['2026-04-18', '2026-04-19'];
+foreach ($datesToSync as $date) {
+    $ledger = DailyCashLedger::whereDate('ledger_date', $date)->first();
+    if ($ledger) {
+        echo "Syncing Ledger for $date...\n";
+        $ledger->syncTotals()->save();
+        echo ">>> SYNCED.\n";
+    }
+}
+
+echo "\n--- Cleanup Complete. Your Master Sheet will now be clean! ---\n";
