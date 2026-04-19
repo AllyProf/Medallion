@@ -46,6 +46,49 @@
   @endif
 </div>
 
+{{-- [DUAL-CONTEXT NAVIGATION BANNERS] --}}
+@if(isset($pendingHandover) && $pendingHandover && (!isset($todayHandover) || !$todayHandover || (isset($todayHandover->id) && $todayHandover->id !== $pendingHandover->id)))
+<div class="alert alert-warning shadow-sm mb-4 border-warning blink-border" style="border-radius: 12px; border-left: 6px solid #ffc107; background-color: #fffaf0;">
+  <div class="d-flex align-items-center">
+    <div class="mr-3">
+        <div class="bg-warning text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+            <i class="fa fa-clock-o fa-2x"></i>
+        </div>
+    </div>
+    <div>
+        <h5 class="mb-1 font-weight-bold text-dark">Awaiting Verification</h5>
+        <p class="mb-0 text-muted">Yesterday's Handover for Shift <strong>#{{ $pendingHandover->barShift->formatted_id ?? 'N/A' }}</strong> is still pending.</p>
+    </div>
+    <div class="ml-auto">
+        <a href="{{ Route::currentRouteName() === 'accountant.counter.reconciliation' ? route('accountant.counter.reconciliation', ['shift_id' => $pendingHandover->bar_shift_id]) : route('bar.counter.reconciliation', ['shift_id' => $pendingHandover->bar_shift_id]) }}" class="btn btn-warning font-weight-bold px-4 rounded-pill shadow-sm">
+            <i class="fa fa-check-circle mr-2"></i> Verify Shift #{{ $pendingHandover->barShift->formatted_id ?? 'N/A' }}
+        </a>
+    </div>
+  </div>
+</div>
+@endif
+
+@if(isset($bar_shift) && $bar_shift && $bar_shift->status === 'open' && isset($todayHandover) && $todayHandover && $todayHandover->bar_shift_id !== $bar_shift->id)
+<div class="alert alert-info shadow-sm mb-4 border-info" style="border-radius: 12px; border-left: 6px solid #17a2b8; background-color: #f0faff;">
+  <div class="d-flex align-items-center">
+    <div class="mr-3">
+        <div class="bg-info text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+            <i class="fa fa-refresh fa-spin fa-2x"></i>
+        </div>
+    </div>
+    <div>
+        <h5 class="mb-1 font-weight-bold text-dark">Live Shift Active</h5>
+        <p class="mb-0 text-muted">You are currently viewing history. Shift <strong>#{{ $bar_shift->formatted_id }}</strong> is active and selling.</p>
+    </div>
+    <div class="ml-auto">
+        <a href="{{ Route::currentRouteName() === 'accountant.counter.reconciliation' ? route('accountant.counter.reconciliation', ['shift_id' => $bar_shift->id]) : route('bar.counter.reconciliation', ['shift_id' => $bar_shift->id]) }}" class="btn btn-info font-weight-bold px-4 rounded-pill shadow-sm">
+            <i class="fa fa-eye mr-2"></i> View Today's Live Sales
+        </a>
+    </div>
+  </div>
+</div>
+@endif
+
 <!-- Date Selector and Search -->
 <div class="row mb-3">
   <div class="col-md-12">

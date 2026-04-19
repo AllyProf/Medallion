@@ -848,6 +848,8 @@ class CounterReconciliationController extends Controller
             'pettyCashIssues',
             'totalPettyCash',
             'totalExpensesCombined',
+            'pendingHandover',
+            'priorityHandover',
             'stockProfit',
             'finalDailyProfit',
             'finalProfit',
