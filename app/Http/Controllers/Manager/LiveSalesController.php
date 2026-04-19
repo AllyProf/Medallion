@@ -54,9 +54,9 @@ class LiveSalesController extends Controller
         $totalRevenue = $todayCash + $todayDigital;
 
         // 2. Order Volume & Pulse
-        $ordersTodayQuery = BarOrder::where('user_id', $ownerId)
-            ->whereDate('created_at', $today)
-            ->where('status', '!=', 'cancelled');
+        $ordersTodayQuery = BarOrder::where('orders.user_id', $ownerId)
+            ->whereDate('orders.created_at', $today)
+            ->where('orders.status', '!=', 'cancelled');
         
         if ($location) {
             $ordersTodayQuery->where(function($q) use ($location) {
@@ -110,7 +110,7 @@ class LiveSalesController extends Controller
 
         // 6. Top Items Pulse (Today)
         $topDrinks = OrderItem::whereHas('order', function($q) use ($ownerId, $today, $location) {
-                $q->where('user_id', $ownerId)->whereDate('created_at', $today)->where('status', '!=', 'cancelled');
+                $q->where('orders.user_id', $ownerId)->whereDate('orders.created_at', $today)->where('orders.status', '!=', 'cancelled');
                 if ($location) {
                     $q->whereExists(function($sq) use ($location) {
                         $sq->select(DB::raw(1))->from('staff')->whereColumn('staff.id', 'orders.waiter_id')->where('staff.location_branch', $location);
@@ -125,7 +125,7 @@ class LiveSalesController extends Controller
             ->get();
 
         $topFood = KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $today) {
-                $q->where('user_id', $ownerId)->whereDate('created_at', $today)->where('status', '!=', 'cancelled');
+                $q->where('orders.user_id', $ownerId)->whereDate('orders.created_at', $today)->where('orders.status', '!=', 'cancelled');
             })
             ->select('food_item_name', DB::raw('SUM(quantity) as total_qty'), DB::raw('SUM(total_price) as total_rev'))
             ->groupBy('food_item_name')
