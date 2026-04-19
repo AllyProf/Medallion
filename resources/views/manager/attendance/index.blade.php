@@ -108,21 +108,25 @@
                         @forelse($attendances as $record)
                         @php
                             $recCheckIn = $record->check_in;
-                            $checkInTimeOnly = \Carbon\Carbon::createFromFormat('H:i', $recCheckIn->format('H:i'));
                             
-                            $isLate = $checkInTimeOnly->gt($shiftStartTime);
-                            $diffMinAbs = $checkInTimeOnly->diffInMinutes($shiftStartTime);
+                            // Use a fixed dummy date to compare times only, avoiding date/rollover issues
+                            $anchorDate = '2000-01-01 ';
+                            $checkInTimeOnly = \Carbon\Carbon::parse($anchorDate . $recCheckIn->format('H:i'));
+                            $shiftStartTimeOnly = \Carbon\Carbon::parse($anchorDate . $shiftStart);
+                            
+                            $isLate = $checkInTimeOnly->gt($shiftStartTimeOnly);
+                            $diffMin = $checkInTimeOnly->diffInMinutes($shiftStartTimeOnly, true); // true for absolute
                             
                             $isFirst = in_array($record->id, $firstArrivalIds);
                             
                             // Format late duration: Xh Ym
-                            $lateH = floor($diffMinAbs / 60);
-                            $lateM = $diffMinAbs % 60;
+                            $lateH = floor($diffMin / 60);
+                            $lateM = $diffMin % 60;
                             $lateStr = ($lateH > 0 ? $lateH.'h ' : '') . $lateM.'m';
 
                             // Format work duration: Hours and Minutes
                             if($record->status === 'active') {
-                                $totalMin = $recCheckIn->diffInMinutes(now());
+                                $totalMin = $recCheckIn->diffInMinutes(now(), true);
                             } else {
                                 $totalMin = $record->duration_minutes ?? 0;
                             }
