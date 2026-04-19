@@ -677,6 +677,12 @@
               <span class="app-menu__label">Live Sales Pulse</span>
             </a>
           </li>
+          <li>
+            <a class="app-menu__item {{ request()->routeIs('manager.attendance.index') ? 'active' : '' }}" href="{{ route('manager.attendance.index') }}">
+              <i class="app-menu__icon fa fa-clock-o"></i>
+              <span class="app-menu__label">Attendance Log</span>
+            </a>
+          </li>
           <li style="border-bottom: 1px solid rgba(255,255,255,0.1); margin: 2px 15px;"></li>
           <li class="treeview {{ request()->routeIs('manager.qr-codes.index') || request()->routeIs('manager.feedback.index') ? 'is-expanded' : '' }}">
             <a class="app-menu__item" href="#" data-toggle="treeview">

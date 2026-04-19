@@ -887,14 +887,29 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     <div id="att-sig-status-label" class="mt-4 font-weight-bold" style="font-size:1rem; letter-spacing:2px; text-transform:uppercase;"></div>
                     <p id="att-sig-instruction" class="small mt-2" style="color:#aaa;"></p>
 
-                    <!-- Action Buttons -->
-                    <div id="att-sig-actions" class="mt-4 d-flex" style="gap:10px; justify-content:center;">
-                        <button class="btn px-5 py-3 font-weight-bold" id="att-confirm-btn"
-                            style="border-radius:12px; font-size:1.1rem; min-width:180px;"
-                            onclick="confirmAttendance()">
+                    <!-- Hold-to-Confirm Button -->
+                    <div class="mt-4" style="position:relative; display:inline-block;">
+                        <!-- SVG ring progress -->
+                        <svg id="att-hold-ring" width="160" height="160" style="position:absolute; top:0; left:0; transform:rotate(-90deg); pointer-events:none;">
+                            <circle cx="80" cy="80" r="70"
+                                fill="none" stroke="#333" stroke-width="6"/>
+                            <circle id="att-hold-arc" cx="80" cy="80" r="70"
+                                fill="none" stroke-width="7"
+                                stroke-dasharray="439.82" stroke-dashoffset="439.82"
+                                stroke-linecap="round"
+                                style="transition: stroke-dashoffset 0.05s linear;"/>
+                        </svg>
+                        <!-- The button itself -->
+                        <button id="att-confirm-btn"
+                            style="width:160px; height:160px; border-radius:50%; border:none; font-size:1rem; font-weight:800; letter-spacing:1px; cursor:pointer; position:relative; z-index:2; user-select:none; -webkit-user-select:none;"
+                            onmousedown="startHoldConfirm(event)" ontouchstart="startHoldConfirm(event)"
+                            onmouseup="cancelHoldConfirm()" ontouchend="cancelHoldConfirm()"
+                            onmouseleave="cancelHoldConfirm()">
                         </button>
                     </div>
-                    <button class="btn btn-link text-muted mt-3" onclick="resetAttendanceModal()">← Back</button>
+                    <p class="small mt-3" style="color:#555;">Hold to confirm</p>
+                    <br>
+                    <button class="btn btn-link text-muted mt-1" onclick="resetAttendanceModal()">← Back</button>
                 </div>
             </div>
 
@@ -961,6 +976,16 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 .att-fp-signout .att-fp-ring  { border-color: #ffb822; }
 .att-fp-signout .att-fp-icon  { background: rgba(255,184,34,0.15); color: #ffb822; }
 .att-fp-signout #att-sig-status-label { color: #ffb822; }
+
+/* PIN shake on wrong entry */
+@keyframes att-shake {
+    0%,100% { transform: translateX(0); }
+    20%     { transform: translateX(-8px); }
+    40%     { transform: translateX(8px); }
+    60%     { transform: translateX(-5px); }
+    80%     { transform: translateX(5px); }
+}
+.att-shake { animation: att-shake 0.5s ease; }
 </style>
 @endsection
 
@@ -2334,15 +2359,6 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         }
     };
 
-    // --- STAFF ATTENDANCE LOGIC ---
-    window.appendAttendancePin = function(n) {
-        const pin = $('#attendance-pin');
-        if(pin.val().length < 4) pin.val(pin.val() + n);
-    };
-    window.backspaceAttendancePin = function() {
-        const pin = $('#attendance-pin');
-        pin.val(pin.val().slice(0, -1));
-    };
 
     // --- ATTENDANCE: TWO-STEP FLOW ---
     let _attIdentifiedPin = '';
@@ -2411,26 +2427,25 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
     // Step 2: Show the fingerprint signature screen
     function showSignatureScreen(res) {
         const isCheckedIn = (res.current_status === 'active');
-        const action = isCheckedIn ? 'out' : 'in';
+        const color = isCheckedIn ? '#ffb822' : '#28a745';
+        const textColor = isCheckedIn ? '#000' : '#fff';
 
         // Populate info
         $('#att-sig-name').text(res.staff_name);
-        $('#att-sig-role').text(isCheckedIn ? 'Currently on shift · Tap to Sign Out' : 'Off Shift · Tap to Sign In');
-        $('#att-sig-status-label').text(isCheckedIn ? '● SIGNING OUT' : '● SIGNING IN');
-        $('#att-sig-instruction').text(isCheckedIn ? 'Confirm to end your shift and record your time.' : 'Place your confirmation below to begin your shift.');
+        $('#att-sig-role').text(isCheckedIn ? 'Currently on shift \u00b7 Hold to Sign Out' : 'Off Shift \u00b7 Hold to Sign In');
+        $('#att-sig-status-label').text(isCheckedIn ? '\u25cf SIGNING OUT' : '\u25cf SIGNING IN');
+        $('#att-sig-instruction').text(isCheckedIn ? 'Confirm to end your shift and record your time.' : 'Hold the button below to begin your shift.');
 
-        // Style the fingerprint rings
+        // Style fingerprint rings
         const wrap = $('#att-fp-wrap');
         wrap.removeClass('att-fp-signin att-fp-signout');
         wrap.addClass(isCheckedIn ? 'att-fp-signout' : 'att-fp-signin');
 
-        // Style the confirm button
-        const btn = $('#att-confirm-btn');
-        if(isCheckedIn) {
-            btn.text('SIGN OUT').css({'background':'#ffb822', 'color':'#000', 'border':'none'});
-        } else {
-            btn.text('SIGN IN').css({'background':'#28a745', 'color':'#fff', 'border':'none'});
-        }
+        // Style hold-button & arc
+        $('#att-confirm-btn').text(isCheckedIn ? 'SIGN OUT' : 'SIGN IN')
+            .css({'background': color, 'color': textColor})
+            .prop('disabled', false);
+        $('#att-hold-arc').attr('stroke', color).attr('stroke-dashoffset', '439.82');
 
         $('#att-step-pin').hide();
         $('#att-step-signature').show();
@@ -2472,6 +2487,43 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 
     // Keep old submitAttendance for any other callers
     window.submitAttendance = window.confirmAttendance;
+
+    // --- HOLD-TO-CONFIRM LOGIC ---
+    let _holdTimer = null;
+    let _holdRafId = null;
+    const HOLD_DURATION = 2000; // ms
+
+    window.startHoldConfirm = function(e) {
+        e.preventDefault();
+        const arc = document.getElementById('att-hold-arc');
+        const circumference = 439.82;
+        let start = null;
+
+        function frame(ts) {
+            if (!start) start = ts;
+            const elapsed = ts - start;
+            const progress = Math.min(elapsed / HOLD_DURATION, 1);
+            arc.setAttribute('stroke-dashoffset', circumference * (1 - progress));
+
+            if (progress < 1) {
+                _holdRafId = requestAnimationFrame(frame);
+            } else {
+                // Ring complete — submit!
+                confirmAttendance();
+            }
+        }
+        _holdRafId = requestAnimationFrame(frame);
+    };
+
+    window.cancelHoldConfirm = function() {
+        if (_holdRafId) {
+            cancelAnimationFrame(_holdRafId);
+            _holdRafId = null;
+        }
+        // Reset the arc
+        const arc = document.getElementById('att-hold-arc');
+        if (arc) arc.setAttribute('stroke-dashoffset', '439.82');
+    };
 
     function speakAttendanceGreeting(name, status) {
         try {
