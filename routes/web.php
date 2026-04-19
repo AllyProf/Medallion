@@ -105,7 +105,6 @@ Route::group(['prefix' => 'bar/kiosk', 'as' => 'bar.kiosk.'], function () {
     
     // Staff Attendance Toggle
     Route::post('/attendance/toggle', [\App\Http\Controllers\StaffAttendanceController::class, 'toggle'])->name('attendance.toggle');
-    Route::post('/staff/generate-missing-pins', [\App\Http\Controllers\StaffController::class, 'generateMissingPins'])->name('staff.generate-missing-pins');
 });
 
 // Dashboard Routes (Protected - allow both users and staff)
@@ -177,6 +176,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('/staff/{staff}/edit', [\App\Http\Controllers\StaffController::class, 'edit'])->name('staff.edit');
         Route::put('/staff/{staff}', [\App\Http\Controllers\StaffController::class, 'update'])->name('staff.update');
         Route::delete('/staff/{staff}', [\App\Http\Controllers\StaffController::class, 'destroy'])->name('staff.destroy');
+        Route::post('/staff/bulk/generate-pins', [\App\Http\Controllers\StaffController::class, 'generateMissingPins'])->name('staff.generate-missing-pins');
     });
 
     // HR Routes (Require Payment & Configuration)
