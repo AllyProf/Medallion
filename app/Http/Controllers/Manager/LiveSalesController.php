@@ -186,7 +186,7 @@ class LiveSalesController extends Controller
 
         $openingCash = (float)($ledger->opening_cash ?? 0);
         $expensesToday = (float)($ledger->total_expenses ?? 0);
-        $moneyInCirculation = $openingCash + $totalRevenue - $expensesToday;
+        $moneyInCirculation = $totalRevenue - $expensesToday;
 
         // 8. Category Mix (Drinks vs Food)
         $barRevenueShift = OrderItem::whereHas('order', function($q) use ($ownerId, $applyContext) {
