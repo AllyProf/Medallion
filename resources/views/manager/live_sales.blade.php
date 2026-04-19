@@ -274,4 +274,4 @@
         updateProgressBar();
     });
 </script>
-@endsection
+@endpush
