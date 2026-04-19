@@ -162,7 +162,7 @@ class DailyCashLedger extends Model
                 $q->whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
                   ->orWhereIn('id', !empty($dailyRecIds) ? $dailyRecIds : [0]);
             })
-            ->whereIn('status', ['submitted', 'verified', 'settled']) // Ignore draft/pending/cancelled
+            ->whereIn('status', ['submitted', 'verified', 'settled', 'partial']) // Include partial shortages
             ->where('difference', '<', 0)
             ->sum('difference');
         $totalDayShortage = abs($totalDayShortage);
