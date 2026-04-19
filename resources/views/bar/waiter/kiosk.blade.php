@@ -886,7 +886,6 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     <!-- Status Label -->
                     <div id="att-sig-status-label" class="mt-4 font-weight-bold" style="font-size:1rem; letter-spacing:2px; text-transform:uppercase;"></div>
                     <p id="att-sig-instruction" class="small mt-2" style="color:#aaa;"></p>
-
                     <!-- Hold-to-Confirm Button -->
                     <div class="mt-4" style="position:relative; display:inline-block;">
                         <!-- SVG ring progress -->
@@ -897,14 +896,15 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                                 fill="none" stroke-width="7"
                                 stroke-dasharray="439.82" stroke-dashoffset="439.82"
                                 stroke-linecap="round"
-                                style="transition: stroke-dashoffset 0.05s linear;"/>
+                                style="transition: stroke-dashoffset 0.1s linear;"/>
                         </svg>
                         <!-- The button itself -->
                         <button id="att-confirm-btn" type="button"
-                            style="width:160px; height:160px; border-radius:50%; border:none; font-size:1rem; font-weight:800; letter-spacing:1px; cursor:pointer; position:relative; z-index:2; user-select:none; -webkit-user-select:none;">
+                            onclick="handleAttConfirmClick()"
+                            style="width:160px; height:160px; border-radius:50%; border:none; font-size:1.1rem; font-weight:800; letter-spacing:1px; cursor:pointer; position:relative; z-index:2; user-select:none; -webkit-user-select:none; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
                         </button>
                     </div>
-                    <p class="small mt-3" style="color:#555;">Hold to confirm</p>
+                    <p class="small mt-3" id="att-hold-text" style="color:#777; font-weight: 500;">Tap to confirm</p>
                     <br>
                     <button class="btn btn-link text-muted mt-1" onclick="resetAttendanceModal()">← Back</button>
                 </div>
@@ -2485,45 +2485,65 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
     // Keep old submitAttendance for any other callers
     window.submitAttendance = window.confirmAttendance;
 
-    // --- HOLD-TO-CONFIRM LOGIC (setInterval — reliable inside Bootstrap modals) ---
-    let _holdInterval = null;
-    let _holdProgress = 0;
-    const HOLD_DURATION = 2000;
-    const HOLD_TICK     = 30; // ms per tick
-    const CIRCUMFERENCE = 439.82;
+    // --- ATTENDANCE CONFIRMATION LOGIC (Click to start auto-fill) ---
+    let _attProcessing = false;
+    let _attInterval = null;
+    let _attProgress = 0;
+    const ATT_DURATION = 1200; // 1.2 seconds fill time
+    const ATT_TICK = 20;
+    const ATT_CIRCUM = 439.82;
 
-    function startHoldProgress() {
-        if (_holdInterval) return; // already running
+    window.handleAttConfirmClick = function() {
+        if (_attProcessing) {
+            cancelAttConfirm();
+            return;
+        }
+        startAttConfirm();
+    };
 
-        _holdInterval = setInterval(function() {
-            _holdProgress += HOLD_TICK;
-            const ratio  = Math.min(_holdProgress / HOLD_DURATION, 1);
-            const offset = CIRCUMFERENCE * (1 - ratio);
-            const arc    = document.getElementById('att-hold-arc');
-            if (arc) arc.setAttribute('stroke-dashoffset', String(offset));
+    function startAttConfirm() {
+        _attProcessing = true;
+        _attProgress = 0;
+        $('#att-hold-text').text('Processing... Tap to Cancel').css('color', '#ffb822');
+        
+        _attInterval = setInterval(function() {
+            _attProgress += ATT_TICK;
+            const ratio = Math.min(_attProgress / ATT_DURATION, 1);
+            const offset = ATT_CIRCUM * (1 - ratio);
+            
+            const arc = document.getElementById('att-hold-arc');
+            if (arc) arc.setAttribute('stroke-dashoffset', offset);
 
-            if (_holdProgress >= HOLD_DURATION) {
-                stopHoldProgress();
-                window.confirmAttendance();
+            if (_attProgress >= ATT_DURATION) {
+                stopAttInterval();
+                confirmAttendance();
             }
-        }, HOLD_TICK);
+        }, ATT_TICK);
     }
 
-    function stopHoldProgress() {
-        if (_holdInterval) { clearInterval(_holdInterval); _holdInterval = null; }
-        _holdProgress = 0;
+    function cancelAttConfirm() {
+        stopAttInterval();
+        _attProcessing = false;
+        $('#att-hold-text').text('Tap to confirm').css('color', '#777');
         const arc = document.getElementById('att-hold-arc');
-        if (arc) arc.setAttribute('stroke-dashoffset', String(CIRCUMFERENCE));
+        if (arc) arc.setAttribute('stroke-dashoffset', ATT_CIRCUM);
     }
 
-    // jQuery delegation — works even when #att-confirm-btn is hidden/shown dynamically
-    $(document)
-        .on('mousedown touchstart', '#att-confirm-btn', function(e) { e.preventDefault(); startHoldProgress(); })
-        .on('mouseup mouseleave touchend touchcancel', '#att-confirm-btn', function() { stopHoldProgress(); });
+    function stopAttInterval() {
+        if (_attInterval) {
+            clearInterval(_attInterval);
+            _attInterval = null;
+        }
+    }
 
-    // Expose legacy names
-    window.startHoldConfirm  = startHoldProgress;
-    window.cancelHoldConfirm = stopHoldProgress;
+    // Reset logic for the modal
+    const originalResetAttendanceModal = window.resetAttendanceModal;
+    window.resetAttendanceModal = function() {
+        cancelAttConfirm();
+        if (typeof originalResetAttendanceModal === 'function') {
+            originalResetAttendanceModal();
+        }
+    };
 
     function speakAttendanceGreeting(name, status) {
         try {
