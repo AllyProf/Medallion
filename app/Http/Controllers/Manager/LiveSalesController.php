@@ -26,6 +26,11 @@ class LiveSalesController extends Controller
         $location = session('active_location');
         $today = Carbon::today();
 
+        // [FINANCIAL CONTEXT] - Fetch daily ledger for circulation/opening cash
+        $ledger = \App\Models\DailyCashLedger::where('user_id', $ownerId)
+            ->whereDate('ledger_date', $today)
+            ->first();
+
         // [SHIFT DISCOVERY] - Prioritize active trading shift
         $activeShift = \App\Models\BarShift::where('user_id', $ownerId)
             ->where('status', 'open')
@@ -163,12 +168,32 @@ class LiveSalesController extends Controller
             ->limit(5)
             ->get();
 
+        // 7. REAL-TIME PROFIT & CIRCULATION (New Metrics)
+        $ordersForProfit = (clone $ordersTodayQuery)->with(['items.productVariant', 'kitchenOrderItems'])->get();
+        $shiftProfit = $ordersForProfit->sum(function($order) {
+            $barProfit = $order->items->sum(function($item) {
+                $cost = (float)($item->productVariant->buying_price_per_unit ?? 0);
+                return ($item->unit_price - $cost) * $item->quantity;
+            });
+            $kitchenProfit = $order->kitchenOrderItems->sum(function($item) {
+                // Option A: 40% Fixed Margin for Food
+                return (float)$item->total_price * 0.40;
+            });
+            return $barProfit + $kitchenProfit;
+        });
+
+        $openingCash = (float)($ledger->opening_cash ?? 0);
+        $expensesToday = (float)($ledger->total_expenses ?? 0);
+        $moneyInCirculation = $openingCash + $todayCash - $expensesToday;
+
         if ($request->ajax()) {
             return response()->json([
                 'revenue' => [
                     'total' => number_format($totalRevenue),
                     'cash' => number_format($todayCash),
                     'digital' => number_format($todayDigital),
+                    'profit' => number_format($shiftProfit),
+                    'circulation' => number_format($moneyInCirculation),
                 ],
                 'pulse' => [
                     'total_orders' => $totalOrders,
@@ -185,7 +210,7 @@ class LiveSalesController extends Controller
             'totalRevenue', 'todayCash', 'todayDigital',
             'totalOrders', 'activeOrders', 'servedOrders',
             'hourlyData', 'liveFeed', 'staffPulse', 'topDrinks', 'topFood',
-            'activeShift'
+            'activeShift', 'shiftProfit', 'moneyInCirculation'
         ));
     }
 }

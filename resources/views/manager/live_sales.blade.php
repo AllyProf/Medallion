@@ -60,7 +60,7 @@
 
 <div class="row">
     <!-- Revenue Pulse -->
-    <div class="col-md-4">
+    <div class="col-md-3">
         <div class="widget-small primary coloured-icon">
             <i class="icon fa fa-money fa-3x"></i>
             <div class="info">
@@ -71,27 +71,53 @@
         </div>
     </div>
 
+    <!-- Profit Pulse -->
+    <div class="col-md-3">
+        <div class="widget-small info coloured-icon" style="background-color: #28a745;">
+            <i class="icon fa fa-line-chart fa-3x"></i>
+            <div class="info">
+                <h4>{{ $activeShift ? 'Shift Profit' : 'Est. Profit' }}</h4>
+                <p><b id="total-profit-text">TSh {{ number_format($shiftProfit) }}</b></p>
+                <small class="text-white">Margin: Approx 40%+</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Circulation Pulse -->
+    <div class="col-md-3">
+        <div class="widget-small warning coloured-icon">
+            <i class="icon fa fa-refresh fa-3x"></i>
+            <div class="info">
+                <h4>In Circulation</h4>
+                <p><b id="total-circulation-text">TSh {{ number_format($moneyInCirculation) }}</b></p>
+                <small>Opening + Rev - Exp</small>
+            </div>
+        </div>
+    </div>
+
     <!-- Active Orders Pulse -->
-    <div class="col-md-4">
-        <div class="widget-small info coloured-icon">
+    <div class="col-md-3">
+        <div class="widget-small danger coloured-icon">
             <i class="icon fa fa-shopping-cart fa-3x"></i>
             <div class="info">
                 <h4>{{ $activeShift ? 'Shift Orders' : 'Today Orders' }}</h4>
                 <p>
                     <b id="total-orders-count">{{ $totalOrders }}</b> <small>Total</small> | 
-                    <b class="text-primary" id="active-orders-count">{{ $activeOrders }}</b> <small>Live</small>
+                    <b class="text-white" id="active-orders-count">{{ $activeOrders }}</b> <small>Live</small>
                 </p>
                 <small>Served: <span id="served-orders-count">{{ $servedOrders }}</span></small>
             </div>
         </div>
     </div>
+</div>
 
+<div class="row">
     <!-- Velocity Summary -->
-    <div class="col-md-4">
-        <div class="tile p-2 mb-3" style="min-height: 100px; display: flex; flex-direction: column; justify-content: center;">
-            <div class="d-flex justify-content-between align-items-center px-2">
+    <div class="col-md-12">
+        <div class="tile p-2 mb-4" style="min-height: 120px; display: flex; flex-direction: column; justify-content: center;">
+            <div class="d-flex justify-content-between align-items-center px-3">
                 <h6 class="mb-0 text-muted small font-weight-bold uppercase">{{ $activeShift ? 'SHIFT VELOCITY' : 'HOURLY VELOCITY' }}</h6>
-                <span class="badge badge-primary">LIVE</span>
+                <span class="badge badge-primary">LIVE ORDERS PER HOUR</span>
             </div>
             <div class="velocity-chart-container mt-1">
                 <canvas id="velocityChart"></canvas>
@@ -200,6 +226,8 @@
             document.getElementById('total-revenue-text').innerText = 'TSh ' + data.revenue.total;
             document.getElementById('cash-revenue-text').innerText = data.revenue.cash;
             document.getElementById('digital-revenue-text').innerText = data.revenue.digital;
+            document.getElementById('total-profit-text').innerText = 'TSh ' + data.revenue.profit;
+            document.getElementById('total-circulation-text').innerText = 'TSh ' + data.revenue.circulation;
 
             // Update Pulse Counts
             document.getElementById('total-orders-count').innerText = data.pulse.total_orders;
