@@ -107,20 +107,28 @@
                     <tbody>
                         @forelse($attendances as $record)
                         @php
-                            $checkInTime = \Carbon\Carbon::parse($record->check_in->format('H:i'));
-                            $isLate = $checkInTime->gt($shiftStartTime);
-                            $diffMin = $checkInTime->diffInMinutes($shiftStartTime);
+                            $recCheckIn = $record->check_in;
+                            $checkInTimeOnly = \Carbon\Carbon::createFromFormat('H:i', $recCheckIn->format('H:i'));
+                            
+                            $isLate = $checkInTimeOnly->gt($shiftStartTime);
+                            $diffMinAbs = $checkInTimeOnly->diffInMinutes($shiftStartTime);
+                            
                             $isFirst = in_array($record->id, $firstArrivalIds);
                             
-                            // Format duration: Hours and Minutes
+                            // Format late duration: Xh Ym
+                            $lateH = floor($diffMinAbs / 60);
+                            $lateM = $diffMinAbs % 60;
+                            $lateStr = ($lateH > 0 ? $lateH.'h ' : '') . $lateM.'m';
+
+                            // Format work duration: Hours and Minutes
                             if($record->status === 'active') {
-                                $totalMin = $record->check_in->diffInMinutes(now());
+                                $totalMin = $recCheckIn->diffInMinutes(now());
                             } else {
                                 $totalMin = $record->duration_minutes ?? 0;
                             }
-                            $h = floor($totalMin / 60);
-                            $m = floor($totalMin % 60);
-                            $durationStr = ($h > 0 ? $h.'h ' : '') . $m.'m';
+                            $workH = floor($totalMin / 60);
+                            $workM = $totalMin % 60;
+                            $workDurationStr = ($workH > 0 ? $workH.'h ' : '') . $workM.'m';
                         @endphp
                         <tr class="att-row" data-search="{{ strtolower($record->staff->full_name . ' ' . ($record->staff->role->name ?? '')) }}">
                             <td>
@@ -137,7 +145,7 @@
                             <td>
                                 @if($isLate)
                                     <span class="text-danger font-weight-bold" style="font-size: 0.85rem;">
-                                        <i class="fa fa-clock-o"></i> LATE ({{ $diffMin }}m)
+                                        <i class="fa fa-clock-o"></i> LATE ({{ $lateStr }})
                                     </span>
                                 @else
                                     <span class="text-success font-weight-bold" style="font-size: 0.85rem;">
@@ -162,7 +170,7 @@
                                 @endif
                             </td>
                             <td>
-                                <strong style="font-size: 0.95rem;">{{ $durationStr }}</strong>
+                                <strong style="font-size: 0.95rem;">{{ $workDurationStr }}</strong>
                                 @if($record->status === 'active')
                                     <span class="small text-warning font-italic ml-1">(live)</span>
                                 @endif
