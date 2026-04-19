@@ -15,6 +15,10 @@
   </ul>
 </div>
 
+@php
+    $shiftStartTime = \Carbon\Carbon::createFromFormat('H:i', $shiftStart);
+@endphp
+
 {{-- Navigation Tabs --}}
 <div class="row mb-3">
     <div class="col-md-12">
