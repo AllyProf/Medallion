@@ -117,12 +117,16 @@ class LiveSalesController extends Controller
                     });
                 }
             })
-            ->join('product_variants', 'order_items.product_variant_id', '=', 'product_variants.id')
-            ->select('product_variants.display_name', DB::raw('SUM(order_items.quantity) as total_qty'), DB::raw('SUM(order_items.total_price) as total_rev'))
-            ->groupBy('product_variants.id', 'product_variants.display_name')
+            ->with('productVariant.product')
+            ->select('product_variant_id', DB::raw('SUM(quantity) as total_qty'), DB::raw('SUM(total_price) as total_rev'))
+            ->groupBy('product_variant_id')
             ->orderByDesc('total_qty')
             ->limit(5)
-            ->get();
+            ->get()
+            ->map(function($item) {
+                $item->display_name = $item->productVariant ? $item->productVariant->display_name : 'Unknown';
+                return $item;
+            });
 
         $topFood = KitchenOrderItem::whereHas('order', function($q) use ($ownerId, $today) {
                 $q->where('orders.user_id', $ownerId)->whereDate('orders.created_at', $today)->where('orders.status', '!=', 'cancelled');
