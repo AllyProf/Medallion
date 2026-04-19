@@ -813,48 +813,155 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 </div>
 
 <!-- Attendance Clock In/Out Modal -->
-<div class="modal fade" id="attendanceModal" tabindex="-1" role="dialog" aria-hidden="true" style="background: rgba(0,0,0,0.9);">
-    <div class="modal-dialog modal-dialog-centered" role="document" style="max-width: 400px;">
-        <div class="modal-content shadow-lg border-0" style="border-radius: 16px; overflow: hidden; background:#1a1a1a; border: 1px solid #333;">
-            <div class="text-white p-4 text-center" style="background:linear-gradient(45deg, #dc3545, #940000);">
-                <h4 class="m-0 font-weight-bold"><i class="fa fa-clock-o"></i> STAFF ATTENDANCE</h4>
-                <p class="small mb-0 opacity-75">Sign In or Sign Out</p>
-            </div>
-            <div class="modal-body p-4">
-                <div class="mb-4 text-center">
-                    <input type="password" class="form-control text-center font-weight-bold" id="attendance-pin" 
-                           placeholder="ENTER PIN" inputmode="numeric" pattern="\d*" maxlength="4"
-                           style="font-size: 2.5rem; height: 80px; background:#000; color:#ffb822; border:2px solid #444; border-radius:12px; letter-spacing: 12px; -webkit-text-security: disc;">
-                </div>
+<!-- Attendance Modal - Two Step: PIN → Fingerprint Signature -->
+<div class="modal fade" id="attendanceModal" tabindex="-1" role="dialog" aria-hidden="true" style="background: rgba(0,0,0,0.95);">
+    <div class="modal-dialog modal-dialog-centered" role="document" style="max-width: 420px;">
+        <div class="modal-content border-0" style="border-radius: 20px; overflow: hidden; background:#111; border: 1px solid #222;">
 
-                <!-- Numpad for Touch Screens -->
-                <div class="row no-gutters mb-3">
-                    @foreach([1,2,3,4,5,6,7,8,9] as $num)
-                    <div class="col-4 p-1">
-                        <button class="kiosk-num-btn" onclick="appendAttendancePin('{{ $num }}')">{{ $num }}</button>
-                    </div>
-                    @endforeach
-                    <div class="col-4 p-1">
-                        <button class="kiosk-num-btn text-danger" onclick="$('#attendance-pin').val('')"><i class="fa fa-times"></i></button>
-                    </div>
-                    <div class="col-4 p-1">
-                        <button class="kiosk-num-btn" onclick="appendAttendancePin('0')">0</button>
-                    </div>
-                    <div class="col-4 p-1">
-                        <button class="kiosk-num-btn text-warning" onclick="backspaceAttendancePin()"><i class="fa fa-long-arrow-left"></i></button>
-                    </div>
+            <!-- STEP 1: PIN ENTRY -->
+            <div id="att-step-pin">
+                <div class="text-white p-4 text-center" style="background:linear-gradient(135deg, #940000, #dc3545);">
+                    <h4 class="m-0 font-weight-bold"><i class="fa fa-clock-o mr-2"></i>STAFF ATTENDANCE</h4>
+                    <p class="small mb-0 mt-1" style="opacity:0.7;">Enter your PIN to sign in or out</p>
                 </div>
+                <div class="p-4">
+                    <!-- PIN Dots Display -->
+                    <div class="d-flex justify-content-center mb-4" id="att-pin-dots" style="gap:14px;">
+                        <span class="att-dot" id="att-dot-1"></span>
+                        <span class="att-dot" id="att-dot-2"></span>
+                        <span class="att-dot" id="att-dot-3"></span>
+                        <span class="att-dot" id="att-dot-4"></span>
+                    </div>
+                    <input type="password" id="attendance-pin" maxlength="4" inputmode="numeric" autocomplete="off"
+                           style="position:absolute; opacity:0; pointer-events:none;">
 
-                <button class="btn btn-block btn-lg font-weight-bold py-3" 
-                        style="background: #28a745; color:#fff; border-radius:12px; font-size:1.3rem;"
-                        onclick="submitAttendance()">
-                    <i class="fa fa-check-circle"></i> SIGN NOW
-                </button>
-                <button class="btn btn-block btn-link text-muted mt-2" data-dismiss="modal">Cancel</button>
+                    <!-- Numpad -->
+                    <div class="row no-gutters" style="gap:0; margin: 0 -4px;">
+                        @foreach([1,2,3,4,5,6,7,8,9] as $num)
+                        <div class="col-4 p-1">
+                            <button class="att-num-btn" onclick="appendAttendancePin('{{ $num }}')">{{ $num }}</button>
+                        </div>
+                        @endforeach
+                        <div class="col-4 p-1">
+                            <button class="att-num-btn" style="color:#dc3545;" onclick="$('#attendance-pin').val(''); updateAttDots();"><i class="fa fa-times"></i></button>
+                        </div>
+                        <div class="col-4 p-1">
+                            <button class="att-num-btn" onclick="appendAttendancePin('0')">0</button>
+                        </div>
+                        <div class="col-4 p-1">
+                            <button class="att-num-btn" style="color:#ffb822;" onclick="backspaceAttendancePin()"><i class="fa fa-long-arrow-left"></i></button>
+                        </div>
+                    </div>
+
+                    <div id="att-pin-error" class="text-center mt-3" style="color:#dc3545; font-size:0.9rem; min-height:1.5rem;"></div>
+                    <button class="btn btn-block btn-link text-muted mt-1" data-dismiss="modal" onclick="resetAttendanceModal()">Cancel</button>
+                </div>
             </div>
+
+            <!-- STEP 2: FINGERPRINT SIGNATURE SCREEN -->
+            <div id="att-step-signature" style="display:none;">
+                <div class="p-5 text-center">
+                    <!-- Staff Name -->
+                    <h5 id="att-sig-name" class="font-weight-bold mb-1" style="color:#fff; font-size:1.4rem; letter-spacing:1px;"></h5>
+                    <p id="att-sig-role" class="mb-4" style="color:#aaa; font-size:0.85rem;"></p>
+
+                    <!-- Fingerprint Pulse Animation -->
+                    <div class="att-fingerprint-wrap" id="att-fp-wrap">
+                        <div class="att-fp-ring att-fp-ring-1"></div>
+                        <div class="att-fp-ring att-fp-ring-2"></div>
+                        <div class="att-fp-ring att-fp-ring-3"></div>
+                        <div class="att-fp-icon" id="att-fp-icon">
+                            <svg viewBox="0 0 64 64" width="54" height="54" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M32 4C19.3 4 9 14.3 9 27c0 8.2 2.5 13.5 6.1 18.5" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                                <path d="M32 12c-8.3 0-15 6.7-15 15 0 5.5 1.5 9.5 4 13" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                                <path d="M32 20c-3.9 0-7 3.1-7 7 0 3.5.8 6.5 2.2 9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                                <path d="M32 28c0 2-.5 4.5-1.5 7" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                                <path d="M39 12.5C43.5 15.3 47 21 47 27c0 7-2.2 12-6 17" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                                <path d="M39 20c2.5 2 4 5.5 4 7 0 5-1.5 9.5-4.5 14" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                                <path d="M39 28c.5 1.5.5 3 0 5" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <!-- Status Label -->
+                    <div id="att-sig-status-label" class="mt-4 font-weight-bold" style="font-size:1rem; letter-spacing:2px; text-transform:uppercase;"></div>
+                    <p id="att-sig-instruction" class="small mt-2" style="color:#aaa;"></p>
+
+                    <!-- Action Buttons -->
+                    <div id="att-sig-actions" class="mt-4 d-flex" style="gap:10px; justify-content:center;">
+                        <button class="btn px-5 py-3 font-weight-bold" id="att-confirm-btn"
+                            style="border-radius:12px; font-size:1.1rem; min-width:180px;"
+                            onclick="confirmAttendance()">
+                        </button>
+                    </div>
+                    <button class="btn btn-link text-muted mt-3" onclick="resetAttendanceModal()">← Back</button>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
+
+<style>
+/* Attendance PIN dots */
+.att-dot {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid #555;
+    background: transparent;
+    display: inline-block;
+    transition: all 0.2s ease;
+}
+.att-dot.filled { background: #ffb822; border-color: #ffb822; box-shadow: 0 0 8px rgba(255,184,34,0.6); }
+
+/* Numpad buttons */
+.att-num-btn {
+    width: 100%; height: 68px; font-size: 1.6rem; font-weight: 700;
+    background: #1e1e1e; border: 1px solid #333; border-radius: 10px;
+    color: #fff; transition: all 0.15s;
+}
+.att-num-btn:active, .att-num-btn:focus { background: #333; outline: none; transform: scale(0.95); }
+
+/* Fingerprint Animation Rings */
+.att-fingerprint-wrap {
+    position: relative;
+    width: 160px; height: 160px;
+    margin: 0 auto;
+    display: flex; align-items: center; justify-content: center;
+}
+.att-fp-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid;
+    opacity: 0;
+    animation: att-fp-pulse 2.4s ease-out infinite;
+}
+.att-fp-ring-1 { width: 160px; height: 160px; animation-delay: 0s; }
+.att-fp-ring-2 { width: 120px; height: 120px; animation-delay: 0.4s; }
+.att-fp-ring-3 { width: 90px; height: 90px; animation-delay: 0.8s; }
+
+@keyframes att-fp-pulse {
+    0%   { opacity: 0.6; transform: scale(0.7); }
+    100% { opacity: 0; transform: scale(1.1); }
+}
+
+.att-fp-icon {
+    position: relative; z-index: 2;
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.5s, color 0.5s;
+}
+
+/* Sign-in: green rings */
+.att-fp-signin .att-fp-ring  { border-color: #28a745; }
+.att-fp-signin .att-fp-icon  { background: rgba(40,167,69,0.15); color: #28a745; }
+.att-fp-signin #att-sig-status-label { color: #28a745; }
+
+/* Sign-out: amber rings */
+.att-fp-signout .att-fp-ring  { border-color: #ffb822; }
+.att-fp-signout .att-fp-icon  { background: rgba(255,184,34,0.15); color: #ffb822; }
+.att-fp-signout #att-sig-status-label { color: #ffb822; }
+</style>
 @endsection
 
 @push('scripts')
@@ -2237,48 +2344,134 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         pin.val(pin.val().slice(0, -1));
     };
 
-    window.submitAttendance = function() {
-        const pin = $('#attendance-pin').val();
-        if(pin.length < 4) {
-            KioskToast.fire({ icon: 'warning', title: 'Please enter your 4-digit PIN' });
-            return;
-        }
+    // --- ATTENDANCE: TWO-STEP FLOW ---
+    let _attIdentifiedPin = '';
+    let _attIdentifiedName = '';
+    let _attIdentifiedStatus = ''; // 'in' or 'out'
 
-        const btn = $('#attendanceModal button.btn-success');
-        const originalHtml = btn.html();
-        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Processing...');
+    window.updateAttDots = function() {
+        const len = $('#attendance-pin').val().length;
+        for(let i = 1; i <= 4; i++) {
+            const dot = $('#att-dot-' + i);
+            if (i <= len) dot.addClass('filled');
+            else dot.removeClass('filled');
+        }
+        // Auto-identify when 4 digits entered
+        if(len === 4) setTimeout(identifyAttendance, 200);
+    };
+
+    window.appendAttendancePin = function(n) {
+        const pin = $('#attendance-pin');
+        if(pin.val().length < 4) { pin.val(pin.val() + n); updateAttDots(); }
+    };
+    window.backspaceAttendancePin = function() {
+        const pin = $('#attendance-pin');
+        pin.val(pin.val().slice(0, -1)); updateAttDots();
+    };
+
+    window.resetAttendanceModal = function() {
+        $('#attendance-pin').val('');
+        updateAttDots();
+        $('#att-pin-error').text('');
+        $('#att-step-pin').show();
+        $('#att-step-signature').hide();
+        _attIdentifiedPin = '';
+        _attIdentifiedName = '';
+        _attIdentifiedStatus = '';
+    };
+
+    // Step 1: Identify staff by PIN (no sign-in yet)
+    function identifyAttendance() {
+        const pin = $('#attendance-pin').val();
+        if(pin.length < 4) return;
+
+        $('#att-pin-error').text('');
 
         $.ajax({
             url: '{{ route("bar.kiosk.attendance.toggle") }}',
             method: 'POST',
-            data: { pin: pin, _token: '{{ csrf_token() }}' },
+            data: { pin: pin, identify_only: 1, _token: '{{ csrf_token() }}' },
             success: function(res) {
-                btn.prop('disabled', false).html(originalHtml);
-                $('#attendanceModal').modal('hide');
-                $('#attendance-pin').val('');
+                _attIdentifiedPin = pin;
+                _attIdentifiedName = res.staff_name;
+                _attIdentifiedStatus = res.current_status; // 'active' means they are in
 
-                // 1. Show Success Message
+                showSignatureScreen(res);
+            },
+            error: function(xhr) {
+                const msg = xhr.responseJSON ? xhr.responseJSON.message : 'Invalid PIN. Try again.';
+                $('#att-pin-error').text(msg);
+                // Shake effect & clear
+                $('#att-pin-dots').addClass('att-shake');
+                setTimeout(() => { $('#att-pin-dots').removeClass('att-shake'); $('#attendance-pin').val(''); updateAttDots(); }, 600);
+            }
+        });
+    }
+
+    // Step 2: Show the fingerprint signature screen
+    function showSignatureScreen(res) {
+        const isCheckedIn = (res.current_status === 'active');
+        const action = isCheckedIn ? 'out' : 'in';
+
+        // Populate info
+        $('#att-sig-name').text(res.staff_name);
+        $('#att-sig-role').text(isCheckedIn ? 'Currently on shift · Tap to Sign Out' : 'Off Shift · Tap to Sign In');
+        $('#att-sig-status-label').text(isCheckedIn ? '● SIGNING OUT' : '● SIGNING IN');
+        $('#att-sig-instruction').text(isCheckedIn ? 'Confirm to end your shift and record your time.' : 'Place your confirmation below to begin your shift.');
+
+        // Style the fingerprint rings
+        const wrap = $('#att-fp-wrap');
+        wrap.removeClass('att-fp-signin att-fp-signout');
+        wrap.addClass(isCheckedIn ? 'att-fp-signout' : 'att-fp-signin');
+
+        // Style the confirm button
+        const btn = $('#att-confirm-btn');
+        if(isCheckedIn) {
+            btn.text('SIGN OUT').css({'background':'#ffb822', 'color':'#000', 'border':'none'});
+        } else {
+            btn.text('SIGN IN').css({'background':'#28a745', 'color':'#fff', 'border':'none'});
+        }
+
+        $('#att-step-pin').hide();
+        $('#att-step-signature').show();
+    }
+
+    // Step 3: Confirm attendance (actual toggle)
+    window.confirmAttendance = function() {
+        const btn = $('#att-confirm-btn');
+        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> ...');
+
+        $.ajax({
+            url: '{{ route("bar.kiosk.attendance.toggle") }}',
+            method: 'POST',
+            data: { pin: _attIdentifiedPin, _token: '{{ csrf_token() }}' },
+            success: function(res) {
+                $('#attendanceModal').modal('hide');
+                resetAttendanceModal();
+
                 Swal.fire({
                     icon: 'success',
-                    title: res.status === 'in' ? 'Welcome, ' + res.staff_name : 'Goodbye, ' + res.staff_name,
-                    text: res.message,
+                    title: res.status === 'in' ? '✅ Signed In!' : '👋 Signed Out!',
+                    html: '<b>' + res.staff_name + '</b><br><span style="color:#aaa; font-size:0.9rem;">' + res.message + '</span>',
                     timer: 4000,
-                    background: '#1a1a1a',
+                    background: '#111',
                     color: '#fff',
-                    showConfirmButton: false
+                    showConfirmButton: false,
+                    timerProgressBar: true
                 });
 
-                // 2. VOICE FEEDBACK: "Thank you [Name]"
                 speakAttendanceGreeting(res.staff_name, res.status);
             },
             error: function(xhr) {
-                btn.prop('disabled', false).html(originalHtml);
-                const msg = xhr.responseJSON ? xhr.responseJSON.message : 'Invalid PIN';
+                btn.prop('disabled', false).html(_attIdentifiedStatus === 'active' ? 'SIGN OUT' : 'SIGN IN');
+                const msg = xhr.responseJSON ? xhr.responseJSON.message : 'Error. Please try again.';
                 KioskToast.fire({ icon: 'error', title: msg });
-                $('#attendance-pin').val('');
             }
         });
     };
+
+    // Keep old submitAttendance for any other callers
+    window.submitAttendance = window.confirmAttendance;
 
     function speakAttendanceGreeting(name, status) {
         try {

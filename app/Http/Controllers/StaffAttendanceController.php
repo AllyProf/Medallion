@@ -58,11 +58,20 @@ class StaffAttendanceController extends Controller
             ], 401);
         }
 
-        // Check if there is an active session for this staff today
+        // Check current active session
         $activeAttendance = StaffAttendance::where('staff_id', $staff->id)
             ->where('status', 'active')
             ->orderBy('check_in', 'desc')
             ->first();
+
+        // ── Identify-only mode: return staff info without recording ──
+        if ($request->boolean('identify_only')) {
+            return response()->json([
+                'success'        => true,
+                'staff_name'     => $staff->full_name,
+                'current_status' => $activeAttendance ? 'active' : 'inactive',
+            ]);
+        }
 
         if ($activeAttendance) {
             // Check-out logic
