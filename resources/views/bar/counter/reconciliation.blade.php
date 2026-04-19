@@ -692,19 +692,20 @@
                       @php
                         $rec = $data['reconciliation'] ?? null;
                         $isSubmitted = $rec && in_array($rec->status, ['submitted', 'partial', 'verified', 'settled']);
+                        $isCounterShortage = ($data['waiter']->role->name === 'Counter') && ($data['difference'] < 0);
                       @endphp
-                      @if($isSubmitted && $data['difference'] < 0)
+                      @if(($isSubmitted && $data['difference'] < 0) || $isCounterShortage)
                       <tr class="text-danger font-weight-bold" style="vertical-align: middle;">
-                        <td>{{ $data['waiter']->full_name }}</td>
+                        <td>{{ $data['waiter']->full_name }} {!! $isCounterShortage ? '<span class="badge badge-dark ml-1" style="font-size:0.55rem;">Counter</span>' : '' !!}</td>
                         <td class="text-right">- TSh {{ number_format(abs($data['difference']), 0) }}</td>
                         <td class="text-center">
-                           <button class="btn btn-warning btn-sm font-weight-bold py-0 shadow-sm settle-shortage-btn" 
-                                   data-id="{{ $data['reconciliation']->id ?? '' }}" 
-                                   data-name="{{ $data['waiter']->full_name }}" 
-                                   data-shortage="{{ abs($data['difference']) }}" 
-                                   style="font-size: 0.65rem;">
-                             Settle
-                           </button>
+                            <button class="btn btn-warning btn-sm font-weight-bold py-0 shadow-sm settle-shortage-btn" 
+                                    data-id="{{ $data['reconciliation']->id ?? '' }}" 
+                                    data-name="{{ $data['waiter']->full_name }}" 
+                                    data-shortage="{{ abs($data['difference']) }}" 
+                                    style="font-size: 0.65rem;">
+                              Settle
+                            </button>
                         </td>
                       </tr>
                       @endif

@@ -2147,17 +2147,17 @@ class AccountantController extends Controller
             'amount' => $request->amount,
             'fund_source' => $request->fund_source,
             'purpose' => $purpose,
-            'issue_date' => $request->issue_date,
+            'issue_date' => $request->input('issue_date'), // Must use input() to fetch auto-binder merged value
             'notes' => $request->notes,
             'status' => 'issued'
         ]);
 
         // Synchronize ledger if it exists for this date
-        $ledger = \App\Models\DailyCashLedger::where('user_id', $ownerId)
-            ->whereDate('ledger_date', $request->issue_date)
+        $ledgerToSync = \App\Models\DailyCashLedger::where('user_id', $ownerId)
+            ->whereDate('ledger_date', $request->input('issue_date'))
             ->first();
-        if ($ledger) {
-            $ledger->syncTotals()->save();
+        if ($ledgerToSync) {
+            $ledgerToSync->syncTotals()->save();
         }
 
         $successMsg = isset($autoBinderMessage) ? $autoBinderMessage : 'Funds issued successfully and SMS sent to staff.';
