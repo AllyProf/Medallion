@@ -132,8 +132,8 @@
                 <th style="width: 70px;">UOM</th>
                 <th style="width: 110px;">Packaging</th>
                 @if($location == 'counter')
-                    <th style="width: 80px;">Received</th>
-                    <th style="width: 80px;">Sold</th>
+                    <th style="width: 85px;">Stock In</th>
+                    <th style="width: 85px;">Sold</th>
                 @endif
                 <th style="width: 130px;">
                     Qty ({{ $location == 'warehouse' ? 'Pkgs' : 'Units' }})
@@ -186,11 +186,11 @@
                         <td><span class="text-muted small">{{ $item['packaging'] }} ({{ $item['items_per_pkg'] }})</span></td>
                         
                         @if($location == 'counter')
-                            <td class="text-success font-weight-bold">
-                                {{ floatval($item['received_today']) > 0 ? floatval($item['received_today']) : '-' }}
+                            <td class="text-success font-weight-bold" style="background:#f4fbf7;">
+                                {{ floatval($item['received_today']) > 0 ? floatval($item['received_today']) . ' ' . $unitLabel : '0 ' . $unitLabel }}
                             </td>
-                            <td class="text-danger font-weight-bold">
-                                {{ floatval($item['sold_today']) > 0 ? floatval($item['sold_today']) : '-' }}
+                            <td class="text-danger font-weight-bold" style="background:#fdf5f5;">
+                                {{ floatval($item['sold_today']) > 0 ? floatval($item['sold_today']) . ' ' . $unitLabel : '0 ' . $unitLabel }}
                             </td>
                         @endif
                         
