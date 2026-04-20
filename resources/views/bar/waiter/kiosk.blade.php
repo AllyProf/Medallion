@@ -442,7 +442,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         <button class="top-btn" style="background:var(--bg-card); color:var(--text-main); border:1px solid var(--border-color);" onclick="toggleLang()">EN | SW</button>
 
         <button class="top-btn ml-auto" style="background:#dc3545; color:white; border:none; display:flex; align-items:center; gap:8px;" onclick="$('#attendanceModal').modal('show')">
-            <i class="fa fa-clock-o"></i> SIGN ATTENDANCE
+            <i class="fa fa-clock-o"></i> SIGN
         </button>
 
         <div class="brand-logo">
@@ -996,6 +996,40 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         const keywords = ['beverage', 'drink', 'alcohol', 'beer', 'wine', 'spirit', 'liquor', 'vodka', 'whiskey', 'whisky', 'gin', 'rum', 'soda', 'water', 'juice', 'cocktail', 'coffee', 'tea', 'smoothie'];
         return keywords.some(kw => c.includes(kw));
     }
+
+    // --- SESSION & CSRF MANAGEMENT ---
+    
+    // 1. Global AJAX Setup for CSRF Failures
+    $.ajaxSetup({
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+        },
+        error: function(xhr, status, error) {
+            // 419 is Authentication Timeout / CSRF Mismatch
+            if (xhr.status === 419) {
+                Swal.fire({
+                    title: 'Session Expired',
+                    text: 'Your security session has timed out. The page will reload to keep you active.',
+                    icon: 'warning',
+                    confirmButtonColor: 'var(--accent-green)',
+                    confirmButtonText: 'Reload Now'
+                }).then(() => {
+                    window.location.reload();
+                });
+            }
+        }
+    });
+
+    // 2. Heartbeat to keep session alive
+    setInterval(function() {
+        $.get('{{ route("ping") }}').fail(function(xhr) {
+            if (xhr.status === 419) {
+                console.warn("Session expired during heartbeat. Refreshing...");
+                window.location.reload();
+            }
+        });
+    }, 300000); // Ping every 5 minutes
+
     let editingOrderId = null; // Track if we are adding to an existing order
 
     // Search

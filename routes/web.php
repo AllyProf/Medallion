@@ -19,6 +19,7 @@ use App\Http\Controllers\NotificationController;
 Route::get('/api/notifications', [NotificationController::class, 'index'])->name('notifications.index');
 Route::get('/api/search', [NotificationController::class, 'search'])->name('global.search');
 Route::post('/api/notifications/clear', [NotificationController::class, 'clearAll'])->name('notifications.clear');
+Route::get('/ping', function() { return response()->json(['status' => 'ok']); })->name('ping');
 
 // Profile management
 Route::get('/profile', [\App\Http\Controllers\ProfileController::class, 'index'])->name('profile.index');
