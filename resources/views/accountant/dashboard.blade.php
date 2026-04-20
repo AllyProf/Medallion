@@ -226,18 +226,7 @@
               <span class="badge badge-light ml-1" style="color: #00d2ff;">REAL-TIME</span>
             </a>
           </div>
-          <div class="col-md-4 mb-3">
-            <a href="{{ route('accountant.reconciliations') }}" class="btn btn-outline-primary btn-block p-3">
-              <i class="fa fa-beer fa-2x mb-2"></i><br>
-              BAR RECONCILIATIONS
-            </a>
-          </div>
-          <div class="col-md-4 mb-3">
-            <a href="{{ route('accountant.food.reconciliation') }}" class="btn btn-warning btn-block p-3">
-              <i class="fa fa-cutlery fa-2x mb-2 d-block"></i>
-              FOOD RECONCILIATIONS
-            </a>
-          </div>
+
           <div class="col-md-4 mb-3">
             <a href="{{ route('accountant.fund-issuance') }}" class="btn btn-outline-warning btn-block p-3">
               <i class="fa fa-money fa-2x mb-2"></i><br>
