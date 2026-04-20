@@ -974,14 +974,14 @@ class CounterController extends Controller
             ->groupBy('product_variant_id');
             
         $receivedEver = \App\Models\StockMovement::where('user_id', $ownerId)
-            ->where('to_location', 'counter')
+            ->where('to_location', $location)
             ->selectRaw('product_variant_id, SUM(quantity) as total_received')
             ->groupBy('product_variant_id')
             ->pluck('total_received', 'product_variant_id');
 
         $soldEver = \App\Models\StockMovement::where('user_id', $ownerId)
-            ->where('movement_type', 'sale')
-            ->where('from_location', 'counter')
+            ->whereIn('movement_type', ['sale', 'transfer', 'usage'])
+            ->where('from_location', $location)
             ->selectRaw('product_variant_id, SUM(quantity) as total_sold')
             ->groupBy('product_variant_id')
             ->pluck('total_sold', 'product_variant_id');
