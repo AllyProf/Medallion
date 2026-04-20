@@ -686,7 +686,7 @@ class DailyMasterSheetController extends Controller
             'carried_forward' => $request->carried_forward,
             'status' => 'closed',
             'closed_at' => now(),
-            'accountant_id' => Auth::user()->staff->id ?? null
+            'accountant_id' => $this->getCurrentStaff()->id ?? null
         ]);
 
         // Trigger SMS Notifications (Manager, Accountant, and Counter Staff)
@@ -765,7 +765,7 @@ class DailyMasterSheetController extends Controller
             // Update existing pending handover
             $existing->update([
                 'amount' => $request->amount,
-                'accountant_id' => Auth::user()->staff->id ?? null,
+                'accountant_id' => $this->getCurrentStaff()->id ?? null,
                 'notes' => 'Updated profit submission due to expense changes'
             ]);
             
@@ -783,7 +783,7 @@ class DailyMasterSheetController extends Controller
 
         $handover = FinancialHandover::create([
             'user_id' => $ownerId,
-            'accountant_id' => Auth::user()->staff->id ?? null,
+            'accountant_id' => $this->getCurrentStaff()->id ?? null,
             'handover_date' => $ledger->ledger_date,
             'handover_type' => 'accountant_to_owner',
             'department' => 'Master Sheet',
