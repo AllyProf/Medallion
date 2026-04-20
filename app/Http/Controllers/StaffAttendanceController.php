@@ -104,9 +104,18 @@ class StaffAttendanceController extends Controller
     {
         $request->validate([
             'pin' => 'required|string',
+            'user_id' => 'nullable|integer',
         ]);
 
-        $ownerId = $this->getOwnerId();
+        $ownerId = $this->getOwnerId() ?: $request->user_id;
+
+        if (!$ownerId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Business ID missing. Please refresh the page.'
+            ], 400);
+        }
+
         $staff = Staff::where('user_id', $ownerId)
             ->where('pin', $request->pin)
             ->where('is_active', true)

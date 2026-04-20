@@ -2437,7 +2437,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         $.ajax({
             url: '{{ route("bar.kiosk.attendance.toggle") }}',
             method: 'POST',
-            data: { pin: pin, identify_only: 1, _token: '{{ csrf_token() }}' },
+            data: { pin: pin, identify_only: 1, user_id: $('#kiosk-owner-id').val(), _token: '{{ csrf_token() }}' },
             success: function(res) {
                 _attIdentifiedPin = pin;
                 _attIdentifiedName = res.staff_name;
@@ -2490,7 +2490,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         $.ajax({
             url: '{{ route("bar.kiosk.attendance.toggle") }}',
             method: 'POST',
-            data: { pin: _attIdentifiedPin, _token: '{{ csrf_token() }}' },
+            data: { pin: _attIdentifiedPin, user_id: $('#kiosk-owner-id').val(), _token: '{{ csrf_token() }}' },
             success: function(res) {
                 $('#attendanceModal').modal('hide');
                 resetAttendanceModal();
