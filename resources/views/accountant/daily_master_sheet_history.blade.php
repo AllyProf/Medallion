@@ -229,9 +229,7 @@
                                       <i class="fa fa-send"></i> Submit Payout
                                   </button>
                               @elseif($ledger->managerReceiptStatus === 'pending')
-                                  <button data-id="{{ $ledger->id }}" data-amount="{{ round($ledger->netAvailableProfit) }}" data-mode="update" class="btn btn-warning btn-sm btn-block shadow-sm submit-to-boss-btn" style="font-size: 11px; border-radius: 4px; color: #000;">
-                                      <i class="fa fa-refresh"></i> Update Payout
-                                  </button>
+                                  <span class="text-warning font-weight-bold small text-center d-block"><i class="fa fa-hourglass-half"></i> PENDING PAYOUT</span>
                               @endif
                           </div>
                       @endif
@@ -412,7 +410,7 @@
                                             @if($ledger->managerReceiptStatus === 'pending')
                                                <div class="d-flex justify-content-between align-items-center">
                                                   <span class="text-warning font-weight-bold small"><i class="fa fa-hourglass-half"></i> PENDING TSh {{ number_format($actualPayout) }}</span>
-                                                  <button data-id="{{ $ledger->id }}" data-amount="{{ $ledger->netAvailableProfit }}" data-mode="update" class="btn btn-xs btn-warning py-1 px-2 submit-to-boss-btn">Update</button>
+
                                                </div>
                                             @else
                                                <button data-id="{{ $ledger->id }}" data-amount="{{ $ledger->netAvailableProfit }}" class="btn btn-sm btn-block btn-primary shadow-sm submit-to-boss-btn py-1 font-weight-bold">
