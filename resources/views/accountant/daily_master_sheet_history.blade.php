@@ -359,7 +359,13 @@
                                </p>
                                @if(($ledger->circulationDebt ?? 0) > 0)
                                <p class="mb-1 d-flex justify-content-between" style="font-size:0.8em; color:#dc3545;">
-                                  <span><i class="fa fa-warning"></i> Shortage exceeds profit — eating float:</span>
+                                  <span>
+                                      @if(($ledger->adjustedProfit ?? 0) < 0)
+                                          <i class="fa fa-warning"></i> Shortage exceeds profit — eating float:
+                                      @else
+                                          <i class="fa fa-info-circle"></i> Drink capital deficit from shortage:
+                                      @endif
+                                  </span>
                                   <span>- TSh {{ number_format($ledger->circulationDebt) }}</span>
                                 </p>
                                @endif
