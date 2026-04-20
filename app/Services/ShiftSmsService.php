@@ -49,10 +49,20 @@ class ShiftSmsService
             ->get();
 
         $sentCount = 0;
+
+        // Notify the Business Owner (Boss) directly
+        $owner = \App\Models\User::find($ownerId);
+        if ($owner && $owner->phone) {
+            $result = $this->smsService->sendSms($owner->phone, $message);
+            if ($result['success'] ?? false) {
+                $sentCount++;
+            }
+        }
+
         foreach ($staffToNotify as $recipient) {
             if ($recipient->phone_number) {
                 $result = $this->smsService->sendSms($recipient->phone_number, $message);
-                if ($result['success']) {
+                if ($result['success'] ?? false) {
                     $sentCount++;
                 }
             }

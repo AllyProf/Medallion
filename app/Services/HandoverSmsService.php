@@ -49,18 +49,28 @@ class HandoverSmsService
         $message .= "Digital: TSh {$digitalFormatted}\n";
         $message .= "\nPlease login to verify this handover.";
 
-        $accountants = Staff::where('user_id', $ownerId)
+        $staffToNotify = Staff::where('user_id', $ownerId)
             ->where('is_active', true)
             ->whereHas('role', function ($q) {
-                $q->where('slug', 'accountant');
+                $q->whereIn('slug', ['accountant', 'manager']);
             })
             ->get();
 
         $sentCount = 0;
-        foreach ($accountants as $accountant) {
-            if ($accountant->phone_number) {
-                $result = $this->smsService->sendSms($accountant->phone_number, $message);
-                if ($result['success']) {
+        
+        // Notify the Business Owner (Boss) directly
+        $owner = \App\Models\User::find($ownerId);
+        if ($owner && $owner->phone) {
+            $result = $this->smsService->sendSms($owner->phone, $message);
+            if ($result['success'] ?? false) {
+                $sentCount++;
+            }
+        }
+
+        foreach ($staffToNotify as $staffNode) {
+            if ($staffNode->phone_number) {
+                $result = $this->smsService->sendSms($staffNode->phone_number, $message);
+                if ($result['success'] ?? false) {
                     $sentCount++;
                 }
             }
