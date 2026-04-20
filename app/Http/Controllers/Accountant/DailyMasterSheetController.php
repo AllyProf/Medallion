@@ -328,7 +328,7 @@ class DailyMasterSheetController extends Controller
             $query->where('ledger_date', '<=', $request->end_date);
         }
 
-        $ledgers = $query->orderBy('ledger_date', 'desc')->paginate(5);
+        $ledgers = $query->orderBy('ledger_date', 'desc')->paginate(10);
             
         // SYNC CHAIN: We sort the current page collection ASC to ensure forward propagation (15 -> 16 -> 17)
         $ledgers->getCollection()->sortBy('ledger_date')->each(function($ledger) use ($ownerId) {
