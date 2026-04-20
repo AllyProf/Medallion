@@ -131,6 +131,10 @@
                 <th class="text-left">Drink Item Name</th>
                 <th style="width: 70px;">UOM</th>
                 <th style="width: 110px;">Packaging</th>
+                @if($location == 'counter')
+                    <th style="width: 80px;">Received</th>
+                    <th style="width: 80px;">Sold</th>
+                @endif
                 <th style="width: 130px;">
                     Qty ({{ $location == 'warehouse' ? 'Pkgs' : 'Units' }})
                 </th>
@@ -148,7 +152,7 @@
             @foreach($categories as $categoryName => $items)
                 <tr class="category-row">
                     <td class="d-print-none"></td>
-                    <td colspan="6">
+                    <td colspan="{{ $location == 'counter' ? '8' : '6' }}">
                         {{ $categoryName }}
                     </td>
                 </tr>
@@ -161,6 +165,11 @@
                             $pkgs = $qty / $item['items_per_pkg'];
                         } else {
                             $pkgs = $qty;
+                        }
+                        
+                        $unitLabel = $item['unit'];
+                        if(in_array(strtolower($unitLabel), ['ml', 'l', 'tot', 'cl'])) {
+                            $unitLabel = 'Bottle';
                         }
                     @endphp
                     <tr class="audit-row">
@@ -175,6 +184,15 @@
                         </td>
                         <td><span class="uom-badge">{{ $item['measurement'] }}</span></td>
                         <td><span class="text-muted small">{{ $item['packaging'] }} ({{ $item['items_per_pkg'] }})</span></td>
+                        
+                        @if($location == 'counter')
+                            <td class="text-success font-weight-bold">
+                                {{ floatval($item['received_today']) > 0 ? floatval($item['received_today']) : '-' }}
+                            </td>
+                            <td class="text-danger font-weight-bold">
+                                {{ floatval($item['sold_today']) > 0 ? floatval($item['sold_today']) : '-' }}
+                            </td>
+                        @endif
                         
                         {{-- DISPLAY QTY BY LOCATION --}}
                         <td class="qty-bold">

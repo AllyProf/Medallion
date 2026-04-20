@@ -972,13 +972,28 @@ class CounterController extends Controller
         $openBottles = \App\Models\OpenBottle::where('user_id', $ownerId)
             ->get()
             ->groupBy('product_variant_id');
+            
+        $receivedToday = \App\Models\StockMovement::where('user_id', $ownerId)
+            ->whereDate('created_at', today())
+            ->where('to_location', 'counter')
+            ->selectRaw('product_variant_id, SUM(quantity) as total_received')
+            ->groupBy('product_variant_id')
+            ->pluck('total_received', 'product_variant_id');
+
+        $soldToday = \App\Models\StockMovement::where('user_id', $ownerId)
+            ->whereDate('created_at', today())
+            ->where('movement_type', 'sale')
+            ->where('from_location', 'counter')
+            ->selectRaw('product_variant_id, SUM(quantity) as total_sold')
+            ->groupBy('product_variant_id')
+            ->pluck('total_sold', 'product_variant_id');
 
         $stockData = ProductVariant::with(['product', 'stockLocations' => function ($q) use ($ownerId) {
             $q->where('user_id', $ownerId);
         }])
             ->whereHas('product', fn ($q) => $q->where('user_id', $ownerId))
             ->get()
-            ->map(function ($variant) use ($openBottles) {
+            ->map(function ($variant) use ($openBottles, $receivedToday, $soldToday) {
                 $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
 
@@ -986,6 +1001,9 @@ class CounterController extends Controller
                 $counterQty = $counterStock ? (float) $counterStock->quantity : 0;
                 $openTots = $openBottles->has($variant->id) ? $openBottles->get($variant->id)->sum('tots_remaining') : 0;
                 $totalQty = $warehouseQty + $counterQty;
+                
+                $received = $receivedToday->get($variant->id) ?? 0;
+                $sold = $soldToday->get($variant->id) ?? 0;
 
                 $itemsPerPkg = (int) ($variant->items_per_package ?? 1);
                 if ($itemsPerPkg <= 0) {
@@ -1015,6 +1033,8 @@ class CounterController extends Controller
                     'counter_qty' => $counterQty,
                     'open_tots' => $openTots,
                     'total_in_stock' => $totalQty,
+                    'received_today' => $received,
+                    'sold_today' => $sold,
                     'unit' => $variant->inventory_unit,
                     'buying_price' => $warehouseStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0,
                     'selling_price' => $counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0,
