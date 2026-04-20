@@ -112,7 +112,7 @@
                     $subTotal          = $cashCollected + $digitalCollected; 
                     $totalAssets       = $ledger->opening_cash + $subTotal;
                     
-                                    $margin = $subTotal > 0 ? ($ledger->profit_generated / $subTotal) : 0.35;
+                                    $margin = $ledger->expectedRevenue > 0 ? ($ledger->grossProfit / $ledger->expectedRevenue) : 0.35;
                                     $recoveryProfitPart = 0;
                                     if ($shortageCollected > 0) {
                                         $recoveryProfitPart = $shortageCollected * $margin;
