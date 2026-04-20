@@ -2039,6 +2039,19 @@ class CounterReconciliationController extends Controller
         $ownerId = $this->getOwnerId();
         $channel = $request->get('channel', 'cash');
 
+        // [LOGIC FIX] Detect Active Accounting Date
+        // If there is an open shift, we attribute research to THAT shift's date.
+        // This ensures if a shift runs overnight (e.g., started on Apr 19, now it's 2AM Apr 20),
+        // the money enters the drawer of the 19th.
+        $activeShift = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->orderBy('opened_at', 'desc')
+            ->first();
+        
+        $accountingDate = $activeShift 
+            ? $activeShift->opened_at->format('Y-m-d') 
+            : now()->format('Y-m-d');
+
         DB::beginTransaction();
         try {
             $amount = floatval($validated['amount']);
@@ -2082,7 +2095,7 @@ class CounterReconciliationController extends Controller
             // 2. Update Financial records (SKIP IF salary deduction)
             if ($channel !== 'salary_deduction') {
                 $ledger = DailyCashLedger::firstOrCreate(
-                    ['user_id' => $ownerId, 'ledger_date' => now()->toDateString()],
+                    ['user_id' => $ownerId, 'ledger_date' => $accountingDate],
                     ['status' => 'open']
                 );
 
@@ -2098,7 +2111,7 @@ class CounterReconciliationController extends Controller
 
                 // Financial Handover update
                 $handover = FinancialHandover::where('user_id', $ownerId)
-                    ->whereDate('handover_date', now()->toDateString())
+                    ->whereDate('handover_date', $accountingDate)
                     ->where('department', $reconciliation->reconciliation_type === 'food' ? 'food' : 'bar')
                     ->where('handover_type', 'staff_to_accountant')
                     ->first();
@@ -2106,7 +2119,7 @@ class CounterReconciliationController extends Controller
                 if (!$handover) {
                     $handover = FinancialHandover::create([
                         'user_id' => $ownerId,
-                        'handover_date' => now()->toDateString(),
+                        'handover_date' => $accountingDate,
                         'department' => $reconciliation->reconciliation_type === 'food' ? 'food' : 'bar',
                         'handover_type' => 'staff_to_accountant',
                         'amount' => $amount,

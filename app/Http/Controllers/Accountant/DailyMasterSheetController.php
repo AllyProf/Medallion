@@ -447,7 +447,7 @@ class DailyMasterSheetController extends Controller
             } elseif ($hasPendingHandover) {
                 $businessStatus = 'PENDING';
                 $statusColor = '#ffc107'; // Gold
-            } elseif (empty($dailyShiftIds) && ($handoverCash + $handoverDigital) <= 0) {
+            } elseif (empty($dailyShiftIds)) {
                 $businessStatus = 'NO ACTIVITY';
                 $statusColor = '#6c757d'; // Gray
             }
