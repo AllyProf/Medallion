@@ -84,7 +84,7 @@
                 <div class="col-md-9">
                     <label class="control-label font-weight-bold">Quick Filters (Categories & Brands)</label>
                     <div class="category-tabs-wrapper">
-                        <div class="d-flex align-items-center overflow-auto no-scrollbar py-1" id="categoryContainer">
+                        <div class="d-flex flex-wrap align-items-center py-1" id="categoryContainer">
                             <button class="btn btn-sm filter-pill active mr-1 mb-1" data-filter="all" data-filter-type="category">
                                 ALL CATEGORIES
                             </button>
@@ -96,7 +96,7 @@
                         </div>
                     </div>
                     <div class="brand-tabs-wrapper mt-2">
-                        <div class="d-flex align-items-center overflow-auto no-scrollbar py-1" id="brandContainer">
+                        <div class="d-flex flex-wrap align-items-center py-1" id="brandContainer">
                             @foreach($brands as $label)
                                 <button class="btn btn-sm filter-pill mr-1 mb-1" data-filter="{{ Str::slug($label) }}" data-filter-type="brand">
                                     {{ strtoupper($label) }}
