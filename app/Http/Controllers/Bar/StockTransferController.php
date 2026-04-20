@@ -159,7 +159,13 @@ class StockTransferController extends Controller
                     'variant_name' => $variant->name,
                     'display_title' => $cleanTitle, 
                     'brand' => $product->brand,
-                    'category' => ucwords(trim($product->category)),
+                    'category' => (function($c) {
+                        $c = ucwords(trim($c));
+                        if (in_array(strtolower($c), ['energy', 'energies', 'energy drink', 'energy drinks'])) {
+                            return 'Energizers';
+                        }
+                        return $c;
+                    })($product->category),
                     'description' => $product->description,
                     'image' => $product->image,
                     'measurement' => $variant->measurement,
