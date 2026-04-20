@@ -233,8 +233,6 @@
               ISSUE PETTY CASH
             </a>
           </div>
-        </div>
-        <div class="row">
           <div class="col-md-4 mb-3">
             <a href="{{ route('bar.counter.counter-stock') }}" class="btn btn-outline-primary btn-block p-3" style="border-color: #6c757d; color: #6c757d;">
               <i class="fa fa-glass fa-2x mb-2"></i><br>
@@ -253,8 +251,6 @@
               STOCK RECEIPTS
             </a>
           </div>
-        </div>
-        <div class="row">
           <div class="col-md-4 mb-3">
             <a href="{{ route('reports.stock-transfers') }}" class="btn btn-outline-secondary btn-block p-3">
               <i class="fa fa-truck fa-2x mb-2"></i><br>
