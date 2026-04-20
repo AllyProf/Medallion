@@ -973,15 +973,13 @@ class CounterController extends Controller
             ->get()
             ->groupBy('product_variant_id');
             
-        $receivedToday = \App\Models\StockMovement::where('user_id', $ownerId)
-            ->whereDate('created_at', today())
+        $receivedEver = \App\Models\StockMovement::where('user_id', $ownerId)
             ->where('to_location', 'counter')
             ->selectRaw('product_variant_id, SUM(quantity) as total_received')
             ->groupBy('product_variant_id')
             ->pluck('total_received', 'product_variant_id');
 
-        $soldToday = \App\Models\StockMovement::where('user_id', $ownerId)
-            ->whereDate('created_at', today())
+        $soldEver = \App\Models\StockMovement::where('user_id', $ownerId)
             ->where('movement_type', 'sale')
             ->where('from_location', 'counter')
             ->selectRaw('product_variant_id, SUM(quantity) as total_sold')
@@ -993,7 +991,7 @@ class CounterController extends Controller
         }])
             ->whereHas('product', fn ($q) => $q->where('user_id', $ownerId))
             ->get()
-            ->map(function ($variant) use ($openBottles, $receivedToday, $soldToday) {
+            ->map(function ($variant) use ($openBottles, $receivedEver, $soldEver) {
                 $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
 
@@ -1002,8 +1000,8 @@ class CounterController extends Controller
                 $openTots = $openBottles->has($variant->id) ? $openBottles->get($variant->id)->sum('tots_remaining') : 0;
                 $totalQty = $warehouseQty + $counterQty;
                 
-                $received = $receivedToday->get($variant->id) ?? 0;
-                $sold = $soldToday->get($variant->id) ?? 0;
+                $received = $receivedEver->get($variant->id) ?? 0;
+                $sold = $soldEver->get($variant->id) ?? 0;
 
                 $itemsPerPkg = (int) ($variant->items_per_package ?? 1);
                 if ($itemsPerPkg <= 0) {
