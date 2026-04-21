@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta name="description" content="MEDALLION - Point of Sale System for Business">
-    <title>@yield('title', 'Dashboard') - MEDALLION</title>
+    <meta name="description" content="MauzoLink - Point of Sale System for Business">
+    <title>@yield('title', 'Dashboard') - MauzoLink</title>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -123,7 +123,7 @@
     @endphp
     <!-- Navbar-->
     <header class="app-header">
-      <a class="app-header__logo" href="{{ $dashboardUrl }}">MEDALLION</a>
+      <a class="app-header__logo" href="{{ $dashboardUrl }}">MauzoLink</a>
       <!-- Sidebar toggle button-->
       <a class="app-sidebar__toggle" href="#" data-toggle="sidebar" aria-label="Hide Sidebar"></a>
       <!-- Navbar Right Menu-->
