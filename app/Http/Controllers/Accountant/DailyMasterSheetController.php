@@ -208,14 +208,17 @@ class DailyMasterSheetController extends Controller
             ->unique()
             ->toArray();
 
-        $totalDayShortage = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
+        $shortageRecs = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
             ->where(function($q) use ($dailyShiftIds, $dailyRecIds) {
                 $q->whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
                   ->orWhereIn('id', !empty($dailyRecIds) ? $dailyRecIds : [0]);
             })
             ->where('difference', '<', 0)
-            ->sum('difference');
-        $totalDayShortage = abs($totalDayShortage);
+            ->get(['expected_amount', 'submitted_amount']);
+        $totalDayShortage = $shortageRecs->sum(function($r) {
+            $real = (float)$r->submitted_amount - (float)$r->expected_amount;
+            return $real < 0 ? abs($real) : 0;
+        });
         $ledger->totalDayShortage = $totalDayShortage;
 
         $handoverCash = 0;
@@ -379,14 +382,17 @@ class DailyMasterSheetController extends Controller
                 ->unique()
                 ->toArray();
 
-            $totalDayShortage = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
+            $shortageRecs2 = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
                 ->where(function($q) use ($dailyShiftIds, $dailyRecIds) {
                     $q->whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
                       ->orWhereIn('id', !empty($dailyRecIds) ? $dailyRecIds : [0]);
                 })
                 ->where('difference', '<', 0)
-                ->sum('difference');
-            $totalDayShortage = abs($totalDayShortage);
+                ->get(['expected_amount', 'submitted_amount']);
+            $totalDayShortage = $shortageRecs2->sum(function($r) {
+                $real = (float)$r->submitted_amount - (float)$r->expected_amount;
+                return $real < 0 ? abs($real) : 0;
+            });
 
             $currentHandoversTotal = $handovers->whereIn('status', ['pending', 'verified'])->sum('amount');
             

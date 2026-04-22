@@ -156,16 +156,20 @@ class DailyCashLedger extends Model
                 });
             });
 
-        // [SHORTAGES] Total missing money from waiter handovers (Only include finalized reconciliations)
-        $totalDayShortage = \App\Models\WaiterDailyReconciliation::where('user_id', $this->user_id)
+        // [SHORTAGES] Recalculate dynamically using (submitted - expected) to avoid stale difference values
+        // from partial payments by counter/self-managed staff.
+        $shortageRecs = \App\Models\WaiterDailyReconciliation::where('user_id', $this->user_id)
             ->where(function($q) use ($dailyShiftIds, $dailyRecIds) {
                 $q->whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
                   ->orWhereIn('id', !empty($dailyRecIds) ? $dailyRecIds : [0]);
             })
-            ->whereIn('status', ['submitted', 'verified', 'settled', 'partial']) // Include partial shortages
-            ->where('difference', '<', 0)
-            ->sum('difference');
-        $totalDayShortage = abs($totalDayShortage);
+            ->whereIn('status', ['submitted', 'verified', 'settled', 'partial'])
+            ->get(['expected_amount', 'submitted_amount']);
+
+        $totalDayShortage = $shortageRecs->sum(function($r) {
+            $real = (float)$r->submitted_amount - (float)$r->expected_amount;
+            return $real < 0 ? abs($real) : 0;
+        });
 
         // 4. PROPORTIONAL PROFIT CALCULATION
         // Profit is the proportional share of the ACTUAL money collected (Net Collections)
