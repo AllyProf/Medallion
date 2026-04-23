@@ -269,7 +269,7 @@ function deleteStaff(staffId, staffName) {
       
       document.body.appendChild(form);
       form.submit();
-    });
+    }
   });
 }
 
