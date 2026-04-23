@@ -41,6 +41,10 @@ class AppServiceProvider extends ServiceProvider
 
                 $service = new Drive($client);
                 $root = $config['folderId'] ?? $config['root'] ?? '/';
+                
+                // Debugging: Log the root ID being used
+                \Illuminate\Support\Facades\Log::info("Google Drive Root ID: " . $root);
+
                 $adapter = new GoogleDriveAdapter($service, $root, $options);
                 $driver = new Filesystem($adapter);
 
