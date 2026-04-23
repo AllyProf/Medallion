@@ -40,12 +40,12 @@ class AppServiceProvider extends ServiceProvider
                 $client->refreshToken($config['refreshToken']);
 
                 $service = new Drive($client);
-                $root = $config['folderId'] ?? $config['root'] ?? '/';
+                $folderId = $config['folderId'] ?? $config['root'] ?? '/';
                 
-                // Debugging: Log the root ID being used
-                \Illuminate\Support\Facades\Log::info("Google Drive Root ID: " . $root);
+                // Debugging: Log the folder ID being used
+                \Illuminate\Support\Facades\Log::info("Attempting backup to Google Drive Folder ID: " . $folderId);
 
-                $adapter = new GoogleDriveAdapter($service, $root, $options);
+                $adapter = new GoogleDriveAdapter($service, $folderId, ['useHashes' => false]);
                 $driver = new Filesystem($adapter);
 
                 return new FilesystemAdapter($driver, $adapter);
