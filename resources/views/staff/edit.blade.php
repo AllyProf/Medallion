@@ -62,9 +62,23 @@
 <div class="row">
   <div class="col-md-12">
     <div class="tile shadow-sm">
+      @if($errors->any())
+        <div class="alert alert-danger alert-dismissible fade show">
+          <strong><i class="fa fa-exclamation-triangle"></i> Please fix the following errors:</strong>
+          <ul class="mb-0 mt-2">
+            @foreach($errors->all() as $error)
+              <li>{{ $error }}</li>
+            @endforeach
+          </ul>
+          <button type="button" class="close" data-dismiss="alert">&times;</button>
+        </div>
+      @endif
+
       <form action="{{ route('staff.update', $staff->id) }}" method="POST" enctype="multipart/form-data">
         @csrf
         @method('PUT')
+        
+        <input type="hidden" name="business_type_id" value="{{ $staff->business_type_id ?? 2 }}">
         
         <!-- Section 1: Personal Information -->
         <h5 class="section-title"><i class="fa fa-user-circle mr-2"></i> Personal Information</h5>
