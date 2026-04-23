@@ -21,6 +21,10 @@ Route::get('/api/search', [NotificationController::class, 'search'])->name('glob
 Route::post('/api/notifications/clear', [NotificationController::class, 'clearAll'])->name('notifications.clear');
 Route::get('/ping', function() { return response()->json(['status' => 'ok']); })->name('ping');
 
+Route::get('/test-backup', function() {
+    return Storage::disk('google')->allFiles('/');
+});
+
 // Profile management
 Route::get('/profile', [\App\Http\Controllers\ProfileController::class, 'index'])->name('profile.index');
 Route::post('/profile/update', [\App\Http\Controllers\ProfileController::class, 'update'])->name('profile.update');
