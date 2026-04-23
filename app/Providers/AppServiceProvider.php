@@ -40,12 +40,9 @@ class AppServiceProvider extends ServiceProvider
                 $client->refreshToken($config['refreshToken']);
 
                 $service = new Drive($client);
-                $folderId = $config['folderId'] ?? $config['root'] ?? '/';
                 
-                // Debugging: Log the folder ID being used
-                \Illuminate\Support\Facades\Log::info("Attempting backup to Google Drive Folder ID: " . $folderId);
-
-                $adapter = new GoogleDriveAdapter($service, $folderId, ['useHashes' => true]);
+                // Use root '/' and let the backup name 'Medallion' handle the subfolder
+                $adapter = new GoogleDriveAdapter($service, '/', ['useHashes' => false]);
                 $driver = new Filesystem($adapter);
 
                 return new FilesystemAdapter($driver, $adapter);
