@@ -57,3 +57,35 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+## Automated Backups to Google Drive
+
+This project is configured to automatically back up the database to Google Drive every day at 1:00 AM.
+
+### 1. Prerequisite (XAMPP/Local)
+Ensure the `zip` extension is enabled in your `php.ini` file. (Look for `extension=zip`).
+
+### 2. Configure Environment Variables
+Add the following to your `.env` file and provide the values from your Google Cloud Console:
+```env
+# Backup & Google Drive Configuration
+BACKUP_DISK=google
+GOOGLE_DRIVE_CLIENT_ID=your_client_id
+GOOGLE_DRIVE_CLIENT_SECRET=your_client_secret
+GOOGLE_DRIVE_REFRESH_TOKEN=your_refresh_token
+GOOGLE_DRIVE_FOLDER_ID=your_folder_id
+DUMP_BINARY_PATH="C:\xampp\mysql\bin"  # On cPanel usually "/usr/bin"
+```
+
+### 3. Run Your First Backup Manually
+To verify everything is working, run:
+```bash
+php artisan backup:run --only-db
+```
+
+### 4. Setup Cron Job (cPanel)
+To ensure the automated schedule runs, add a Cron Job in your cPanel with the following command (running every minute):
+```bash
+/usr/local/bin/php /home/username/path-to-your-project/artisan schedule:run >> /dev/null 2>&1
+```
+*(Replace `/home/username/path-to-your-project/` with your actual project path on the server).*

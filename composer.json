@@ -11,7 +11,9 @@
         "coding-libs/zkteco-php": "0.0.34",
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
+        "masbug/flysystem-google-drive-ext": "*",
         "simplesoftwareio/simple-qrcode": "^4.2",
+        "spatie/laravel-backup": "*",
         "spatie/laravel-permission": "^6.23"
     },
     "require-dev": {
