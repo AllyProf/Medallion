@@ -192,6 +192,14 @@
                       <a href="{{ route('staff.edit', $member->id) }}" class="btn btn-sm btn-outline-primary" title="Edit">
                         <i class="fa fa-edit"></i>
                       </a>
+                      <form action="{{ route('staff.toggle-status', $member->id) }}" method="POST" id="toggle-status-{{ $member->id }}" class="d-inline">
+                        @csrf
+                        <button type="button" class="btn btn-sm {{ $member->is_active ? 'btn-outline-warning' : 'btn-outline-success' }}" 
+                                title="{{ $member->is_active ? 'Deactivate' : 'Activate' }}"
+                                onclick="toggleStaffStatus({{ $member->id }}, '{{ $member->full_name }}', {{ $member->is_active ? 'true' : 'false' }})">
+                          <i class="fa {{ $member->is_active ? 'fa-ban' : 'fa-check' }}"></i>
+                        </button>
+                      </form>
                       <button type="button" class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteStaff({{ $member->id }}, '{{ $member->full_name }}')">
                         <i class="fa fa-trash"></i>
                       </button>
@@ -261,6 +269,27 @@ function deleteStaff(staffId, staffName) {
       
       document.body.appendChild(form);
       form.submit();
+    });
+  });
+}
+
+function toggleStaffStatus(staffId, staffName, isActive) {
+  const action = isActive ? 'Deactivate' : 'Activate';
+  const actionText = isActive ? 'deactivating' : 'activating';
+  const color = isActive ? '#ffc107' : '#28a745';
+
+  Swal.fire({
+    title: `${action} Staff Account?`,
+    html: `Are you sure you want to ${actionText} <strong>${staffName}</strong>'s account?`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: color,
+    cancelButtonColor: '#3085d6',
+    confirmButtonText: `Yes, ${action} it!`,
+    cancelButtonText: 'Cancel'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      document.getElementById(`toggle-status-${staffId}`).submit();
     }
   });
 }

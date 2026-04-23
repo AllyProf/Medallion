@@ -768,4 +768,28 @@ class StaffController extends Controller
         return redirect()->route('staff.index')
             ->with('success', "Success! Generated secondary Kiosk PINs for {$count} staff members. They can now use the Attendance Kiosk.");
     }
+
+    /**
+     * Toggle staff active status
+     */
+    public function toggleStatus($id)
+    {
+        $user = $this->getCurrentUser();
+        if (!$user || !$this->hasPermission('staff', 'edit')) {
+            return redirect()->back()->with('error', 'You do not have permission to perform this action.');
+        }
+
+        $ownerId = $this->getOwnerId();
+        $staffQuery = Staff::where('user_id', $ownerId);
+        if ($this->isSuperAdminRole()) {
+            $staffQuery = Staff::query();
+        }
+        $staff = $staffQuery->findOrFail($id);
+
+        $staff->is_active = !$staff->is_active;
+        $staff->save();
+
+        $status = $staff->is_active ? 'activated' : 'deactivated';
+        return redirect()->back()->with('success', "Staff member {$status} successfully!");
+    }
 }

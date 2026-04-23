@@ -21,10 +21,6 @@ Route::get('/api/search', [NotificationController::class, 'search'])->name('glob
 Route::post('/api/notifications/clear', [NotificationController::class, 'clearAll'])->name('notifications.clear');
 Route::get('/ping', function() { return response()->json(['status' => 'ok']); })->name('ping');
 
-Route::get('/test-backup', function() {
-    return Storage::disk('google')->allFiles('/');
-});
-
 // Profile management
 Route::get('/profile', [\App\Http\Controllers\ProfileController::class, 'index'])->name('profile.index');
 Route::post('/profile/update', [\App\Http\Controllers\ProfileController::class, 'update'])->name('profile.update');
@@ -181,6 +177,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('/staff/{staff}/edit', [\App\Http\Controllers\StaffController::class, 'edit'])->name('staff.edit');
         Route::put('/staff/{staff}', [\App\Http\Controllers\StaffController::class, 'update'])->name('staff.update');
         Route::delete('/staff/{staff}', [\App\Http\Controllers\StaffController::class, 'destroy'])->name('staff.destroy');
+        Route::post('/staff/{staff}/toggle-status', [\App\Http\Controllers\StaffController::class, 'toggleStatus'])->name('staff.toggle-status');
         Route::post('/staff/bulk/generate-pins', [\App\Http\Controllers\StaffController::class, 'generateMissingPins'])->name('staff.generate-missing-pins');
     });
 
