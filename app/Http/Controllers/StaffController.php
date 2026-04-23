@@ -790,6 +790,21 @@ class StaffController extends Controller
         $staff->save();
 
         $status = $staff->is_active ? 'activated' : 'deactivated';
-        return redirect()->back()->with('success', "Staff member {$status} successfully!");
+        
+        // Send SMS notification
+        $message = "Hello {$staff->full_name}, your account on MEDALLION RESTAURANT has been {$status} by the administrator.";
+        if ($staff->is_active) {
+            $message .= " You can now log in to your account.";
+        } else {
+            $message .= " Please contact your manager if you think this is a mistake.";
+        }
+        
+        try {
+            $this->smsService->sendSms($staff->phone_number, $message);
+        } catch (\Exception $e) {
+            \Log::error("Failed to send status toggle SMS to staff {$staff->id}: " . $e->getMessage());
+        }
+
+        return redirect()->back()->with('success', "Staff member {$status} successfully and notified via SMS!");
     }
 }
