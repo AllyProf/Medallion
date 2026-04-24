@@ -185,8 +185,21 @@ class LiveSalesController extends Controller
         });
 
         $openingCash = (float)($ledger->opening_cash ?? 0);
-        $expensesToday = (float)($ledger->total_expenses ?? 0);
-        $moneyInCirculation = $totalRevenue - $shiftProfit - $expensesToday;
+        
+        // Contextual Expenses (Only for the active shift time frame)
+        $expensesShift = 0;
+        if ($activeShift) {
+            $expensesShift = (float) \App\Models\DailyExpense::where('user_id', $ownerId)
+                ->where('created_at', '>=', $activeShift->opened_at)
+                ->when($activeShift->closed_at, function ($query) use ($activeShift) {
+                    return $query->where('created_at', '<=', $activeShift->closed_at);
+                })
+                ->sum('amount');
+        } else {
+            $expensesShift = (float)($ledger->total_expenses ?? 0);
+        }
+
+        $moneyInCirculation = $totalRevenue - $shiftProfit - $expensesShift;
 
         // 8. Category Mix (Drinks vs Food)
         $barRevenueShift = OrderItem::whereHas('order', function($q) use ($ownerId, $applyContext) {
