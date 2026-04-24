@@ -1472,7 +1472,7 @@ $(document).ready(function() {
       method: 'GET',
       data: { 
         date: date,
-        bar_shift_id: '{{ $bar_shift ? $bar_shift->id : ($todayHandover ? $todayHandover->bar_shift_id : "") }}'
+        target_shift_ids: @json($targetShiftIds ?? [])
       },
       success: function(response) {
         if (response.success && response.orders.length > 0) {
@@ -1497,8 +1497,17 @@ $(document).ready(function() {
             }
             
             html += '<tr>';
+            const orderDate = new Date(order.created_at);
+            const dateString = orderDate.toLocaleDateString();
+            const timeString = orderDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            const isDifferentDate = dateString !== new Date(date).toLocaleDateString();
+            
             html += '<td><strong>' + order.order_number + '</strong></td>';
-            html += '<td>' + new Date(order.created_at).toLocaleTimeString() + '</td>';
+            html += '<td>';
+            if (isDifferentDate) {
+              html += '<span class="badge badge-warning mb-1" style="font-size: 0.6rem;">' + dateString + '</span><br>';
+            }
+            html += timeString + '</td>';
             html += '<td>';
             if (order.order_source) {
               const source = order.order_source.toLowerCase();

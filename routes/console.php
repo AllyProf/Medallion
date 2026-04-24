@@ -15,16 +15,19 @@ Schedule::command('attendance:sync-biometric')
     ->runInBackground()
     ->appendOutputTo(storage_path('logs/attendance-sync.log'));
 
-// Daily Database Backup to Google Drive at 1:00 AM
-Schedule::command('backup:run --only-db')
-    ->dailyAt('01:00')
-    ->withoutOverlapping()
-    ->onOneServer()
-    ->appendOutputTo(storage_path('logs/backup.log'));
+// Backup schedules - Only run on Production (Live Server)
+if (app()->isProduction()) {
+    // Daily Database Backup to Google Drive at 1:00 AM
+    Schedule::command('backup:run --only-db')
+        ->dailyAt('01:00')
+        ->withoutOverlapping()
+        ->onOneServer()
+        ->appendOutputTo(storage_path('logs/backup.log'));
 
-// Cleanup old backups at 1:30 AM
-Schedule::command('backup:clean')
-    ->dailyAt('01:30')
-    ->withoutOverlapping()
-    ->onOneServer()
-    ->appendOutputTo(storage_path('logs/backup-cleanup.log'));
+    // Cleanup old backups at 1:30 AM
+    Schedule::command('backup:clean')
+        ->dailyAt('01:30')
+        ->withoutOverlapping()
+        ->onOneServer()
+        ->appendOutputTo(storage_path('logs/backup-cleanup.log'));
+}

@@ -794,6 +794,11 @@ class CounterController extends Controller
             return abort(403);
         }
 
+        // [PROTECTION] Check if an open shift already exists to prevent duplication
+        if ($this->getCurrentShift()) {
+            return redirect()->route('bar.counter.dashboard')->with('warning', 'You already have an active shift.');
+        }
+
         $ownerId = $this->getOwnerId();
 
         // All fields are now automated or optional

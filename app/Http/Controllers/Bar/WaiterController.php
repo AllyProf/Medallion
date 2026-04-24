@@ -181,7 +181,11 @@ class WaiterController extends Controller
             ->limit(20)
             ->get();
 
-        return view('bar.waiter.dashboard', compact('variants', 'foodItems', 'recentOrders', 'staff', 'tables', 'completedOrders'));
+        $isShiftOpen = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->exists();
+
+        return view('bar.waiter.dashboard', compact('variants', 'foodItems', 'recentOrders', 'staff', 'tables', 'completedOrders', 'isShiftOpen'));
     }
 
     /**
@@ -220,6 +224,18 @@ class WaiterController extends Controller
             if (! $staff || ! $staff->is_active) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
+        }
+
+        // [PROTECTION] Check if an open shift exists for this business
+        $activeShift = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->exists();
+
+        if (!$activeShift) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Ordering is currently disabled because the counter shift is closed. Please ask the counter to open a shift.'
+            ], 403);
         }
 
         // Log raw request data for debugging
@@ -988,7 +1004,12 @@ class WaiterController extends Controller
             })
             ->get(['id', 'full_name', 'staff_id']);
 
-        return view('bar.waiter.kiosk', compact('variants', 'waiters', 'tables', 'foodItems', 'kitchenReadyCount', 'ownerId'));
+        // [PROTECTION] Check if an open shift exists for this business
+        $isShiftOpen = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->exists();
+
+        return view('bar.waiter.kiosk', compact('variants', 'waiters', 'tables', 'foodItems', 'kitchenReadyCount', 'ownerId', 'isShiftOpen'));
     }
 
     /**
@@ -1027,7 +1048,12 @@ class WaiterController extends Controller
             return response()->json(['error' => 'No business ID found'], 400);
         }
 
-        return response()->json($this->getKioskData($ownerId));
+        $data = $this->getKioskData($ownerId);
+        $data['isShiftOpen'] = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->exists();
+
+        return response()->json($data);
     }
 
     /**
@@ -1400,11 +1426,23 @@ class WaiterController extends Controller
             }
         }
 
-        if (! $staff) {
-            return response()->json(['error' => 'Authentication required. Please enter your PIN again.'], 401);
+        if (!$staff) {
+            return response()->json(['error' => 'Unauthorized'], 401);
         }
 
         $ownerId = $staff->user_id;
+
+        // [PROTECTION] Check if an open shift exists for this business
+        $activeShift = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->exists();
+
+        if (!$activeShift) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Adding items is currently disabled because the counter shift is closed.'
+            ], 403);
+        }
 
         // Verify business ownership
         if ($order->user_id != $ownerId) {

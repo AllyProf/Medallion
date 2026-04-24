@@ -430,6 +430,111 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 <!-- Toast CSS (SweetAlert handles toasts automatically, but we can style if needed. SweetAlert2 is loaded in dashboard layout.) -->
 
 <div class="pos-wrapper">
+    @if(!($isShiftOpen ?? true))
+    <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: url('/kiosk_closed.png') no-repeat center center; background-size: cover; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; text-align: center; padding: 20px;">
+        <!-- Dark Overlay for readability -->
+        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.75); z-index: 0;"></div>
+        
+        <div style="position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+            <!-- Live Clock -->
+            <div id="kiosk-live-clock" style="font-size: 3rem; font-weight: 800; color: #ffb822; margin-bottom: 20px; font-family: 'Courier New', Courier, monospace; letter-spacing: 5px; text-shadow: 0 0 15px rgba(255, 184, 34, 0.5);">00:00:00</div>
+            
+            <div style="margin-bottom: 20px; animation: pulse-lock 2s infinite;">
+                <i class="fa fa-lock fa-4x text-warning"></i>
+            </div>
+            
+            <div class="typewriter-container">
+                <h1 class="typewriter-text" style="font-size: 3.5rem; color: #ffb822; font-weight: 800; margin-bottom: 15px; letter-spacing: 2px;">COUNTER CLOSED</h1>
+            </div>
+            
+            <p style="font-size: 1.4rem; max-width: 700px; color: #ececec; line-height: 1.6; animation: fade-in-up 1.5s ease-out forwards; opacity: 0;">
+                Waiters cannot place orders because the counter shift is currently closed. <br>
+                Please ask the counter staff to start their shift.
+            </p>
+            
+            <div class="d-flex align-items-center mt-5" style="gap: 20px;">
+                <button class="btn btn-lg px-5 font-weight-bold" style="background: var(--accent-green); color: white; border-radius: 50px; box-shadow: 0 10px 20px rgba(40,167,69,0.3); transition: all 0.3s; animation: fade-in-up 2s ease-out forwards; opacity: 0;" onclick="window.location.reload()">
+                    <i class="fa fa-refresh mr-2"></i> RECHECK STATUS
+                </button>
+                
+                <button class="btn btn-lg px-5 font-weight-bold" style="background: #dc3545; color: white; border-radius: 50px; box-shadow: 0 10px 20px rgba(220,53,69,0.3); transition: all 0.3s; animation: fade-in-up 2.2s ease-out forwards; opacity: 0;" onclick="$('#attendanceModal').modal('show')">
+                    <i class="fa fa-clock-o mr-2"></i> STAFF SIGN IN/OUT
+                </button>
+            </div>
+        </div>
+
+        <div style="position: absolute; bottom: 40px; font-size: 0.85rem; color: #940000; letter-spacing: 3px; font-weight: 700; animation: fade-in 3s forwards; z-index: 1;">
+            POWERED BY EMCA TECHONOLOGIES LTD
+        </div>
+    </div>
+
+    <style>
+    /* Ensure Attendance Modal is above the Lock Overlay */
+    #attendanceModal {
+        z-index: 10001 !important;
+    }
+    .modal-backdrop {
+        z-index: 10000 !important;
+    }
+
+    .typewriter-container {
+        display: inline-block;
+    }
+    
+    .typewriter-text {
+        overflow: hidden;
+        border-right: .15em solid #ffb822;
+        white-space: nowrap;
+        margin: 0 auto;
+        width: 0; /* Initial state for infinite loop */
+        animation: 
+            typing 4s steps(20, end) infinite,
+            blink-caret .75s step-end infinite;
+    }
+
+    @keyframes typing {
+        0% { width: 0 }
+        50% { width: 100% }
+        90% { width: 100% }
+        100% { width: 0 }
+    }
+
+    @keyframes blink-caret {
+        from, to { border-color: transparent }
+        50% { border-color: #ffb822; }
+    }
+
+    @keyframes pulse-lock {
+        0% { transform: scale(1); filter: drop-shadow(0 0 0px rgba(255, 184, 34, 0)); }
+        50% { transform: scale(1.05); filter: drop-shadow(0 0 15px rgba(255, 184, 34, 0.4)); }
+        100% { transform: scale(1); filter: drop-shadow(0 0 0px rgba(255, 184, 34, 0)); }
+    }
+
+    @keyframes fade-in-up {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @keyframes screensaver-blink {
+        0% { opacity: 0.2; transform: translateX(-50%) scale(0.95); }
+        50% { opacity: 1; transform: translateX(-50%) scale(1); }
+        100% { opacity: 0.2; transform: translateX(-50%) scale(0.95); }
+    }
+    </style>
+    @endif
+
+    <!-- Kiosk Screensaver Overlay -->
+    <div id="kiosk-screensaver" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: url('/kiosk_screensaver.png') no-repeat center center; background-size: cover; z-index: 10005; display: none; cursor: pointer;">
+        <div style="position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.8); font-size: 1.5rem; text-transform: uppercase; letter-spacing: 5px; font-weight: 700; text-shadow: 0 2px 10px rgba(0,0,0,0.5); animation: screensaver-blink 2s linear infinite;">
+            Touch Screen To Start
+        </div>
+    </div>
+
     <input type="hidden" id="kiosk-owner-id" value="{{ $ownerId ?? '' }}">
     <!-- Top Bar -->
     <div class="pos-topbar">
@@ -1670,6 +1775,12 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             data: { user_id: ownerId, _token: '{{ csrf_token() }}' },
             success: function(res) {
                 if (res.success) {
+                    // [PROTECTION] If shift was closed while Kiosk was open, reload to show overlay
+                    if (res.isShiftOpen === false) {
+                        window.location.reload();
+                        return;
+                    }
+
                     renderProductGrid(res.variants, res.foodItems);
                     
                     // Update kitchen badge
@@ -2596,6 +2707,47 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             window.speechSynthesis.speak(utter);
         } catch(e) { console.error("Speech error", e); }
     }
+    function updateKioskClock() {
+        const now = new Date();
+        const h = String(now.getHours()).padStart(2, '0');
+        const m = String(now.getMinutes()).padStart(2, '0');
+        const s = String(now.getSeconds()).padStart(2, '0');
+        $('#kiosk-live-clock').text(`${h}:${m}:${s}`);
+    }
+    setInterval(updateKioskClock, 1000);
+    updateKioskClock();
+
+    // --- KIOSK SCREENSAVER LOGIC ---
+    let idleTime = 0;
+    const idleLimit = 60; // 60 seconds of inactivity
+
+    function resetIdleTimer() {
+        // If screensaver is visible, we don't reset idleTime here 
+        // We let the specific screensaver click handler handle the dismissal
+        if ($('#kiosk-screensaver').is(':visible')) return;
+        idleTime = 0;
+    }
+
+    // Monitor active user interactions to reset timer (Click, Touch, Keypress)
+    $(document).on('click touchstart keypress', resetIdleTimer);
+
+    // Dismiss screensaver ONLY on click/touch of the screensaver itself
+    $('#kiosk-screensaver').on('click touchstart', function() {
+        $(this).stop(true, true).fadeOut(500);
+        idleTime = 0;
+    });
+
+    // Increment timer every second
+    setInterval(function() {
+        // Only increment if screensaver is not already visible
+        if (!$('#kiosk-screensaver').is(':visible')) {
+            idleTime++;
+            if (idleTime >= idleLimit) {
+                $('#kiosk-screensaver').stop(true, true).fadeIn(800);
+            }
+        }
+    }, 1000);
+
     $(document).ready(function() {
         $('#form-waiter-pin').val('');
         $('#form-waiter-name-display').text('');

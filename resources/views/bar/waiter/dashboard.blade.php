@@ -252,6 +252,29 @@
 
 <div class="row">
   <div class="col-md-12">
+    @if(!($isShiftOpen ?? true))
+      <div class="alert alert-danger shadow-sm border-0 mb-4" style="border-radius: 12px; background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); color: white;">
+        <div class="d-flex align-items-center p-2">
+          <div class="mr-3">
+            <i class="fa fa-lock fa-3x"></i>
+          </div>
+          <div>
+            <h4 class="alert-heading mb-1 font-weight-bold">Counter Shift Closed</h4>
+            <p class="mb-0" style="font-size: 1.1rem; opacity: 0.9;">Ordering is currently disabled. Please ask the counter staff to start their shift before you can place any orders.</p>
+          </div>
+          <div class="ml-auto">
+            <button class="btn btn-light btn-sm font-weight-bold px-3" onclick="window.location.reload()" style="border-radius: 8px; color: #dc3545;">
+              <i class="fa fa-refresh mr-1"></i> Refresh
+            </button>
+          </div>
+        </div>
+      </div>
+    @endif
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-12">
     <div class="tile">
       <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
         <h3 class="tile-title mb-2 mb-md-0">
@@ -504,7 +527,7 @@
                       <h5 class="mb-0">Total:</h5>
                       <h4 class="mb-0 text-success" id="total-amount">TSh 0.00</h4>
                     </div>
-                    <button class="btn btn-success btn-lg btn-block" id="place-order-btn" disabled>
+                    <button class="btn btn-success btn-lg btn-block" id="place-order-btn" {{ !($isShiftOpen ?? true) ? 'disabled' : '' }}>
                       <i class="fa fa-check"></i> Place Order
                     </button>
                   </div>

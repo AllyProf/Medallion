@@ -138,7 +138,7 @@
 
             <!-- Start Shift Footer -->
             <div class="tile-footer border-top mt-4 pt-4">
-                <form action="{{ route('bar.shifts.store') }}" method="POST">
+                <form action="{{ route('bar.shifts.store') }}" method="POST" id="start-shift-form">
                     @csrf
                     <div class="row align-items-center">
                         <div class="col-md-9">
@@ -146,7 +146,7 @@
                                    placeholder="Add any notes here...">
                         </div>
                         <div class="col-md-3">
-                            <button class="btn btn-primary btn-block btn-lg shadow py-3 font-weight-bold" type="submit">
+                            <button class="btn btn-primary btn-block btn-lg shadow py-3 font-weight-bold" type="submit" id="start-shift-btn">
                                 <i class="fa fa-play mr-2"></i> START SESSION
                             </button>
                         </div>
@@ -191,6 +191,14 @@ $(document).ready(function() {
     // Verification - Cards
     $('.stock-card').on('click', function() {
         $(this).toggleClass('verified');
+    });
+
+    // Prevent Double Submission
+    $('#start-shift-form').on('submit', function() {
+        var btn = $('#start-shift-btn');
+        btn.prop('disabled', true);
+        btn.html('<i class="fa fa-spinner fa-spin mr-2"></i> STARTING...');
+        return true;
     });
 });
 </script>
