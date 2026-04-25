@@ -17,16 +17,27 @@ Schedule::command('attendance:sync-biometric')
 
 // Backup schedules - Only run on Production (Live Server)
 if (app()->isProduction()) {
-    // Daily Database Backup to Google Drive at 1:00 AM
+    // Daily Database Backup at 20:30 (Saa 2:30 usiku) with SMS Notification
     Schedule::command('backup:run --only-db')
-        ->dailyAt('01:00')
+        ->dailyAt('20:30')
         ->withoutOverlapping()
         ->onOneServer()
-        ->appendOutputTo(storage_path('logs/backup.log'));
+        ->appendOutputTo(storage_path('logs/backup.log'))
+        ->onSuccess(function () {
+            $smsService = new \App\Services\SmsService();
+            $date = \Carbon\Carbon::now()->timezone('Africa/Dar_es_Salaam')->format('d-M-Y H:i');
+            $message = "MEDALLION SYSTEM: Database Backup imekamilika kikamilifu kwa leo ($date). Data ziko salama.";
+            $smsService->sendSms('0616775800', $message);
+        })
+        ->onFailure(function () {
+            $smsService = new \App\Services\SmsService();
+            $message = "MEDALLION ALERT: Database Backup imeshindwa (FAILED) kufanyika. Tafadhali ingia kwenye mfumo kuangalia tatizo haraka.";
+            $smsService->sendSms('0616775800', $message);
+        });
 
-    // Cleanup old backups at 1:30 AM
+    // Cleanup old backups at 21:00 (Saa 3:00 usiku)
     Schedule::command('backup:clean')
-        ->dailyAt('01:30')
+        ->dailyAt('21:00')
         ->withoutOverlapping()
         ->onOneServer()
         ->appendOutputTo(storage_path('logs/backup-cleanup.log'));
