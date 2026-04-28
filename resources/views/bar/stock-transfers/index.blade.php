@@ -167,8 +167,15 @@
                              if ($staff && $staff->role) {
                                $roleName = strtolower(trim($staff->role->name ?? ''));
                                $canEdit = $staff->role->hasPermission('stock_transfer', 'edit');
-                               if (!$canEdit) {
-                                 if (in_array($roleName, ['stock keeper', 'stockkeeper', 'counter', 'bar counter', 'accountant', 'manager'])) $canEdit = true;
+                               
+                               // [STRICT] Explicitly hide from Counter and Waiters regardless of permissions
+                               if (in_array($roleName, ['counter', 'bar counter', 'waiter', 'waitress', 'waiter/waitress'])) {
+                                   $canEdit = false;
+                               } elseif (!$canEdit) {
+                                   // Fallback for administrative roles that might not have explicit permission set
+                                   if (in_array($roleName, ['stock keeper', 'stockkeeper', 'accountant', 'manager'])) {
+                                       $canEdit = true;
+                                   }
                                }
                              }
                           } else {
@@ -258,6 +265,7 @@
           "paging": false,
           "info": false,
           "searching": true,
+          "order": []
         });
         console.log('DataTable initialized');
       } catch(e) {

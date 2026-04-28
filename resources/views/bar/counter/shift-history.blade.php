@@ -91,7 +91,7 @@
                                     </td>
                                     <td class="text-center">
                                         @if($shift->status === 'closed')
-                                            <a href="{{ route('bar.counter.shift-report', ['shift' => $shift->id]) }}" class="btn btn-sm btn-dark shadow-sm" title="View Shift Report">
+                                            <a href="{{ route('bar.counter.reconciliation', ['shift_id' => $shift->id]) }}" class="btn btn-sm btn-dark shadow-sm" title="View Shift Report">
                                                 <i class="fa fa-file-text-o mr-1"></i> VIEW REPORT
                                             </a>
                                         @else

@@ -28,10 +28,14 @@
               $staff = \App\Models\Staff::find(session('staff_id'));
               if ($staff && $staff->role) {
                 $canApprove = $staff->role->hasPermission('stock_transfer', 'edit');
-                // Allow stock keeper role even without explicit permission
-                if (!$canApprove) {
-                  $roleName = strtolower(trim($staff->role->name ?? ''));
-                  if (in_array($roleName, ['stock keeper', 'stockkeeper'])) {
+                $roleName = strtolower(trim($staff->role->name ?? ''));
+                
+                // [STRICT] Explicitly hide from Counter and Waiters regardless of permissions
+                if (in_array($roleName, ['counter', 'bar counter', 'waiter', 'waitress', 'waiter/waitress'])) {
+                  $canApprove = false;
+                } elseif (!$canApprove) {
+                  // Fallback for administrative roles
+                  if (in_array($roleName, ['stock keeper', 'stockkeeper', 'accountant', 'manager'])) {
                     $canApprove = true;
                   }
                 }

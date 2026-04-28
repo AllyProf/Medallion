@@ -169,10 +169,22 @@
         <button type="button" class="close text-white" data-dismiss="modal">&times;</button>
       </div>
       <div class="modal-body p-4">
-        <div class="bg-light p-3 rounded mb-4 text-center border">
-          <small class="text-muted d-block text-uppercase font-weight-bold">Total Amount Due</small>
-          <h2 class="mb-0 text-dark font-weight-bold" id="checkout-total-display">TSh 0</h2>
+        <div class="bg-light p-3 rounded mb-3 text-center border">
+          <small class="text-muted d-block text-uppercase font-weight-bold">Remaining Balance</small>
+          <h2 class="mb-0 text-primary font-weight-bold" id="checkout-total-display">TSh 0</h2>
           <input type="hidden" id="checkout-order-id" value="">
+          <input type="hidden" id="checkout-original-total" value="0">
+        </div>
+
+        <div class="form-group mb-4">
+          <label class="font-weight-bold text-success"><i class="fa fa-money"></i> Amount to Pay Now</label>
+          <div class="input-group input-group-lg">
+            <div class="input-group-prepend">
+              <span class="input-group-text bg-success text-white font-weight-bold">TSh</span>
+            </div>
+            <input type="number" id="payment-amount-input" class="form-control font-weight-bold" placeholder="0.00" step="100">
+          </div>
+          <small class="text-muted mt-1 d-block">You can enter a partial amount for split payments.</small>
         </div>
 
         <div class="form-group">
@@ -425,7 +437,19 @@ $(document).ready(function() {
 
                 // Payment Info
                 let paymentHtml = '';
-                if (order.payment_status === 'paid' || order.payment_method) {
+                if (order.payments && order.payments.length > 0) {
+                    paymentHtml = '<div class="mt-2 pt-2 border-top"><p class="mb-1 font-weight-bold small">Payment History:</p>';
+                    order.payments.forEach(p => {
+                        let method = p.method ? p.method.replace('_', ' ').toUpperCase() : 'PAID';
+                        let provider = p.provider ? ` (${p.provider})` : '';
+                        let ref = p.reference ? ` [Ref: ${p.reference}]` : '';
+                        paymentHtml += `<p class="mb-0 text-success small" style="line-height: 1.2;">
+                            <i class="fa fa-check-circle"></i> ${method}${provider}${ref}: 
+                            <strong>TSh ${parseInt(p.amount).toLocaleString()}</strong>
+                        </p>`;
+                    });
+                    paymentHtml += '</div>';
+                } else if (order.payment_status === 'paid' || order.payment_method) {
                     let methodLabel = order.payment_method ? order.payment_method.replace('_', ' ').toUpperCase() : 'PAID';
                     let provider = order.mobile_money_number ? ` - ${order.mobile_money_number}` : '';
                     let reference = order.transaction_reference ? ` (Ref: ${order.transaction_reference})` : '';
@@ -437,7 +461,7 @@ $(document).ready(function() {
                     <div class="row mb-3">
                         <div class="col-6">
                             <h4 class="text-primary">#${order.order_number}</h4>
-                            <p class="mb-1"><strong>Waiter:</strong> ${order.waiter ? order.waiter.full_name : 'N/A'}</p>
+                            <p class="mb-1"><strong>Waiter:</strong> ${order.waiter_name || 'N/A'}</p>
                             <p class="mb-1"><strong>Table:</strong> ${order.table ? 'Table ' + order.table.table_number : 'Walk-in'}</p>
                             ${paymentHtml}
                         </div>
@@ -464,33 +488,69 @@ $(document).ready(function() {
         const status = $(this).data('status');
         const action = status === 'served' ? 'Mark Served' : 'Cancel';
         
-        Swal.fire({
-            title: action + ' Order?',
-            text: `Are you sure you want to ${status} this order?`,
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'Yes, proceed'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                $.ajax({
-                    url: '{{ route("bar.counter.update-order-status", ":id") }}'.replace(':id', orderId),
-                    method: 'POST',
-                    data: { _token: '{{ csrf_token() }}', status: status },
-                    success: function(res) {
-                        if (typeof showToast === 'function') {
-                            showToast('success', 'Order status updated successfully.', 'Updated!');
-                        } else {
-                            // Fallback if layout doesn't have showToast
-                            // (Though it should, being on dashboard layout)
-                        }
-                        setTimeout(() => location.reload(), 1200);
-                    },
-                    error: function(xhr) {
-                        Swal.fire('Error', xhr.responseJSON.error || 'Failed to update order', 'error');
+        if (status === 'cancelled') {
+            Swal.fire({
+                title: 'Cancel Order?',
+                text: 'Please provide a reason for cancelling this order:',
+                input: 'textarea',
+                inputPlaceholder: 'Type your reason here...',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, cancel it!',
+                confirmButtonColor: '#d33',
+                inputValidator: (value) => {
+                    if (!value) {
+                        return 'You need to write a reason!'
                     }
-                });
-            }
-        });
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    $.ajax({
+                        url: '{{ route("bar.counter.update-order-status", ":id") }}'.replace(':id', orderId),
+                        method: 'POST',
+                        data: { 
+                            _token: '{{ csrf_token() }}', 
+                            status: 'cancelled',
+                            reason: result.value
+                        },
+                        success: function(res) {
+                            if (typeof showToast === 'function') {
+                                showToast('success', 'Order cancelled successfully.', 'Cancelled!');
+                            }
+                            setTimeout(() => location.reload(), 1200);
+                        },
+                        error: function(xhr) {
+                            Swal.fire('Error', xhr.responseJSON.error || 'Failed to cancel order', 'error');
+                        }
+                    });
+                }
+            });
+        } else {
+            Swal.fire({
+                title: action + ' Order?',
+                text: `Are you sure you want to mark this order as ${status}?`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Yes, proceed'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    $.ajax({
+                        url: '{{ route("bar.counter.update-order-status", ":id") }}'.replace(':id', orderId),
+                        method: 'POST',
+                        data: { _token: '{{ csrf_token() }}', status: status },
+                        success: function(res) {
+                            if (typeof showToast === 'function') {
+                                showToast('success', 'Order status updated successfully.', 'Updated!');
+                            }
+                            setTimeout(() => location.reload(), 1200);
+                        },
+                        error: function(xhr) {
+                            Swal.fire('Error', xhr.responseJSON.error || 'Failed to update order', 'error');
+                        }
+                    });
+                }
+            });
+        }
     });
 
     // Pay Order
@@ -498,7 +558,9 @@ $(document).ready(function() {
         const orderId = $(this).data('order-id');
         const total = $(this).data('total');
         $('#checkout-order-id').val(orderId);
+        $('#checkout-original-total').val(total);
         $('#checkout-total-display').text('TSh ' + parseInt(total).toLocaleString());
+        $('#payment-amount-input').val(total); // Default to full amount
         $('#checkoutModal').modal('show');
     });
 
@@ -506,7 +568,13 @@ $(document).ready(function() {
         const btn = $(this);
         const orderId = $('#checkout-order-id').val();
         const method = $('input[name="payment_method"]:checked').val();
+        const amount = $('#payment-amount-input').val();
         
+        if (!amount || amount <= 0) {
+            Swal.fire('Error', 'Please enter a valid payment amount.', 'warning');
+            return;
+        }
+
         // Validation for Reference #s
         if (method !== 'cash') {
             const ref = (method === 'mobile_money') ? $('#mobile-money-ref').val() : 
@@ -524,6 +592,7 @@ $(document).ready(function() {
             method: 'POST',
             data: {
                 payment_method: method,
+                amount: amount,
                 transaction_reference: (method === 'mobile_money') ? $('#mobile-money-ref').val() : 
                                     (method === 'bank') ? $('#bank-ref').val() : 
                                     (method === 'card') ? $('#card-ref').val() : null,
@@ -533,7 +602,8 @@ $(document).ready(function() {
                 _token: '{{ csrf_token() }}'
             },
             success: function() {
-                Swal.fire('Paid!', 'Payment noted and order completed.', 'success').then(() => location.reload());
+                showToast('success', 'Payment noted and order completed.', 'Paid!');
+                setTimeout(() => location.reload(), 1200);
             },
             error: function(xhr) {
                 btn.prop('disabled', false).html('<i class="fa fa-check-circle"></i> COMPLETE & PROCESS PAYMENT');

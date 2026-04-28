@@ -370,7 +370,7 @@ class OrderController extends Controller
             return response()->json(['error' => 'You do not have permission to view orders.'], 403);
         }
 
-        $order->load(['table', 'items.productVariant.product', 'createdBy', 'servedBy', 'paidByWaiter', 'payments']);
+        $order->load(['table', 'items.productVariant.product', 'createdBy', 'servedBy', 'paidByWaiter', 'orderPayments', 'waiter']);
         
         // Try to fix old orders that have table number in notes but no table_id
         if (!$order->table_id && $order->notes) {
@@ -429,12 +429,22 @@ class OrderController extends Controller
                     'table_number' => $order->table->table_number,
                     'table_name' => $order->table->table_name ?? 'Table ' . $order->table->table_number,
                 ] : null,
+                'waiter_name' => $order->waiter ? $order->waiter->full_name : 'N/A',
                 'created_by' => $order->createdBy ? $order->createdBy->name : 'N/A',
                 'served_by' => $order->servedBy ? $order->servedBy->name : null,
                 'paid_by_waiter' => $order->paidByWaiter ? $order->paidByWaiter->full_name : null,
                 'food_items' => $foodItems,
                 'juice_items' => $juiceItems,
                 'other_items' => $otherItems,
+                'payments' => $order->orderPayments->map(function($p) {
+                    return [
+                        'method' => $p->payment_method,
+                        'amount' => $p->amount,
+                        'provider' => $p->mobile_money_number,
+                        'reference' => $p->transaction_reference,
+                        'date' => $p->created_at->format('M d, Y H:i'),
+                    ];
+                }),
                 'items' => $order->items->map(function($item) {
                     return [
                         'product_name' => $item->productVariant->display_name ?? $item->productVariant->product->name ?? 'N/A',

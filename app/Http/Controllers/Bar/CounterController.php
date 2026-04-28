@@ -2132,6 +2132,7 @@ class CounterController extends Controller
 
         $validated = $request->validate([
             'payment_method' => 'required|in:cash,mobile_money,bank,card',
+            'amount' => 'required|numeric|min:1',
             'mobile_money_number' => 'required_if:payment_method,mobile_money|nullable|string|max:20',
             'transaction_reference' => 'required_if:payment_method,mobile_money|nullable|string|max:50',
         ]);
@@ -2148,19 +2149,22 @@ class CounterController extends Controller
             // Map the frontend 'bank' string to the database enum 'bank_transfer'
             $paymentMethod = $validated['payment_method'] === 'bank' ? 'bank_transfer' : $validated['payment_method'];
 
+            $paymentAmount = (float) $validated['amount'];
             $remainingBalance = $order->total_amount - $order->paid_amount;
 
-            // If already fully paid, don't record another payment
-            if ($remainingBalance <= 0) {
-                return response()->json(['error' => 'This order is already fully paid.'], 400);
+            if ($paymentAmount > $remainingBalance + 0.01) {
+                return response()->json(['error' => 'Payment amount exceeds remaining balance. Max: ' . number_format($remainingBalance)], 400);
             }
+
+            $newPaidAmount = $order->paid_amount + $paymentAmount;
+            $isFullyPaid = ($newPaidAmount >= $order->total_amount - 0.01);
 
             $order->update([
                 'payment_method' => $paymentMethod,
                 'mobile_money_number' => $validated['mobile_money_number'] ?? null,
                 'transaction_reference' => $validated['transaction_reference'] ?? null,
-                'payment_status' => 'paid',
-                'paid_amount' => $order->total_amount, // Mark as fully paid
+                'payment_status' => $isFullyPaid ? 'paid' : 'partial',
+                'paid_amount' => $newPaidAmount,
                 'paid_by_waiter_id' => $staff->id,
                 'bar_shift_id' => $activeShift->id,
             ]);
@@ -2168,7 +2172,7 @@ class CounterController extends Controller
             \App\Models\OrderPayment::create([
                 'order_id' => $order->id,
                 'payment_method' => $paymentMethod,
-                'amount' => $remainingBalance, // ONLY record the remaining balance
+                'amount' => $paymentAmount,
                 'mobile_money_number' => $validated['mobile_money_number'] ?? null,
                 'transaction_reference' => $validated['transaction_reference'] ?? null,
                 'payment_status' => 'verified',

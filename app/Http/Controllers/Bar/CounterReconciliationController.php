@@ -268,8 +268,7 @@ class CounterReconciliationController extends Controller
                         if (!empty($targetShiftIds)) {
                             $q->where(function($sq) use ($targetShiftIds, $date) {
                                 $sq->where(function($inner) use ($targetShiftIds, $date) {
-                                    $inner->whereIn('bar_shift_id', $targetShiftIds)
-                                          ->whereDate('created_at', $date);
+                                    $inner->whereIn('bar_shift_id', $targetShiftIds);
                                 })
                                 ->orWhere(function($subq) use ($date) {
                                     // Include Kiosk/Shiftless orders for the same day
@@ -328,7 +327,6 @@ class CounterReconciliationController extends Controller
             ->map(function ($waiter) use ($ownerId, $date, $isAccountant, $isSuperAdmin, $location, $targetShiftIds, $bar_shift) {
                 $ordersQuery = BarOrder::query()
                     ->where('waiter_id', $waiter->id)
-                    ->whereDate('created_at', $date)
                     ->when($location && $location !== 'all', function ($q) use ($location) {
                         $q->where(function ($subQ) use ($location) {
                             $subQ->whereDoesntHave('table')
@@ -402,9 +400,8 @@ class CounterReconciliationController extends Controller
 
                 // Already calculated unpaidBarOrders above
 
-                // Calculate total paid amount (only orders that have been reconciled/submitted)
-                $totalPaidAmount = $barOrders->where('payment_status', 'paid')
-                    ->sum('paid_amount');
+                // Calculate total paid amount (including partial payments)
+                $totalPaidAmount = (float) $barOrders->sum('paid_amount');
 
                 // Payment collection from bar orders only (Avoiding double counting)
                 $cashCollected = 0;
@@ -491,30 +488,9 @@ class CounterReconciliationController extends Controller
                     ? ($submittedAmount - $totalSales)
                     : ($totalRecordedAmount - $totalSales);
 
-                // Auto-generate a reconciliation record for Counter staff with shortages so the Accountant can settle them
-                $isCounterRole = strtolower($waiter->role->name ?? '') === 'counter';
-                if ($isCounterRole && $difference < 0) {
-                    $targetShiftId = $bar_shift ? $bar_shift->id : ($targetShiftIds[0] ?? null);
-                    
-                    $reconciliation = \App\Models\WaiterDailyReconciliation::updateOrCreate(
-                        [
-                            'user_id' => $ownerId,
-                            'waiter_id' => $waiter->id,
-                            'bar_shift_id' => $targetShiftId,
-                            'reconciliation_date' => $date,
-                            'reconciliation_type' => 'bar',
-                        ],
-                        [
-                            'expected_amount' => $totalSales,
-                            'submitted_amount' => $totalRecordedAmount,
-                            'difference' => $difference,
-                            'cash_collected' => $cashCollected,
-                            'mobile_money_collected' => $mobileMoneyCollected,
-                            'status' => 'submitted',
-                        ]
-                    );
-                    $submittedAmount = $totalRecordedAmount;
-                }
+                // Removed auto-generation of reconciliation records for Counter staff.
+                // Counter staff must manually reconcile their own shortages to provide a reason,
+                // otherwise the Handover process will remain locked.
 
                 // Determine status intelligently
                 $status = 'pending';
@@ -566,10 +542,10 @@ class CounterReconciliationController extends Controller
 
                 return [
                     'waiter' => $waiter,
-                    'total_sales' => $totalSales, // Bar sales only
+                    'total_sales' => $totalSales,
                     'bar_sales' => $barSales,
                     'food_sales' => $foodSales,
-                    'total_orders' => $barOrdersCount, // Show waiter if they have any bar order
+                    'total_orders' => $barOrdersCount,
                     'bar_orders_count' => $barOrdersCount,
                     'served_bar_orders_count' => $servedBarOrdersCount,
                     'food_orders_count' => $foodOrdersCount,
@@ -578,23 +554,68 @@ class CounterReconciliationController extends Controller
                     'mobile_money_collected' => $finalDigital,
                     'recorded_cash' => $cashCollected,
                     'recorded_digital' => $mobileMoneyCollected,
-                    'expected_amount' => $totalSales, // Expected = bar sales only
-                    'recorded_amount' => $totalRecordedAmount, // Amount recorded by waiter (from OrderPayments)
-                    'submitted_amount' => $submittedAmount, // Amount submitted/reconciled by counter
-                    'difference' => $difference, // Always calculate difference
+                    'expected_amount' => $totalSales,
+                    'recorded_amount' => $reconciliation ? $reconciliation->submitted_amount : $totalRecordedAmount,
+                    'submitted_amount' => $submittedAmount,
+                    'difference' => $difference,
                     'status' => $status,
-                    'orders' => $barOrders, // Only bar orders
+                    'orders' => $barOrders,
                     'reconciliation' => $reconciliation,
                     'platform_totals' => $waiterPlatformTotals,
                     'profit' => $waiterProfit,
                 ];
             })
             ->filter(function ($data) {
-                // Show active rows with any bar order OR already reconciled records
                 return $data['total_orders'] > 0 || ! empty($data['reconciliation']);
             })
             ->sortByDesc('total_sales')
             ->values();
+
+        // [REFINED] Absolute Handover Discrepancy Attribution
+        // The Counter staff (Neema) is responsible for the gap between the physical handover
+        // and the sum of all other staff submissions + their own expected sales.
+        if ($todayHandover && $todayHandover->status !== 'verified') {
+            // 1. Sum what was submitted by ALL OTHER waiters
+            $otherStaffSubmitted = $waiters->filter(function($w) {
+                $roleName = strtolower($w['waiter']->role->name ?? '');
+                return !in_array($roleName, ['counter', 'counter-staff', 'bar-manager']);
+            })->sum(function($w) {
+                return ($w['submitted_amount'] > 0 || $w['reconciliation']) ? $w['submitted_amount'] : $w['recorded_amount'];
+            });
+
+            $waiters = $waiters->map(function($data) use ($todayHandover, $otherStaffSubmitted, $ownerId, $date, $targetShiftIds) {
+                $roleName = strtolower($data['waiter']->role->name ?? '');
+                $isCounter = in_array($roleName, ['counter', 'counter-staff', 'bar-manager']);
+                
+                if ($isCounter) {
+                    // Counter Actual = Handover - what others gave them
+                    $actualCounterCash = $todayHandover->amount - $otherStaffSubmitted;
+                    $newDiff = $actualCounterCash - $data['expected_amount'];
+                    
+                    $data['difference'] = $newDiff;
+                    $data['submitted_amount'] = $actualCounterCash;
+                    $data['cash_collected'] = $actualCounterCash; // Ensure UI cards match
+
+                    // Update or create the reconciliation record for the counter
+                    $data['reconciliation'] = \App\Models\WaiterDailyReconciliation::updateOrCreate(
+                        [
+                            'user_id' => $ownerId,
+                            'waiter_id' => $data['waiter']->id,
+                            'bar_shift_id' => $targetShiftIds[0] ?? null,
+                            'reconciliation_date' => $date,
+                            'reconciliation_type' => 'bar',
+                        ],
+                        [
+                            'expected_amount' => $data['expected_amount'],
+                            'submitted_amount' => $data['submitted_amount'],
+                            'difference' => $newDiff,
+                            'status' => 'submitted',
+                        ]
+                    );
+                }
+                return $data;
+            });
+        }
 
         // Get an active accountant to handover to
         $accountant = Staff::where('user_id', $ownerId)
@@ -932,8 +953,10 @@ class CounterReconciliationController extends Controller
         $validated = $request->validate([
             'waiter_id' => 'required|exists:staff,id',
             'date' => 'required|date',
-            'submitted_amount' => 'nullable|numeric|min:0',
+            'amount' => 'nullable|numeric|min:0',
         ]);
+        
+        $newSubmittedAmount = $validated['amount'] ?? 0;
 
         // Check if current user is accountant
         $currentStaff = $this->getCurrentStaff();
@@ -985,8 +1008,8 @@ class CounterReconciliationController extends Controller
             ->whereHas('items')
             ->get();
 
-        // Only error out if we have NO unpaid orders AND no submitted_amount provided
-        if ($orders->isEmpty() && ! isset($validated['submitted_amount'])) {
+        // Only error out if we have NO unpaid orders AND no new cash is being submitted
+        if ($orders->isEmpty() && $newSubmittedAmount <= 0) {
             return response()->json([
                 'success' => false,
                 'error' => 'No unpaid served orders found for this waiter on this date.',
@@ -1025,29 +1048,15 @@ class CounterReconciliationController extends Controller
         try {
             $totalAmount = 0;
             $updatedCount = 0;
-
             foreach ($orders as $order) {
-                // Check if there are existing order payments (partial payments recorded by counter)
-                $order->load('orderPayments');
-                $alreadyRecorded = $order->orderPayments->sum('amount');
-
-                if ($alreadyRecorded > 0 && $alreadyRecorded < $order->total_amount - 0.01) {
-                    // Partial payment exists — mark as partial, preserve actual amount
-                    $order->payment_status = 'partial';
-                    $order->paid_amount = $alreadyRecorded;
-                } else {
-                    // Fully paid or no prior payment — mark as fully paid
-                    $order->payment_status = 'paid';
-                    $order->paid_amount = $order->total_amount;
-                }
-
-                $order->paid_by_waiter_id = $waiter->id; // Records which waiter row was reconciled
-                // Default to cash if no method specified
-                if (! $order->payment_method) {
-                    $order->payment_method = 'cash';
-                }
-                // Maintain the order's existing shift if it's already set and open, 
-                // otherwise assign to the first available open shift if missing.
+                // Force as paid during reconciliation to clear the waiter's list
+                // but DO NOT record fake balancing payments to avoid messing up the cash audit.
+                $order->payment_status = 'paid';
+                
+                // Keep the paid_amount as it is (what was actually recorded via POS/Waiter)
+                // This ensures Recorded (System) matches Submitted (Physical) for a clean audit.
+                
+                $order->paid_by_waiter_id = $waiter->id; 
                 if (!$order->bar_shift_id && !empty($allOpenShiftIds)) {
                     $order->bar_shift_id = $allOpenShiftIds[0];
                 }
@@ -1077,42 +1086,39 @@ class CounterReconciliationController extends Controller
 
             $previousSubmittedAmount = $existingReconciliation ? $existingReconciliation->submitted_amount : 0;
 
-            // Use submitted_amount if provided, otherwise calculate from OrderPayments (recorded payments)
-            if (isset($validated['submitted_amount'])) {
-                // If there's already a submitted amount, add the new amount to it
-                $newSubmittedAmount = $validated['submitted_amount'];
-                $submittedAmount = $previousSubmittedAmount + $newSubmittedAmount;
-            } else {
-                // Calculate submitted amount from OrderPayments (what waiters have recorded)
-                $allOrdersWithPaymentsQuery = BarOrder::query()
-                    ->where('waiter_id', $waiter->id)
-                    ->when(!empty($allOpenShiftIds), function ($q) use ($allOpenShiftIds) {
-                        return $q->whereIn('bar_shift_id', $allOpenShiftIds);
-                    }, function ($q) use ($validated) {
-                        return $q->whereDate('created_at', $validated['date']);
-                    })
-                    ->where('status', 'served')
-                    ->whereHas('items') // Only bar orders
-                    ->whereHas('orderPayments') // Must have recorded payments
-                    ->with(['items', 'orderPayments']);
+            // Calculate submitted amount from OrderPayments (what waiters have already recorded in POS)
+            $allOrdersWithPaymentsQuery = BarOrder::query()
+                ->where('waiter_id', $waiter->id)
+                ->when(!empty($allOpenShiftIds), function ($q) use ($allOpenShiftIds) {
+                    return $q->whereIn('bar_shift_id', $allOpenShiftIds);
+                }, function ($q) use ($validated) {
+                    return $q->whereDate('created_at', $validated['date']);
+                })
+                ->where('status', 'served')
+                ->whereHas('items') // Only bar orders
+                ->whereHas('orderPayments') // Must have recorded payments
+                ->with(['items', 'orderPayments']);
 
-                // If not accountant, filter by owner
-                if (!$isAccountant && !$isSuperAdmin) {
-                    $allOrdersWithPaymentsQuery->where('user_id', $ownerId);
-                }
-
-                $calculatedSubmittedAmount = $allOrdersWithPaymentsQuery
-                    ->get()
-                    ->sum(function ($order) {
-                        // Sum recorded payments but cap at order total to avoid double counting
-                        return min($order->orderPayments->sum('amount'), $order->total_amount);
-                    });
-
-                // Add to previous submitted amount if exists
-                $submittedAmount = $previousSubmittedAmount + $calculatedSubmittedAmount;
+            // If not accountant, filter by owner
+            if (!$isAccountant && !$isSuperAdmin) {
+                $allOrdersWithPaymentsQuery->where('user_id', $ownerId);
             }
 
-            // Calculate difference
+            $calculatedSubmittedAmount = $allOrdersWithPaymentsQuery
+                ->get()
+                ->sum(function ($order) {
+                    // Sum recorded payments but cap at order total to avoid double counting
+                    return min($order->orderPayments->sum('amount'), $order->total_amount);
+                });
+
+            // Extract newly submitted cash from the modal breakdown
+            $breakdown = $request->input('breakdown', []);
+            $submittedCash = $breakdown['cash'] ?? 0;
+
+            // Total submitted amount is System Recorded + Newly Submitted Cash
+            $submittedAmount = $calculatedSubmittedAmount + $submittedCash;
+
+            // Calculate final difference
             $difference = $submittedAmount - $expectedAmount;
 
             // Get bar orders for cash/mobile money calculation
@@ -1159,11 +1165,16 @@ class CounterReconciliationController extends Controller
             }
 
             $breakdown = $request->input('breakdown', []);
-            $submittedCash = $breakdown['cash'] ?? 0;
-            $submittedDigital = 0;
+            $newManualCash = $breakdown['cash'] ?? 0;
+            
+            // Sum POS-recorded cash + newly submitted manual cash
+            $posCash = $waiterPlatformTotals['cash'] ?? 0;
+            $finalCashCollected = $posCash + $newManualCash;
+
+            $finalDigitalCollected = 0;
             foreach ($breakdown as $platform => $amt) {
                 if ($platform !== 'cash') {
-                    $submittedDigital += $amt;
+                    $finalDigitalCollected += $amt;
                 }
             }
 
@@ -1195,10 +1206,10 @@ class CounterReconciliationController extends Controller
                 [
                     'expected_amount' => $expectedAmount,
                     'submitted_amount' => $submittedAmount,
-                    'cash_collected' => $submittedCash,
-                    'mobile_money_collected' => $submittedDigital,
+                    'cash_collected' => $finalCashCollected,
+                    'mobile_money_collected' => $finalDigitalCollected,
                     'difference' => $difference,
-                    'status' => abs($difference) < 0.01 ? 'reconciled' : 'partial',
+                    'status' => 'reconciled',
                     'submitted_at' => now(),
                     'notes' => json_encode([
                         'submitted_breakdown' => $breakdown,
@@ -1360,8 +1371,8 @@ class CounterReconciliationController extends Controller
 
         // Return all orders (both bar and food) for counter reconciliation view
         $ordersQuery = BarOrder::query()
-            ->where('waiter_id', $waiter->id)
-            ->whereDate('created_at', $date); // [STRICT] Only show orders from THIS date
+            ->where('waiter_id', $waiter->id);
+            // Removed strict whereDate here to allow shift-based discovery below
 
         // If not accountant, filter by owner
         if (!$isAccountant && !$isSuperAdmin) {
@@ -1382,9 +1393,10 @@ class CounterReconciliationController extends Controller
                             }
                        });
                 });
-            }, function ($q) use ($date, $bar_shift) {
-                // FALLBACK: If we have no shift ID, use date.
-                return $q->whereDate('created_at', $date);
+            }, function ($q) use ($date, $reconciliation) {
+                // FALLBACK: If we have no shift ID, use reconciliation date or provided date.
+                $finalDate = $reconciliation ? $reconciliation->reconciliation_date->format('Y-m-d') : $date;
+                return $q->whereDate('created_at', $finalDate);
             })
             ->where('status', '!=', 'cancelled')
             ->with(['items.productVariant.product', 'kitchenOrderItems', 'table', 'orderPayments', 'paidByWaiter'])
@@ -1589,7 +1601,42 @@ class CounterReconciliationController extends Controller
         try {
             DB::beginTransaction();
 
-            // Delete the reconciliation record
+            // 1. Identify context shifts/date
+            $ownerId = $this->getOwnerId();
+            $waiterId = $reconciliation->waiter_id;
+            $date = $reconciliation->reconciliation_date;
+            $shiftId = $reconciliation->bar_shift_id;
+
+            // 2. Find orders associated with this reconciliation
+            $orders = \App\Models\BarOrder::where('waiter_id', $waiterId)
+                ->where('user_id', $ownerId)
+                ->when($shiftId, function($q) use ($shiftId) {
+                    return $q->where('bar_shift_id', $shiftId);
+                }, function($q) use ($date) {
+                    return $q->whereDate('created_at', $date);
+                })
+                ->where('status', '!=', 'cancelled')
+                ->get();
+
+            foreach ($orders as $order) {
+                // Delete balancing payments
+                \App\Models\OrderPayment::where('order_id', $order->id)
+                    ->where('notes', 'Settled during waiter reconciliation')
+                    ->delete();
+
+                // Recalculate paid amount from remaining payments
+                $order->load('orderPayments');
+                $remainingPaid = (float) $order->orderPayments->sum('amount');
+                
+                $order->update([
+                    'status' => 'served',
+                    'payment_status' => ($remainingPaid >= $order->total_amount - 0.01 && $remainingPaid > 0) ? 'paid' : ($remainingPaid > 0 ? 'partial' : 'pending'),
+                    'paid_amount' => $remainingPaid,
+                    'paid_by_waiter_id' => null
+                ]);
+            }
+
+            // 3. Delete the reconciliation record
             $reconciliation->delete();
 
             DB::commit();

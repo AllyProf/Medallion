@@ -170,39 +170,49 @@
         </td>
         <td>{{ $order->created_at->format('M d, Y H:i') }}</td>
         <td>
-            <div class="">
-                <button class="btn btn-sm btn-secondary view-order-btn mr-1 mb-1" data-order-id="{{ $order->id }}">
-                    <i class="fa fa-eye"></i> View
+            <div class="d-flex flex-wrap">
+                <button class="btn btn-sm btn-secondary view-order-btn mr-1 mb-1" data-order-id="{{ $order->id }}" title="View Order">
+                    <i class="fa fa-eye"></i>
                 </button>
 
                 @if($orderStatus === 'pending' && $order->payment_status !== 'paid')
                     <button class="btn btn-sm btn-info update-status-btn mr-1 mb-1"
                             data-order-id="{{ $order->id }}"
-                            data-status="served">
-                        <i class="fa fa-check"></i> Serve
+                            data-status="served"
+                            title="Mark Served">
+                        <i class="fa fa-check"></i>
                     </button>
 
                     <button class="btn btn-sm btn-danger update-status-btn mr-1 mb-1"
                             data-order-id="{{ $order->id }}"
-                            data-status="cancelled">
-                        <i class="fa fa-ban"></i> Cancel
+                            data-status="cancelled"
+                            title="Cancel Order">
+                        <i class="fa fa-ban"></i>
                     </button>
 
                 @elseif($orderStatus === 'served' && $order->payment_status !== 'paid')
                     <button class="btn btn-sm btn-success font-weight-bold pay-order-btn mr-1 mb-1"
                             data-order-id="{{ $order->id }}"
-                            data-total="{{ $counterTotal }}">
-                        <i class="fa fa-money"></i> PAY
+                            data-total="{{ $counterTotal - $counterPaid }}"
+                            title="Process Payment">
+                        <i class="fa fa-money"></i>
+                    </button>
+
+                    <button class="btn btn-sm btn-danger update-status-btn mr-1 mb-1"
+                            data-order-id="{{ $order->id }}"
+                            data-status="cancelled"
+                            title="Cancel Order">
+                        <i class="fa fa-ban"></i>
                     </button>
 
                 @elseif($order->payment_status === 'paid')
-                    <button class="btn btn-sm btn-success" disabled style="opacity: 1;">
-                        <i class="fa fa-check-circle"></i> Paid
+                    <button class="btn btn-sm btn-success mr-1 mb-1" disabled style="opacity: 1;" title="Fully Paid">
+                        <i class="fa fa-check-circle"></i>
                     </button>
 
                 @elseif($orderStatus === 'cancelled')
-                    <button class="btn btn-sm btn-secondary" disabled style="opacity: 1;">
-                        <i class="fa fa-ban"></i> Cancelled
+                    <button class="btn btn-sm btn-secondary mr-1 mb-1" disabled style="opacity: 1;" title="Order Cancelled">
+                        <i class="fa fa-ban"></i>
                     </button>
                 @endif
             </div>

@@ -269,7 +269,7 @@
             <img class="app-sidebar__user-avatar" src="https://ui-avatars.com/api/?name={{ urlencode(session('staff_name')) }}&background=940000&color=fff" alt="Staff Image">
           @endif
           <div>
-            <p class="app-sidebar__user-name">{{ session('staff_name') }}</p>
+            <p class="app-sidebar__user-name">{{ implode(' ', array_slice(explode(' ', session('staff_name')), 0, 2)) }}</p>
             <p class="app-sidebar__user-designation">
               @php
                 $staffRole = \App\Models\Role::find(session('staff_role_id'));
@@ -284,7 +284,7 @@
             <img class="app-sidebar__user-avatar" src="https://ui-avatars.com/api/?name={{ urlencode(Auth::user()->name) }}&background=940000&color=fff" alt="User Image">
           @endif
           <div>
-            <p class="app-sidebar__user-name">{{ Auth::user()->name }}</p>
+            <p class="app-sidebar__user-name">{{ implode(' ', array_slice(explode(' ', Auth::user()->name), 0, 2)) }}</p>
             <p class="app-sidebar__user-designation">
               @php
                 $userRoles = Auth::user()->userRoles()->get();
@@ -616,9 +616,9 @@
             </li>
             <li style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin: 2px 15px;"></li>
             <li>
-              <a class="app-menu__item {{ request()->routeIs('bar.counter.reconciliation') ? 'active' : '' }}" href="{{ route('bar.counter.reconciliation', ['date' => now()->toDateString()]) }}">
-                <i class="app-menu__icon fa fa-times-circle"></i>
-                <span class="app-menu__label">Close Shift</span>
+              <a class="app-menu__item {{ request()->routeIs('bar.counter.shift-history') ? 'active' : '' }}" href="{{ route('bar.counter.shift-history') }}">
+                <i class="app-menu__icon fa fa-history"></i>
+                <span class="app-menu__label">Shift History</span>
               </a>
             </li>
             <li style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin: 2px 15px;"></li>

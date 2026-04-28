@@ -47,9 +47,9 @@ class StockTransferController extends Controller
         $transfers = StockTransfer::where('user_id', $ownerId)
             ->with(['productVariant.product', 'productVariant.counterStock', 'requestedBy', 'requestedByStaff', 'approvedBy', 'approvedByStaff'])
             ->orderByRaw("CASE 
-                WHEN status = 'approved' THEN 1 
-                WHEN status = 'prepared' THEN 2 
-                WHEN status = 'pending' THEN 3 
+                WHEN status = 'pending' THEN 1
+                WHEN status = 'approved' THEN 2 
+                WHEN status = 'prepared' THEN 3 
                 WHEN status = 'rejected' THEN 5
                 WHEN status = 'completed' THEN 6 
                 ELSE 4 END ASC")

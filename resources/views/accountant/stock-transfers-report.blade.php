@@ -139,6 +139,7 @@
                       <div class="small font-weight-bold text-dark mb-1"><i class="fa fa-flask text-muted"></i> By Bottle: TSh {{ number_format($transfer->expected_bottle_revenue) }}</div>
                       <div class="small text-muted" title="If sold by glass"><i class="fa fa-glass"></i> By Glass: TSh {{ number_format($transfer->expected_glass_revenue) }}</div>
                     @else
+                      <span class="font-weight-bold">TSh {{ number_format($transfer->expected_revenue) }}</span>
                     @endif
                   </td>
                   <td class="bg-light font-weight-bold text-primary">

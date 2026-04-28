@@ -156,17 +156,20 @@ class DailyCashLedger extends Model
                 });
             });
 
-        // [SHORTAGES] Recalculate dynamically using (submitted - expected) to avoid stale difference values
-        // from partial payments by counter/self-managed staff.
+        // [SHORTAGES] Recalculate dynamically using (submitted - expected).
+        // We use ALL statuses (including 'reconciled') so that real shortages are always counted
+        // in the MISSING total, even if the record was later marked as reconciled.
         $shortageRecs = \App\Models\WaiterDailyReconciliation::where('user_id', $this->user_id)
             ->where(function($q) use ($dailyShiftIds, $dailyRecIds) {
                 $q->whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
                   ->orWhereIn('id', !empty($dailyRecIds) ? $dailyRecIds : [0]);
             })
-            ->whereIn('status', ['submitted', 'verified', 'settled', 'partial'])
-            ->get(['expected_amount', 'submitted_amount']);
+            ->get(['expected_amount', 'submitted_amount', 'status']);
 
         $totalDayShortage = $shortageRecs->sum(function($r) {
+            // Only count records where the staff actually submitted less than expected (real shortage)
+            // Exclude 'settled' records (shortage has been paid back) from the MISSING total
+            if ($r->status === 'settled') return 0;
             $real = (float)$r->submitted_amount - (float)$r->expected_amount;
             return $real < 0 ? abs($real) : 0;
         });

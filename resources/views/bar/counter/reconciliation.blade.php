@@ -118,8 +118,14 @@
 </div>
 
 @php
-  // totalCollections is the sum of verified and pending money for this shift context
+  // totalCollections is the sum of money actually submitted/recorded for this shift context
+  // We use the sum from our processed $waiters collection to ensure consistency with the table below.
   $totalCollections = $waiters->sum('cash_collected') + $waiters->sum('mobile_money_collected');
+  
+  // Robust check: If we have a verified handover, the collections MUST match the handover amount
+  if ($todayHandover && $todayHandover->status === 'verified') {
+      $totalCollections = $todayHandover->amount;
+  }
 @endphp
 
 @if($isManagementRole && $todayHandover)
@@ -311,7 +317,7 @@
                     @if(isset($data['recorded_amount']) && $data['recorded_amount'] > 0)
                       <strong class="text-info">TSh {{ number_format($data['recorded_amount'], 0) }}</strong>
                     @else
-                      <span class="text-muted">-</span>
+                      <span class="text-muted">TSh 0</span>
                     @endif
                   </td>
                   <td class="audit-col-bg">
@@ -324,9 +330,7 @@
                     @endif
                   </td>
                   <td class="diff-col-bg text-center">
-                    @if($isCounter && $data['difference'] == 0)
-                      <span class="text-muted">-</span>
-                    @elseif($isCounter || $data['submitted_amount'] > 0 || $data['reconciliation'])
+                    @if($isCounter || $data['submitted_amount'] > 0 || $data['reconciliation'])
                       <strong class="{{ $data['difference'] >= 0 ? 'text-success' : 'text-danger' }}">
                         @if($data['difference'] > 0)
                           +{{ number_format($data['difference'], 0) }}
@@ -342,7 +346,11 @@
                   </td>
                   <td class="text-center">
                     @if($isCounter)
-                      <span class="badge badge-dark">Self-Managed</span>
+                      @if($data['reconciliation'])
+                        <span class="badge badge-success"><i class="fa fa-check-circle"></i> Reconciled</span>
+                      @else
+                        <span class="badge badge-dark">Self-Managed</span>
+                      @endif
                     @elseif($data['status'] === 'reconciled')
                       <span class="badge badge-success"><i class="fa fa-check-circle"></i> Reconciled</span>
                     @elseif($data['status'] === 'verified')
@@ -367,7 +375,7 @@
                       <i class="fa fa-eye"></i> View
                     </button>
                     
-                    @if(!$isCounter)
+                    @if(true) {{-- Allow everyone to reconcile if needed, logic for button visibility is below --}}
                       @if(Route::currentRouteName() === 'accountant.counter.reconciliation' && $data['reconciliation'] && $data['status'] === 'submitted')
                         <button class="btn btn-sm btn-success verify-btn mr-1 mb-1" 
                                 data-reconciliation-id="{{ $data['reconciliation']->id }}" title="Verify">
@@ -442,8 +450,13 @@
             $totalDigitalRecordedArr = 0;
             
             foreach($waiters as $data) {
-                $totalCashHandover += $data['cash_collected'];
-                $totalDigitalHandover += $data['mobile_money_collected'];
+                // Use submitted amounts if reconciliation exists, else fallback to recorded
+                $submittedTotal = ($data['reconciliation']) ? $data['reconciliation']->submitted_amount : $data['recorded_amount'];
+                $cashSub = ($data['reconciliation']) ? $data['reconciliation']->cash_collected : $data['recorded_cash'];
+                $digiSub = ($data['reconciliation']) ? $data['reconciliation']->mobile_money_collected : $data['recorded_digital'];
+
+                $totalCashHandover += $cashSub;
+                $totalDigitalHandover += $digiSub;
                 $totalCashRecordedArr += $data['recorded_cash'];
                 $totalDigitalRecordedArr += $data['recorded_digital'];
                 
@@ -528,8 +541,19 @@
             <input type="hidden" name="date" value="{{ $date }}">
             
             @php
-              $pendingWaiters = $waiters->where('status', 'pending')->reject(function($data) {
-                  return in_array(strtolower($data['waiter']->role->slug ?? ''), ['counter', 'counter-staff', 'bar-manager']);
+              $pendingWaiters = $waiters->filter(function($data) {
+                  $isReconciled = !empty($data['reconciliation']);
+                  $isCounter = in_array(strtolower($data['waiter']->role->slug ?? ''), ['counter', 'counter-staff', 'bar-manager']);
+                  $hasDifference = (float)($data['difference'] ?? 0) !== 0.0;
+                  
+                  // If already reconciled, they are not pending.
+                  if ($isReconciled) return false;
+                  
+                  // If it's counter staff: they are only 'pending' if they have a difference that needs explaining.
+                  if ($isCounter) return $hasDifference;
+                  
+                  // For normal waiters: they are always pending until reconciled.
+                  return true;
               });
               $hasPending = $pendingWaiters->count() > 0;
             @endphp
@@ -604,9 +628,15 @@
               </div>
             </div>
             
-            <button type="submit" class="btn {{ $hasPending ? 'btn-secondary disabled' : 'btn-primary' }} btn-block" {{ $hasPending ? 'disabled' : '' }}>
-              <i class="fa fa-{{ $hasPending ? 'lock' : 'paper-plane' }}"></i> {{ $hasPending ? 'Reconcile All Staff to Unlock' : 'Submit Detailed Handover to Accountant' }}
-            </button>
+            <div class="text-right mt-4">
+              <button type="submit" class="btn btn-success btn-lg px-5 font-weight-bold shadow-sm" style="border-radius: 30px;" {{ $hasPending ? 'disabled' : '' }}>
+                @if($hasPending)
+                  <i class="fa fa-lock mr-2"></i> Reconciliation Required
+                @else
+                  Submit Handover to Accountant
+                @endif
+              </button>
+            </div>
 
           </form>
         </div>
@@ -674,14 +704,13 @@
             </div>
           @endif
 
-          {{-- SHORTAGES (Inside Column 1) --}}
-          {{-- Only flag a REAL shortage if the staff has SUBMITTED a reconciliation with a shortfall --}}
           @php
             $hasShortages = false;
             foreach($waiters as $data) {
                 $rec = $data['reconciliation'] ?? null;
                 $isSubmitted = $rec && in_array($rec->status, ['submitted', 'partial', 'verified', 'settled']);
-                if ($isSubmitted && $data['difference'] < 0) { $hasShortages = true; break; }
+                $isCounterShortage = (isset($data['waiter']->role) && strtolower($data['waiter']->role->name) === 'counter') && ($data['difference'] < 0);
+                if (($isSubmitted && $data['difference'] < 0) || $isCounterShortage) { $hasShortages = true; break; }
             }
           @endphp
 
@@ -702,7 +731,7 @@
                       @php
                         $rec = $data['reconciliation'] ?? null;
                         $isSubmitted = $rec && in_array($rec->status, ['submitted', 'partial', 'verified', 'settled']);
-                        $isCounterShortage = ($data['waiter']->role->name === 'Counter') && ($data['difference'] < 0);
+                        $isCounterShortage = (isset($data['waiter']->role) && strtolower($data['waiter']->role->name) === 'counter') && ($data['difference'] < 0);
                       @endphp
                       @if(($isSubmitted && $data['difference'] < 0) || $isCounterShortage)
                       <tr class="text-danger font-weight-bold" style="vertical-align: middle;">
@@ -954,6 +983,7 @@
 
               @if($todayHandover->status === 'pending')
                 <hr>
+
                 <div class="text-right">
                   <button class="btn btn-outline-danger btn-sm reset-handover-btn" data-date="{{ $date }}">
                     <i class="fa fa-undo"></i> Reset Handover & Redo Reconciliation
@@ -1475,166 +1505,66 @@ $(document).ready(function() {
         target_shift_ids: @json($targetShiftIds ?? [])
       },
       success: function(response) {
-        if (response.success && response.orders.length > 0) {
-          let html = '<div class="table-responsive"><table class="table table-sm">';
-          html += '<thead><tr><th>Order #</th><th>Time</th><th>Platform</th><th>Bar Items (Drinks)</th><th>Bar Amount</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead><tbody>';
-          
-          response.orders.forEach(function(order) {
-            // Calculate bar amount (from items - drinks)
-            let barAmount = 0;
-            if (order.items && order.items.length > 0) {
-              barAmount = order.items.reduce(function(sum, item) {
-                return sum + (parseFloat(item.total_price) || 0);
-              }, 0);
-            }
+        try {
+          if (response.success && response.orders && response.orders.length > 0) {
+            let html = '<div class="table-responsive"><table class="table table-sm">';
+            html += '<thead><tr><th>Order #</th><th>Time</th><th>Platform</th><th>Bar Items (Drinks)</th><th>Bar Amount</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead><tbody>';
             
-            // Calculate food amount (from kitchen_order_items)
-            let foodAmount = 0;
-            if (!isCounterOnlyView && order.kitchen_order_items && order.kitchen_order_items.length > 0) {
-              foodAmount = order.kitchen_order_items.reduce(function(sum, item) {
-                return sum + (parseFloat(item.total_price) || 0);
-              }, 0);
-            }
-            
-            html += '<tr>';
-            const orderDate = new Date(order.created_at);
-            const dateString = orderDate.toLocaleDateString();
-            const timeString = orderDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            const isDifferentDate = dateString !== new Date(date).toLocaleDateString();
-            
-            html += '<td><strong>' + order.order_number + '</strong></td>';
-            html += '<td>';
-            if (isDifferentDate) {
-              html += '<span class="badge badge-warning mb-1" style="font-size: 0.6rem;">' + dateString + '</span><br>';
-            }
-            html += timeString + '</td>';
-            html += '<td>';
-            if (order.order_source) {
-              const source = order.order_source.toLowerCase();
-              let badgeClass = 'secondary';
-              let displayText = order.order_source;
-              if (source === 'mobile') { badgeClass = 'info'; displayText = 'Mobile'; }
-              else if (source === 'web') { badgeClass = 'primary'; displayText = 'Web'; }
-              else if (source === 'kiosk') { badgeClass = 'warning'; displayText = 'Kiosk'; }
-              html += '<span class="badge badge-' + badgeClass + '">' + displayText + '</span>';
-            } else {
-              html += '<span class="text-muted">-</span>';
-            }
-            html += '</td>';
-            html += '<td>';
-            if (order.items && order.items.length > 0) {
-              order.items.forEach(function(item) {
-                let label = '';
-                if ((item.sell_type || 'unit') === 'tot') {
-                  const cat = (item.product_variant?.product?.category || '').toLowerCase();
-                  let pName = 'Tot';
-                  if (cat.includes('wine')) pName = 'Glass';
-                  else if (cat.includes('spirit') || cat.includes('whiskey') || cat.includes('vodka') || cat.includes('gin')) pName = 'Shot';
-                  
-                  let plural = pName === 'Glass' ? 'Glasses' : (pName + 's');
-                  label = (item.quantity > 1 ? plural : pName) + ' of ';
-                }
-                
-                const pName = item.product_variant?.display_name || item.product_variant?.name || item.product_variant?.product?.name || 'N/A';
-                html += '<span class="badge badge-primary">' + item.quantity + 'x ' + label + pName + '</span> ';
-              });
-            } else { html += '<span class="text-muted">-</span>'; }
-            html += '</td>';
-            html += '<td><strong>TSh ' + barAmount.toLocaleString() + '</strong></td>';
-            html += '<td><strong>TSh ' + barAmount.toLocaleString() + '</strong></td>';
-            html += '<td>';
-            if (order.order_payments && order.order_payments.length > 0) {
-              // Iterate through all payments if the NEW system is used
-              order.order_payments.forEach(function(payment, idx) {
-                if (idx > 0) html += '<hr class="my-1">';
-                
-                const method = payment.payment_method || 'N/A';
-                const provider = (payment.mobile_money_number || 'MOBILE').toLowerCase();
-                let displayLabel = method.toUpperCase();
-                let badgeClass = 'secondary';
-                
-                if (method === 'cash') {
-                  displayLabel = 'CASH';
-                  badgeClass = 'warning';
-                } else {
-                  badgeClass = 'success';
-                  if (provider.includes('mpesa')) displayLabel = 'M-PESA';
-                  else if (provider.includes('mixx')) displayLabel = 'MIXX BY YAS';
-                  else if (provider.includes('halo')) displayLabel = 'HALOPESA';
-                  else if (provider.includes('tigo')) displayLabel = 'TIGO PESA';
-                  else if (provider.includes('airtel')) displayLabel = 'AIRTEL MONEY';
-                  else if (provider.includes('nmb')) displayLabel = 'NMB BANK';
-                  else if (provider.includes('crdb')) displayLabel = 'CRDB BANK';
-                  else if (provider.includes('kcb')) displayLabel = 'KCB BANK';
-                }
-                
-                html += '<span class="badge badge-' + badgeClass + '">' + displayLabel + '</span>';
-                html += '<div style="font-size: 0.8rem;" class="mt-1">';
-                html += '<strong>TSh ' + parseFloat(payment.amount).toLocaleString() + '</strong>';
-                if (payment.transaction_reference) {
-                   html += '<br><small class="text-muted"><i class="fa fa-hashtag"></i> Ref: ' + payment.transaction_reference + '</small>';
-                }
-                html += '</div>';
-              });
-            } else if (order.payment_method) {
-              // Fallback for OLD system using order fields
-              const method = order.payment_method;
-              const providerName = (order.mobile_money_number || 'MOBILE').toLowerCase();
-              let displayProvider = method.toUpperCase();
-              let badgeClass = method === 'cash' ? 'warning' : 'success';
-              
-              if (method === 'mobile_money' || method === 'bank') {
-                if (providerName.includes('mpesa')) displayProvider = 'M-PESA';
-                else if (providerName.includes('mixx')) displayProvider = 'MIXX BY YAS';
-                else if (providerName.includes('halo')) displayProvider = 'HALOPESA';
-                else if (providerName.includes('tigo')) displayProvider = 'TIGO PESA';
-                else if (providerName.includes('airtel')) displayProvider = 'AIRTEL MONEY';
-                else if (providerName.includes('nmb')) displayProvider = 'NMB BANK';
-                else if (providerName.includes('crdb')) displayProvider = 'CRDB BANK';
-                else if (providerName.includes('kcb')) displayProvider = 'KCB BANK';
+            response.orders.forEach(function(order) {
+              // Calculate bar amount (from items - drinks)
+              let barAmount = 0;
+              if (order.items && order.items.length > 0) {
+                barAmount = order.items.reduce(function(sum, item) {
+                  return sum + (parseFloat(item.total_price) || 0);
+                }, 0);
               }
               
-              html += '<span class="badge badge-' + badgeClass + '">' + displayProvider + '</span>';
-              if (order.transaction_reference) {
-                html += '<br><small class="text-muted" style="font-size: 0.8rem; margin-top: 3px; display: block;"><i class="fa fa-hashtag"></i> Ref: ' + order.transaction_reference + '</small>';
+              html += '<tr>';
+              const orderDate = new Date(order.created_at);
+              const dateString = orderDate.toLocaleDateString();
+              const timeString = orderDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+              const isDifferentDate = dateString !== new Date(date).toLocaleDateString();
+              
+              html += '<td><strong>' + order.order_number + '</strong></td>';
+              html += '<td>';
+              if (isDifferentDate) {
+                html += '<span class="badge badge-warning mb-1" style="font-size: 0.6rem;">' + dateString + '</span><br>';
               }
-            } else {
-              html += '<span class="badge badge-secondary">Not Set</span>';
-            }
-            html += '</td>';
-            html += '<td>';
-            const totalPaid = (order.order_payments && order.order_payments.length > 0)
-              ? order.order_payments.reduce(function(sum, p) { return sum + (parseFloat(p.amount) || 0); }, 0)
-              : (parseFloat(order.paid_amount) || 0);
-            const orderTotal = barAmount || 0;
-            const isFullyPaid = totalPaid >= orderTotal - 0.01 && totalPaid > 0;
-            const isPartialPaid = totalPaid > 0 && totalPaid < orderTotal - 0.01;
-
-            if (isFullyPaid) {
-              html += '<span class="badge badge-success">Paid</span>';
-              if (order.paid_by_waiter && order.paid_by_waiter.full_name) {
-                html += '<br><small class="text-muted">By ' + order.paid_by_waiter.full_name + '</small>';
+              html += timeString + '</td>';
+              html += '<td>' + (order.order_source || '-') + '</td>';
+              html += '<td>';
+              if (order.items && order.items.length > 0) {
+                order.items.forEach(function(item) {
+                  html += '<span class="badge badge-primary">' + item.quantity + 'x ' + (item.product_variant?.display_name || 'Item') + '</span> ';
+                });
+              } else { html += '<span class="text-muted">-</span>'; }
+              html += '</td>';
+              html += '<td><strong>TSh ' + barAmount.toLocaleString() + '</strong></td>';
+              html += '<td><strong>TSh ' + barAmount.toLocaleString() + '</strong></td>';
+              html += '<td>';
+              if (order.order_payments && order.order_payments.length > 0) {
+                order.order_payments.forEach(function(p) {
+                   html += '<span class="badge badge-success">' + p.payment_method.toUpperCase() + '</span><br>TSh ' + parseFloat(p.amount).toLocaleString() + '<br>';
+                });
+              } else {
+                 html += '<span class="badge badge-secondary">' + (order.payment_method || 'NOT SET').toUpperCase() + '</span>';
               }
-            } else if (isPartialPaid) {
-              const outstanding = orderTotal - totalPaid;
-              html += '<span class="badge badge-warning">Partial</span>';
-              html += '<br><small class="text-danger font-weight-bold">TSh ' + outstanding.toLocaleString() + ' outstanding</small>';
-            } else {
-              html += '<span class="badge badge-danger">Unpaid</span>';
-            }
-            html += '</td>';
-            html += '</tr>';
-          });
-          html += '</tbody></table></div>';
-          $('#orders-content').html(html);
-        } else {
-          $('#orders-content').html('<div class="alert alert-info">No orders found.</div>');
+              html += '</td>';
+              html += '<td>' + (order.payment_status || 'Unpaid') + '</td>';
+              html += '</tr>';
+            });
+            html += '</tbody></table></div>';
+            $('#orders-content').html(html);
+          } else {
+            $('#orders-content').html('<div class="alert alert-info">No orders found.</div>');
+          }
+        } catch (e) {
+          console.error(e);
+          $('#orders-content').html('<div class="alert alert-danger">Error processing data.</div>');
         }
       },
       error: function(xhr) {
-        console.error('Error loading orders:', xhr);
-        const errorMsg = xhr.responseJSON?.error || xhr.statusText || 'Error loading orders';
-        $('#orders-content').html('<div class="alert alert-danger"><i class="fa fa-exclamation-triangle"></i> ' + errorMsg + '</div>');
+        $('#orders-content').html('<div class="alert alert-danger">Failed to fetch orders.</div>');
       }
     });
   });
@@ -1687,7 +1617,7 @@ $(document).ready(function() {
     const btn = $(this);
     
     let digitalTotal = Object.values(breakdown).reduce((a, b) => a + (parseFloat(b) || 0), 0);
-    let expectedCash = Math.max(0, totalAmount - digitalTotal);
+    let expectedCash = Math.max(0, totalAmount - recordedAmount);
     
     let platformHtml = '<div class="row px-2">';
     // Add Cash field first (Pre-filled with whatever is required to reach Expected Total)
@@ -1760,6 +1690,7 @@ $(document).ready(function() {
       showCancelButton: true,
       confirmButtonText: 'Submit Payment',
       didOpen: () => {
+        const confirmBtn = Swal.getConfirmButton();
         const updateTotal = () => {
           let total = 0;
           $('.platform-input').each(function() {
@@ -1767,17 +1698,45 @@ $(document).ready(function() {
           });
           $('#payment-amount').val(total);
           
-          let currentDiff = total - totalAmount;
+          // cashFromPOS = POS cash NOT shown as locked digital fields in modal (avoids double-counting digital)
+          const cashFromPOS = Math.max(0, recordedAmount - digitalTotal);
+          const currentCashInput = parseFloat($('.platform-input[data-platform="cash"]').val()) || 0;
+          const expectedCashForInput = Math.max(0, totalAmount - recordedAmount);
+
+          let currentDiff = (total + cashFromPOS) - totalAmount;
           let newDiffHtml = currentDiff > 0 ? `<span class="text-success">+TSh ${Math.abs(currentDiff).toLocaleString()}</span>` : (currentDiff < 0 ? `<span class="text-danger">TSh ${currentDiff.toLocaleString()}</span>` : `<span class="text-muted">TSh 0</span>`);
           $('#dynamic-difference').html(`<strong>${newDiffHtml}</strong>`);
           
-          if(total < totalAmount && total > 0) {
-              $('#waiter-notes').attr('placeholder', '(REQUIRED) Explain why collection is short...').addClass('border-warning');
+          const notes = $('#waiter-notes').val().trim();
+          const cashInput = $('.platform-input[data-platform="cash"]');
+          
+          if (currentDiff > 0.01) {
+              // SURPLUS: Block submission strictly
+              cashInput.addClass('border-danger text-danger');
+              $('#waiter-notes').attr('placeholder', '(BLOCKED) Surplus not allowed. Max cash: ' + expectedCashForInput.toLocaleString()).addClass('border-danger');
+              confirmBtn.disabled = true;
+              confirmBtn.style.opacity = '0.5';
+          } else if (currentDiff < -0.01) {
+              // SHORTAGE: FORCE NOTES
+              cashInput.removeClass('border-danger text-danger');
+              $('#waiter-notes').attr('placeholder', '(REQUIRED) Explain why collection is short...').addClass('border-warning').removeClass('border-danger');
+              if (notes === '') {
+                  confirmBtn.disabled = true;
+                  confirmBtn.style.opacity = '0.5';
+              } else {
+                  confirmBtn.disabled = false;
+                  confirmBtn.style.opacity = '1';
+              }
           } else {
-              $('#waiter-notes').attr('placeholder', 'Optional notes...').removeClass('border-warning');
+              // BALANCED: notes optional
+              cashInput.removeClass('border-danger text-danger');
+              $('#waiter-notes').attr('placeholder', 'Optional notes...').removeClass('border-warning border-danger');
+              confirmBtn.disabled = false;
+              confirmBtn.style.opacity = '1';
           }
         };
         $('.platform-input').on('input', updateTotal);
+        $('#waiter-notes').on('input', updateTotal);
         updateTotal(); // Run initially
       },
       preConfirm: () => {
@@ -1786,7 +1745,15 @@ $(document).ready(function() {
         
         if (!amount || amount <= 0) { Swal.showValidationMessage('Enter a valid amount'); return false; }
         
-        if (amount < totalAmount && notes === '') {
+        const cashFromPOSFinal = Math.max(0, recordedAmount - digitalTotal);
+        const finalDiff = (amount + cashFromPOSFinal) - totalAmount;
+        
+        if (finalDiff > 0.01) {
+            Swal.showValidationMessage('Surplus not allowed. Please enter exactly what is expected or less (shortage).');
+            return false;
+        }
+
+        if (finalDiff < -0.01 && notes === '') {
             Swal.showValidationMessage('Shortage detected: Please write a reason in the Notes field');
             return false;
         }
@@ -1809,13 +1776,14 @@ $(document).ready(function() {
             _token: '{{ csrf_token() }}', 
             waiter_id: waiterId, 
             date: date, 
-            submitted_amount: result.value.amount,
+            amount: result.value.amount,
             breakdown: result.value.breakdown,
             notes: result.value.notes
           },
           success: function(response) {
             if (response.success) {
-              Swal.fire({ icon: 'success', title: 'Success!', text: 'Reconciliation submitted.', timer: 2000 }).then(() => { location.reload(); });
+              showToast('success', 'Reconciliation submitted.', 'Success!');
+              setTimeout(() => { location.reload(); }, 1200);
             }
           },
           error: function(xhr) {
@@ -1850,7 +1818,8 @@ $(document).ready(function() {
           data: { _token: '{{ csrf_token() }}' },
           success: function(response) {
             if (response.success) {
-              Swal.fire({ icon: 'success', title: 'Reset!', text: 'Row reopened.', timer: 2000 }).then(() => { location.reload(); });
+              showToast('success', 'Row reopened.', 'Reset!');
+              setTimeout(() => { location.reload(); }, 1200);
             }
           },
           error: function(xhr) {
@@ -1944,7 +1913,8 @@ $(document).ready(function() {
           data: { _token: '{{ csrf_token() }}', date: date },
           success: function(response) {
             if (response.success) {
-              Swal.fire({ icon: 'success', title: 'Reset!', text: 'The day has been re-opened.', timer: 2000 }).then(() => { location.reload(); });
+              showToast('success', 'The day has been re-opened.', 'Reset!');
+              setTimeout(() => { location.reload(); }, 1200);
             } else {
               Swal.fire({ icon: 'error', title: 'Error', text: response.error || 'Failed to reset' });
               btn.prop('disabled', false).html('<i class="fa fa-undo"></i> Reset Handover');
@@ -1999,20 +1969,42 @@ $(document).ready(function() {
   });
 
   // Live monitor handover input changes to show/hide required hint
-  $('.handover-input').on('input', function() {
+  const validateHandover = function() {
       const systemTotal = {{ isset($overallTotalHandover) ? $overallTotalHandover : 0 }};
-      setTimeout(function() {
-          const currentTotal = parseFloat($('#handover-total').text().replace(/[^0-9.-]+/g,"")) || 0;
-          if (currentTotal < systemTotal) {
-              $('#notes-required').fadeIn();
-              $('label:has(#notes-required)').addClass('text-danger');
+      const currentTotal = parseFloat($('#handover-total').text().replace(/[^0-9.-]+/g,"")) || 0;
+      const notes = $('#handover-notes').val().trim();
+      const submitBtn = $('form[action="{{ route("bar.counter.handover") }}"]').find('button[type="submit"]');
+      const hasPendingReconciliations = {{ (isset($hasPending) && $hasPending) ? 'true' : 'false' }};
+
+      if (currentTotal < systemTotal) {
+          $('#notes-required').fadeIn();
+          $('label:has(#notes-required)').addClass('text-danger');
+          
+          if (notes === '') {
+              submitBtn.prop('disabled', true).css('opacity', '0.5');
           } else {
-              $('#notes-required').fadeOut();
-              $('label:has(#notes-required)').removeClass('text-danger');
-              $('#handover-notes').removeClass('is-invalid');
+              if (!hasPendingReconciliations) {
+                  submitBtn.prop('disabled', false).css('opacity', '1');
+              }
           }
-      }, 100);
-  });
+      } else {
+          $('#notes-required').fadeOut();
+          $('label:has(#notes-required)').removeClass('text-danger');
+          $('#handover-notes').removeClass('is-invalid');
+          
+          if (hasPendingReconciliations) {
+              submitBtn.prop('disabled', true).css('opacity', '0.5');
+          } else {
+              submitBtn.prop('disabled', false).css('opacity', '1');
+          }
+      }
+  };
+
+  $('.handover-input').on('input', validateHandover);
+  $('#handover-notes').on('input', validateHandover);
+
+  // Trigger calculation on load
+  setTimeout(validateHandover, 500);
 
   // Quick Expense Submission
   $('#quickExpenseForm').on('submit', function(e) {
@@ -2025,7 +2017,8 @@ $(document).ready(function() {
       data: $(this).serialize(),
       success: function(response) {
         if(response.success) { 
-            Swal.fire({ icon: 'success', title: 'Expense Recorded!', text: 'The deduction has been added to the master ledger.', timer: 1500 }).then(() => { reloadWithDate(); });
+            showToast('success', 'The deduction has been added to the master ledger.', 'Expense Recorded!');
+            setTimeout(() => { reloadWithDate(); }, 1200);
         } else { 
            Swal.fire('Error', response.error || 'Failed to log expense', 'error');
            $btn.prop('disabled', false).html('Record Expense'); 
@@ -2050,14 +2043,10 @@ $(document).ready(function() {
       data: $(this).serialize(),
       success: function(response) {
         if (response.success) {
-          Swal.fire({ 
-            icon: 'success', 
-            title: 'Expense Recorded!', 
-            text: 'The expense has been deducted from the ledger.', 
-            timer: 1500 
-          }).then(() => { 
+          showToast('success', 'The expense has been deducted from the ledger.', 'Expense Recorded!');
+          setTimeout(() => { 
             reloadWithDate(); 
-          });
+          }, 1200);
         } else {
           Swal.fire('Error', response.error || 'Failed to log expense', 'error');
           $btn.prop('disabled', false).html('Record Expense');
@@ -2092,7 +2081,8 @@ $(document).ready(function() {
           data: { _token: '{{ csrf_token() }}' },
           success: function(response) {
             if (response.success) {
-              Swal.fire({ icon: 'success', title: 'Undone!', text: 'Verification reversed successfully.', timer: 2000 }).then(() => { reloadWithDate(); });
+              showToast('success', 'Verification reversed successfully.', 'Undone!');
+              setTimeout(() => { reloadWithDate(); }, 1200);
             } else {
               Swal.fire({ icon: 'error', title: 'Error', text: response.error || 'Failed to undo' });
               btn.prop('disabled', false).html('<i class="fa fa-undo"></i> Undo Verification');
@@ -2129,7 +2119,8 @@ $(document).ready(function() {
           data: { _token: '{{ csrf_token() }}', ledger_id: ledgerId },
           success: function(response) {
             if (response.success) {
-              Swal.fire({ icon: 'success', title: 'Day Reopened!', text: response.message, timer: 2000 }).then(() => { reloadWithDate(); });
+              showToast('success', response.message, 'Day Reopened!');
+              setTimeout(() => { reloadWithDate(); }, 1200);
             } else {
               Swal.fire({ icon: 'error', title: 'Error', text: response.error || 'Failed to reopen day' });
               btn.prop('disabled', false).html('<i class="fa fa-unlock"></i> Reopen Day');
@@ -2167,7 +2158,8 @@ $(document).ready(function() {
           data: { _token: '{{ csrf_token() }}' },
           success: function(response) {
             if (response.success) {
-              Swal.fire({ icon: 'success', title: 'Deleted!', text: 'Expense removed.', timer: 1500 }).then(() => { reloadWithDate(); });
+              showToast('success', 'Expense removed.', 'Deleted!');
+              setTimeout(() => { reloadWithDate(); }, 1200);
             } else {
               Swal.fire({ icon: 'error', title: 'Error', text: response.error || 'Failed to delete expense' });
               btn.prop('disabled', false).html('<i class="fa fa-times"></i>');
