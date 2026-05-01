@@ -1008,13 +1008,8 @@ class CounterReconciliationController extends Controller
             ->whereHas('items')
             ->get();
 
-        // Only error out if we have NO unpaid orders AND no new cash is being submitted
-        if ($orders->isEmpty() && $newSubmittedAmount <= 0) {
-            return response()->json([
-                'success' => false,
-                'error' => 'No unpaid served orders found for this waiter on this date.',
-            ], 400);
-        }
+        // Continue even if no unpaid orders exist - we still need to create/update the reconciliation record
+        // to officially mark the waiter as 'reconciled' for the daily handover.
 
         if (empty($allOpenShiftIds) && !$isAccountant && !$isSuperAdmin) {
             return response()->json(['error' => 'Please open a shift before reconciling waiters.'], 403);

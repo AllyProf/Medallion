@@ -1674,7 +1674,7 @@ $(document).ready(function() {
             <label class="font-weight-bold">Total Amount to Submit:</label>
             <div class="input-group">
               <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
-              <input type="number" id="payment-amount" class="form-control font-weight-bold text-primary" value="${defaultSubmitAmount > 0 ? defaultSubmitAmount : ''}" readonly>
+              <input type="number" id="payment-amount" class="form-control font-weight-bold text-primary" value="${defaultSubmitAmount >= 0 ? defaultSubmitAmount : ''}" readonly>
             </div>
             <small class="text-muted">This is automatically summed from the individual platform fields above.</small>
           </div>
@@ -1743,7 +1743,7 @@ $(document).ready(function() {
         const amount = parseFloat(document.getElementById('payment-amount').value);
         const notes = document.getElementById('waiter-notes').value.trim();
         
-        if (!amount || amount <= 0) { Swal.showValidationMessage('Enter a valid amount'); return false; }
+        if (isNaN(amount) || amount < 0) { Swal.showValidationMessage('Enter a valid amount'); return false; }
         
         const cashFromPOSFinal = Math.max(0, recordedAmount - digitalTotal);
         const finalDiff = (amount + cashFromPOSFinal) - totalAmount;
