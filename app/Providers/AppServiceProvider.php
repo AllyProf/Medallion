@@ -37,12 +37,12 @@ class AppServiceProvider extends ServiceProvider
                 $client = new Client();
                 $client->setClientId($config['clientId']);
                 $client->setClientSecret($config['clientSecret']);
-                $client->refreshToken($config['refreshToken']);
+                $client->fetchAccessTokenWithRefreshToken($config['refreshToken']);
 
                 $service = new Drive($client);
                 
-                // Use root '/' and let the backup name 'Medallion' handle the subfolder
-                $adapter = new GoogleDriveAdapter($service, '/', ['useHashes' => false]);
+                $root = !empty($config['folderId']) ? $config['folderId'] : '/';
+                $adapter = new GoogleDriveAdapter($service, $root, ['useHashes' => false]);
                 $driver = new Filesystem($adapter);
 
                 return new FilesystemAdapter($driver, $adapter);
