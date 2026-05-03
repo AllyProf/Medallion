@@ -37,7 +37,7 @@ class AppServiceProvider extends ServiceProvider
                 $client = new Client();
                 $client->setClientId($config['clientId']);
                 $client->setClientSecret($config['clientSecret']);
-                $client->fetchAccessTokenWithRefreshToken($config['refreshToken']);
+                $client->refreshToken($config['refreshToken']);
 
                 $service = new Drive($client);
                 
