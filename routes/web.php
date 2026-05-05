@@ -541,3 +541,29 @@ Route::middleware('allow.staff')->group(function () {
         })->name('process');
     });
 });
+
+use Google\Client as Google_Client;
+use Google\Service\Drive as Google_Service_Drive;
+
+Route::get('/google/login', function () {
+    $client = new Google_Client();
+    $client->setClientId(config('filesystems.disks.google.clientId'));
+    $client->setClientSecret(config('filesystems.disks.google.clientSecret'));
+    $client->setRedirectUri(url('/google/callback'));
+    $client->addScope(Google_Service_Drive::DRIVE);
+    $client->setAccessType('offline');
+    $client->setPrompt('consent');
+
+    return redirect($client->createAuthUrl());
+});
+
+Route::get('/google/callback', function (Illuminate\Http\Request $request) {
+    $client = new Google_Client();
+    $client->setClientId(config('filesystems.disks.google.clientId'));
+    $client->setClientSecret(config('filesystems.disks.google.clientSecret'));
+    $client->setRedirectUri(url('/google/callback'));
+
+    $token = $client->fetchAccessTokenWithAuthCode($request->code);
+
+    return response()->json($token);
+});
