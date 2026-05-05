@@ -41,7 +41,7 @@ class AppServiceProvider extends ServiceProvider
 
                 $service = new Drive($client);
                 
-                $root = !empty($config['folderId']) ? $config['folderId'] : '/';
+                $root = $config['folder'] ?? $config['folderId'] ?? '/';
                 $adapter = new GoogleDriveAdapter($service, $root, ['useHashes' => false]);
                 $driver = new Filesystem($adapter);
 
