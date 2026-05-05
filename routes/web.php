@@ -547,10 +547,12 @@ use Google\Service\Drive as Google_Service_Drive;
 
 Route::get('/google/login', function () {
     $client = new Google_Client();
-    $client->setClientId(config('filesystems.disks.google.clientId'));
-    $client->setClientSecret(config('filesystems.disks.google.clientSecret'));
+    $client->setAuthConfig(storage_path('app/google/credentials.json'));
+    $client->addScope(Google_Service_Drive::DRIVE_FILE);
+
     $client->setRedirectUri(url('/google/callback'));
-    $client->addScope(Google_Service_Drive::DRIVE);
+
+    // THESE TWO LINES ARE THE MAGIC
     $client->setAccessType('offline');
     $client->setPrompt('consent');
 
@@ -559,11 +561,10 @@ Route::get('/google/login', function () {
 
 Route::get('/google/callback', function (Illuminate\Http\Request $request) {
     $client = new Google_Client();
-    $client->setClientId(config('filesystems.disks.google.clientId'));
-    $client->setClientSecret(config('filesystems.disks.google.clientSecret'));
+    $client->setAuthConfig(storage_path('app/google/credentials.json'));
     $client->setRedirectUri(url('/google/callback'));
 
     $token = $client->fetchAccessTokenWithAuthCode($request->code);
 
-    return response()->json($token);
+    dd($token);
 });
