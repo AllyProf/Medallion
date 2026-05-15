@@ -148,10 +148,24 @@ class StaffAttendanceController extends Controller
             $checkOut = now();
             $duration = $activeAttendance->check_in->diffInMinutes($checkOut);
 
+            $checkOutPhotoPath = null;
+            if ($request->has('photo') && !empty($request->photo)) {
+                try {
+                    $imageData = preg_replace('/^data:image\/\w+;base64,/', '', $request->photo);
+                    $imageData = base64_decode($imageData);
+                    $fileName = 'attendance_photos/checkout_' . $staff->id . '_' . time() . '.jpg';
+                    \Illuminate\Support\Facades\Storage::disk('public')->put($fileName, $imageData);
+                    $checkOutPhotoPath = $fileName;
+                } catch (\Exception $e) {
+                    \Log::error('Error saving check-out photo: ' . $e->getMessage());
+                }
+            }
+
             $activeAttendance->update([
                 'check_out' => $checkOut,
                 'duration_minutes' => $duration,
-                'status' => 'completed'
+                'status' => 'completed',
+                'check_out_photo_path' => $checkOutPhotoPath
             ]);
 
             return response()->json([
@@ -163,12 +177,26 @@ class StaffAttendanceController extends Controller
         }
 
         // Check-in logic
+        $checkInPhotoPath = null;
+        if ($request->has('photo') && !empty($request->photo)) {
+            try {
+                $imageData = preg_replace('/^data:image\/\w+;base64,/', '', $request->photo);
+                $imageData = base64_decode($imageData);
+                $fileName = 'attendance_photos/checkin_' . $staff->id . '_' . time() . '.jpg';
+                \Illuminate\Support\Facades\Storage::disk('public')->put($fileName, $imageData);
+                $checkInPhotoPath = $fileName;
+            } catch (\Exception $e) {
+                \Log::error('Error saving check-in photo: ' . $e->getMessage());
+            }
+        }
+
         StaffAttendance::create([
             'staff_id' => $staff->id,
             'user_id' => $ownerId,
             'check_in' => now(),
             'status' => 'active',
-            'location_branch' => session('active_location')
+            'location_branch' => session('active_location'),
+            'check_in_photo_path' => $checkInPhotoPath
         ]);
 
         return response()->json([

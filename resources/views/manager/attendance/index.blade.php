@@ -102,6 +102,7 @@
                             <th>Check In</th>
                             <th>Check Out</th>
                             <th>Work Duration</th>
+                            <th>Photo</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -179,10 +180,27 @@
                                     <span class="small text-warning font-italic ml-1">(live)</span>
                                 @endif
                             </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    @if($record->check_in_photo_path)
+                                        <a href="{{ asset('storage/' . $record->check_in_photo_path) }}" target="_blank" title="Check In Photo">
+                                            <img src="{{ asset('storage/' . $record->check_in_photo_path) }}" class="img-thumbnail" style="height: 40px; width: 40px; object-fit: cover; border-radius: 50%;" alt="In">
+                                        </a>
+                                    @endif
+                                    @if($record->check_out_photo_path)
+                                        <a href="{{ asset('storage/' . $record->check_out_photo_path) }}" target="_blank" title="Check Out Photo">
+                                            <img src="{{ asset('storage/' . $record->check_out_photo_path) }}" class="img-thumbnail ml-1" style="height: 40px; width: 40px; object-fit: cover; border-radius: 50%;" alt="Out">
+                                        </a>
+                                    @endif
+                                    @if(!$record->check_in_photo_path && !$record->check_out_photo_path)
+                                        <span class="text-muted small"><i class="fa fa-camera-slash"></i></span>
+                                    @endif
+                                </div>
+                            </td>
                         </tr>
                         @empty
                         <tr>
-                            <td colspan="7" class="text-center py-5 text-muted">No records found for the selected timeframe.</td>
+                            <td colspan="8" class="text-center py-5 text-muted">No records found for the selected timeframe.</td>
                         </tr>
                         @endforelse
                     </tbody>

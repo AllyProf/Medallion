@@ -991,6 +991,14 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     <!-- Status Label -->
                     <div id="att-sig-status-label" class="mt-4 font-weight-bold" style="font-size:1rem; letter-spacing:2px; text-transform:uppercase;"></div>
                     <p id="att-sig-instruction" class="small mt-2" style="color:#aaa;"></p>
+                    
+                    <!-- Webcam Feed for Face Capture -->
+                    <div id="att-webcam-container" style="display:none; margin: 15px auto; border-radius: 8px; overflow: hidden; width: 160px; height: 120px; border: 2px solid #333; position:relative;">
+                        <video id="att-webcam-video" autoplay playsinline style="width:100%; height:100%; object-fit: cover;"></video>
+                        <canvas id="att-webcam-canvas" style="display:none;"></canvas>
+                        <div style="position:absolute; bottom:2px; width:100%; text-align:center; font-size:0.6rem; color:#fff; background:rgba(0,0,0,0.5);">Face Capture</div>
+                    </div>
+                    
                     <!-- Hold-to-Confirm Button -->
                     <div class="mt-4" style="position:relative; display:inline-block;">
                         <!-- SVG ring progress -->
@@ -2536,6 +2544,13 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         _attIdentifiedPin = '';
         _attIdentifiedName = '';
         _attIdentifiedStatus = '';
+        
+        // Stop webcam
+        if (window.attWebcamStream) {
+            window.attWebcamStream.getTracks().forEach(track => track.stop());
+            window.attWebcamStream = null;
+        }
+        $('#att-webcam-container').hide();
     };
 
     // Step 1: Identify staff by PIN (no sign-in yet)
@@ -2591,17 +2606,70 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 
         $('#att-step-pin').hide();
         $('#att-step-signature').show();
+        
+        // Start webcam
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            $('#att-webcam-container').show();
+            $('#att-webcam-container').html(`
+                <div style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#1a1a1a;color:#aaa;font-size:0.7rem;flex-direction:column;">
+                    <i class="fa fa-spinner fa-spin" style="font-size:1.2rem;margin-bottom:4px;"></i>
+                    Starting camera...
+                </div>
+                <video id="att-webcam-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover;display:none;"></video>
+                <canvas id="att-webcam-canvas" style="display:none;"></canvas>
+                <div style="position:absolute;bottom:2px;width:100%;text-align:center;font-size:0.6rem;color:#fff;background:rgba(0,0,0,0.5);">Face Capture</div>
+            `);
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 320 }, height: { ideal: 240 } } })
+                .then(function(stream) {
+                    window.attWebcamStream = stream;
+                    const video = document.getElementById('att-webcam-video');
+                    video.srcObject = stream;
+                    video.style.display = 'block';
+                    // Remove loading spinner
+                    $('#att-webcam-container div:first-child').remove();
+                    video.play();
+                })
+                .catch(function(err) {
+                    console.warn("Camera access denied or unavailable: ", err);
+                    $('#att-webcam-container').html(`
+                        <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#1a1a1a;color:#888;font-size:0.65rem;flex-direction:column;text-align:center;padding:5px;">
+                            <i class="fa fa-camera" style="font-size:1.2rem;margin-bottom:4px;color:#555;"></i>
+                            Camera not available
+                        </div>
+                    `);
+                });
+        } else {
+            console.warn("getUserMedia not supported on this browser/connection.");
+        }
     }
 
     // Step 3: Confirm attendance (actual toggle)
     window.confirmAttendance = function() {
         const btn = $('#att-confirm-btn');
         btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> ...');
+        
+        let photoData = '';
+        if (window.attWebcamStream) {
+            const video = document.getElementById('att-webcam-video');
+            const canvas = document.getElementById('att-webcam-canvas');
+            if (video && video.videoWidth > 0) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                photoData = canvas.toDataURL('image/jpeg', 0.8);
+            }
+        }
 
         $.ajax({
             url: '{{ route("bar.kiosk.attendance.toggle") }}',
             method: 'POST',
-            data: { pin: _attIdentifiedPin, user_id: $('#kiosk-owner-id').val(), _token: '{{ csrf_token() }}' },
+            data: { 
+                pin: _attIdentifiedPin, 
+                user_id: $('#kiosk-owner-id').val(), 
+                photo: photoData,
+                _token: '{{ csrf_token() }}' 
+            },
             success: function(res) {
                 $('#attendanceModal').modal('hide');
                 resetAttendanceModal();
