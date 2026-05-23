@@ -212,11 +212,18 @@
                             <i class="fa fa-cubes opacity-50"></i>
                         </div>
                     @endif
-                    <button class="btn btn-sm btn-outline-primary btn-set-threshold" 
-                            title="Set Low Stock Alert"
-                            onclick="openThresholdModal({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}', '{{ $unitLabel }}')">
-                        <i class="fa fa-bell-o"></i> Alert
-                    </button>
+                    <div>
+                        <button class="btn btn-sm btn-outline-danger mr-1" 
+                                title="Report Shortage"
+                                onclick="openShortageModal({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}', {{ $qty }})">
+                            <i class="fa fa-minus-circle"></i> Short
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary btn-set-threshold" 
+                                title="Set Low Stock Alert"
+                                onclick="openThresholdModal({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}', '{{ $unitLabel }}')">
+                            <i class="fa fa-bell-o"></i> Alert
+                        </button>
+                    </div>
                   </div>
                   <!-- Threshold indicator -->
                   <div class="threshold-info mt-1 text-right" id="threshold-info-{{ $variant['id'] }}" style="font-size:9px; color:#e65100; font-weight:bold;"></div>
@@ -301,6 +308,9 @@
                              </span>
                           </td>
                           <td class="text-center">
+                              <button class="btn btn-sm btn-outline-danger mr-1" onclick="openShortageModal({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}', {{ $variant['quantity'] }})">
+                                  <i class="fa fa-minus-circle"></i> Short
+                              </button>
                               <button class="btn btn-sm btn-outline-info" onclick="openThresholdModal({{ $variant['id'] }}, '{{ addslashes($displayTitle) }}', '{{ $unitLabel }}')">
                                   <i class="fa fa-bell-o"></i> Alert
                               </button>
@@ -369,6 +379,62 @@
       <div class="modal-footer bg-light border-0 px-4 pb-4 pt-0">
         <button type="button" class="btn btn-secondary shadow-sm font-weight-bold px-4" data-dismiss="modal">CANCEL</button>
         <button type="button" class="btn btn-primary shadow-sm font-weight-bold px-4" id="saveThresholdBtn">SAVE ALERT SETTINGS</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Report Stock Shortage Modal -->
+<div class="modal fade shadow" id="shortageModal" tabindex="-1" role="dialog" aria-labelledby="stockShortageTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content border-0 overflow-hidden" style="border-radius: 15px;">
+      <div class="modal-header bg-danger text-white py-3">
+        <h5 class="modal-title h6 mb-0 text-white" id="stockShortageTitle">
+            <i class="fa fa-minus-circle mr-2"></i> REPORT STOCK SHORTAGE
+        </h5>
+        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body p-4 bg-light">
+        <form id="shortageForm">
+          @csrf
+          <input type="hidden" id="shortage-variant-id" name="product_variant_id">
+          
+          <div class="tile mb-0 p-3 shadow-sm border-0" style="border-radius: 10px;">
+              <div class="mb-3 text-center border-bottom pb-2">
+                  <h6 id="shortage-product-name" class="font-weight-bold text-dark mb-1">Product Name</h6>
+                  <p class="small text-muted mb-0">Record actual physical stock to log discrepancies</p>
+              </div>
+              
+              <div class="form-group mb-3">
+                  <label class="control-label font-weight-bold mb-1">Current Expected Stock</label>
+                  <input type="text" id="shortage-expected-display" class="form-control font-weight-bold bg-white text-dark" readonly style="border-radius: 8px;">
+              </div>
+
+              <div class="form-group mb-3">
+                  <label class="control-label font-weight-bold mb-1">Physical Stock Count</label>
+                  <div class="input-group">
+                    <div class="input-group-prepend">
+                      <span class="input-group-text bg-white border-right-0" style="border-radius: 8px 0 0 8px;"><i class="fa fa-calculator text-danger"></i></span>
+                    </div>
+                    <input type="number" id="shortage-physical-count" name="physical_count" class="form-control font-weight-bold" min="0" placeholder="Enter counted physical quantity" required style="border-radius: 0 8px 8px 0; padding-left: 10px;">
+                  </div>
+                  <div id="shortage-calc-feedback" class="mt-2 smallest font-weight-bold text-danger d-none">
+                      <i class="fa fa-exclamation-triangle"></i> Shortage amount: <span id="shortage-qty-calculated">0</span> units
+                  </div>
+              </div>
+
+              <div class="form-group mb-0">
+                  <label class="control-label font-weight-bold mb-1">Notes / Explanation</label>
+                  <textarea id="shortage-notes" name="notes" class="form-control" rows="3" placeholder="Explain why this shortage happened (e.g. broken bottle, missing during stocktake)..." style="border-radius: 8px;"></textarea>
+              </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer bg-light border-0 px-4 pb-4 pt-0">
+        <button type="button" class="btn btn-secondary shadow-sm font-weight-bold px-4" style="border-radius: 8px;" data-dismiss="modal">CANCEL</button>
+        <button type="button" class="btn btn-danger shadow-sm font-weight-bold px-4" style="border-radius: 8px;" id="saveShortageBtn">REPORT SHORTAGE</button>
       </div>
     </div>
   </div>
@@ -477,6 +543,7 @@
 @section('scripts')
 <script>
 var _currentThresholdId = null;
+var _currentShortageExpected = 0;
 
 function openThresholdModal(id, name, unit = 'btl') {
   _currentThresholdId = id;
@@ -488,7 +555,97 @@ function openThresholdModal(id, name, unit = 'btl') {
   $('#thresholdModal').modal('show');
 }
 
+function openShortageModal(id, name, expected) {
+  $('#shortage-variant-id').val(id);
+  $('#shortage-product-name').text(name);
+  $('#shortage-expected-display').val(expected);
+  _currentShortageExpected = parseFloat(expected);
+  $('#shortage-physical-count').val('');
+  $('#shortage-calc-feedback').addClass('d-none');
+  $('#shortage-notes').val('');
+  $('#shortageModal').modal('show');
+}
+
 $(document).ready(function () {
+    // Shortage live calculations
+    $('#shortage-physical-count').on('input', function() {
+        const physical = parseFloat($(this).val());
+        if (isNaN(physical) || physical >= _currentShortageExpected) {
+            $('#shortage-calc-feedback').addClass('d-none');
+            return;
+        }
+        const diff = _currentShortageExpected - physical;
+        $('#shortage-qty-calculated').text(diff);
+        $('#shortage-calc-feedback').removeClass('d-none');
+    });
+
+    // Save Shortage AJAX
+    $('#saveShortageBtn').on('click', function() {
+        const btn = $(this);
+        const form = $('#shortageForm');
+        const physicalVal = parseFloat($('#shortage-physical-count').val());
+        
+        if (isNaN(physicalVal) || physicalVal < 0) {
+            alert('Please enter a valid physical count of 0 or greater.');
+            return;
+        }
+
+        if (physicalVal >= _currentShortageExpected) {
+            alert('Physical count must be less than current expected stock to report a shortage.');
+            return;
+        }
+
+        btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> REPORTING...');
+
+        $.ajax({
+            url: "{{ route('bar.stock-shortages.store') }}",
+            method: 'POST',
+            data: form.serialize(),
+            success: function(response) {
+                if (response.success) {
+                    const id = $('#shortage-variant-id').val();
+                    const newQty = physicalVal;
+
+                    // Update data-qty attribute on wrappers
+                    $(`.product-card-wrapper[data-item-id="${id}"]`).attr('data-qty', newQty);
+
+                    // Update the visible stock numbers on the page (both Grid Card & Table row!)
+                    const gridCard = $(`#card-${id}`);
+                    const tableRow = $(`#row-${id}`);
+                    const finalUnit = newQty == 1 ? 'btl' : 'btls';
+
+                    gridCard.find('strong.text-success, strong.text-warning, strong.text-danger').text(`${newQty} ${finalUnit}`);
+                    tableRow.find('td strong').first().text(`${newQty} ${finalUnit}`);
+
+                    // Also update grid/list wrapper onclick params so reporting another shortage immediately works with updated stock value
+                    gridCard.find('.btn-outline-danger').attr('onclick', `openShortageModal(${id}, '${gridCard.find('h6').text().replace(/'/g, "\\'")}', ${newQty})`);
+                    tableRow.find('.btn-outline-danger').attr('onclick', `openShortageModal(${id}, '${tableRow.find('strong').first().text().replace(/'/g, "\\'")}', ${newQty})`);
+
+                    // Re-run alert checker styling
+                    const threshold = $(`.product-card-wrapper[data-item-id="${id}"]`).attr('data-threshold') || 10;
+                    updateProductAlertState(id, threshold);
+
+                    $('#shortageModal').modal('hide');
+
+                    $.notify({
+                        title: "Success: ",
+                        message: response.message || "Shortage reported and stock adjusted successfully.",
+                        icon: 'fa fa-check' 
+                    },{
+                        type: "success"
+                    });
+                }
+            },
+            error: function(xhr) {
+                const err = xhr.responseJSON ? xhr.responseJSON.error : 'Network error. Failed to report shortage.';
+                alert(err);
+            },
+            complete: function() {
+                btn.prop('disabled', false).text('REPORT SHORTAGE');
+            }
+        });
+    });
+
     // 1. VIEW TOGGLE
     $('.view-btn').on('click', function() {
         const view = $(this).data('view');

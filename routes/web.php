@@ -364,6 +364,12 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('stock-keeper/ingredient-stock-movements', [\App\Http\Controllers\Bar\ChefController::class, 'ingredientStockMovements'])->name('stock-keeper.ingredient-stock-movements');
         // Ingredient Batches
         Route::get('stock-keeper/ingredient-batches', [\App\Http\Controllers\Bar\ChefController::class, 'ingredientBatches'])->name('stock-keeper.ingredient-batches');
+        // Staff Item Shortages
+        Route::get('stock-shortages', [\App\Http\Controllers\Bar\StaffItemShortageController::class, 'index'])->name('stock-shortages.index');
+        Route::post('stock-shortages', [\App\Http\Controllers\Bar\StaffItemShortageController::class, 'store'])->name('stock-shortages.store');
+        Route::post('stock-shortages/{id}/waive', [\App\Http\Controllers\Bar\StaffItemShortageController::class, 'waive'])->name('stock-shortages.waive');
+        Route::post('stock-shortages/{id}/charge', [\App\Http\Controllers\Bar\StaffItemShortageController::class, 'charge'])->name('stock-shortages.charge');
+        Route::post('stock-shortages/{id}/undo', [\App\Http\Controllers\Bar\StaffItemShortageController::class, 'undo'])->name('stock-shortages.undo');
     });
 
     // Accountant Routes (Require Payment & Configuration)

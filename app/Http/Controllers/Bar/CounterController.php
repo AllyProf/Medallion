@@ -747,6 +747,14 @@ class CounterController extends Controller
 
         $ownerId = $this->getOwnerId();
 
+        $anyOpenShift = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->first();
+
+        if ($anyOpenShift) {
+            return redirect()->route('bar.counter.dashboard')->with('warning', 'Access Denied: Another shift is already active (' . ($anyOpenShift->staff->full_name ?? 'Staff') . ').');
+        }
+
         // Get all products with counter stock for verification
         $counterStockItems = \App\Models\ProductVariant::whereHas('product', function ($query) use ($ownerId) {
             $query->where('user_id', $ownerId);
@@ -773,6 +781,7 @@ class CounterController extends Controller
                 }
 
                 return [
+                    'variant_id' => $variant->id,
                     'item_name' => $variant->display_name,
                     'category' => $variant->product->category ?? 'General',
                     'quantity' => $counterStock->quantity,
@@ -800,6 +809,14 @@ class CounterController extends Controller
         }
 
         $ownerId = $this->getOwnerId();
+
+        $anyOpenShift = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->first();
+
+        if ($anyOpenShift) {
+            return redirect()->route('bar.counter.dashboard')->with('error', 'Access Denied: Another shift is already active (' . ($anyOpenShift->staff->full_name ?? 'Staff') . '). You must close the active shift before opening a new one.');
+        }
 
         // All fields are now automated or optional
         $shift = \App\Models\BarShift::create([

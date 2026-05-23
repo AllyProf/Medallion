@@ -237,9 +237,22 @@ class CounterReconciliationController extends Controller
             ->pluck('id')
             ->toArray();
             
+        // For historical date views, discover ALL shifts that opened on that date.
+        // This ensures multi-shift days (e.g. Shift 48 AND Shift 49 on May 21) show all waiters.
+        $allShiftsForDate = $requestedDate
+            ? \App\Models\BarShift::where('user_id', $ownerId)
+                ->whereDate('opened_at', $requestedDate)
+                ->pluck('id')
+                ->toArray()
+            : [];
+
         $targetShiftIds = [];
         if ($searchShift) {
             $targetShiftIds = [$searchShift->id];
+        } elseif (!empty($allShiftsForDate)) {
+            // [MULTI-SHIFT FIX] When viewing a historical date, include ALL shifts opened on that date.
+            // This prevents single-handover views from hiding waiters who worked on other shifts.
+            $targetShiftIds = $allShiftsForDate;
         } elseif ($todayHandover && $todayHandover->bar_shift_id) {
             $targetShiftIds = [$todayHandover->bar_shift_id];
         } elseif (!empty($allOpenShiftIds)) {
@@ -824,16 +837,26 @@ class CounterReconciliationController extends Controller
         $expFromProfit = floatval($ledger->total_expenses_from_profit) + floatval($pettyCashIssues->where('fund_source', 'profit')->sum('amount'));
         $expFromCirculation = floatval($ledger->total_expenses_from_circulation) + floatval($pettyCashIssues->where('fund_source', 'circulation')->sum('amount'));
 
+        $finalDailyProfit = 0;
+
         // Final Daily Profit (Capped at 0)
-        $finalDailyProfit = max(0, $pullableProfit - $expFromProfit);
-        $finalProfit = $finalDailyProfit; // Alias used by the settlement view
+        if ($ledger->status === 'closed') {
+            $finalProfit = floatval($ledger->profit_generated) - floatval($ledger->total_expenses_from_profit);
+            $finalDailyProfit = $finalProfit;
+            $moneyInCirculation = floatval($ledger->carried_forward) - floatval($ledger->opening_cash);
+            $rolloverFloat = floatval($ledger->carried_forward);
+            $totalBusinessValue = floatval($ledger->actual_closing_cash);
+        } else {
+            $finalDailyProfit = max(0, $pullableProfit - $expFromProfit);
+            $finalProfit = $finalDailyProfit; // Alias used by the settlement view
 
-        // 3. Money in Circulation (Shift/Daily Projection)
-        // Circulation is exactly the money returned to restock the fridge.
-        $moneyInCirculation = max(0, $totalRevenueToday - $pullableProfit - $expFromCirculation);
+            // 3. Money in Circulation (Shift/Daily Projection)
+            // Circulation is exactly the money returned to restock the fridge.
+            $moneyInCirculation = max(0, $totalRevenueToday - $pullableProfit - $expFromCirculation);
 
-        // 4. Rollover Float
-        $rolloverFloat = $ledger->opening_cash + $moneyInCirculation;
+            // 4. Rollover Float
+            $rolloverFloat = $ledger->opening_cash + $moneyInCirculation;
+        }
 
         if ($ledger->status === 'open') {
             $ledger->update([
@@ -1344,10 +1367,7 @@ class CounterReconciliationController extends Controller
             ->where('waiter_id', $waiter->id)
             ->when(!empty($targetShiftIds), function($q) use ($targetShiftIds) {
                 // If we have specific shifts (like from a closed shift view), stick to them
-                if (count($targetShiftIds) === 1) {
-                    return $q->where('bar_shift_id', $targetShiftIds[0]);
-                }
-                return $q;
+                return $q->whereIn('bar_shift_id', $targetShiftIds);
             }, function($q) use ($date) {
                 return $q->where('reconciliation_date', $date);
             })
@@ -2097,11 +2117,20 @@ class CounterReconciliationController extends Controller
             $amount = floatval($validated['amount']);
 
             // 1. Update the reconciliation record (Debt Settlement)
-            $reconciliation->submitted_amount += $amount;
+            // RULE: A shortage settlement should only recover the existing debt (negative difference).
+            // We must NOT add the settlement to submitted_amount beyond the expected_amount,
+            // as that would create a false positive (+) difference, confusing the accountant.
+            $currentDebt = $reconciliation->expected_amount - $reconciliation->submitted_amount;
+            // Only apply up to the outstanding debt — do not overshoot into a surplus.
+            $effectiveAmount = min($amount, max(0, $currentDebt));
+
+            if ($effectiveAmount > 0) {
+                $reconciliation->submitted_amount += $effectiveAmount;
+            }
 
             // Track specific payment channel for digital vs cash vs salary deduction
             if ($channel === 'cash') {
-                $reconciliation->cash_collected += $amount;
+                $reconciliation->cash_collected += $amount; // Full amount for cash tracking
             } elseif ($channel === 'mobile_money') {
                 $reconciliation->mobile_money_collected += $amount;
             } elseif ($channel === 'bank_transfer') {

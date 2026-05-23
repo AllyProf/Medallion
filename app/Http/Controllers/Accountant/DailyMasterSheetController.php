@@ -143,11 +143,19 @@ class DailyMasterSheetController extends Controller
             ->whereDate('opened_at', $date)
             ->pluck('id');
 
-        $handoversQuery = \App\Models\FinancialHandover::where('department', 'bar')
-            ->where(function($q) use ($date, $dailyShiftIds) {
-                $q->whereDate('handover_date', $date)
-                  ->orWhereIn('bar_shift_id', $dailyShiftIds);
-            });
+            $handoversQuery = \App\Models\FinancialHandover::where('department', 'bar')
+                ->where(function($q) use ($date, $dailyShiftIds) {
+                    if (!empty($dailyShiftIds)) {
+                        $q->whereIn('bar_shift_id', $dailyShiftIds)
+                          ->orWhere(function($sub) use ($date) {
+                              $sub->whereNull('bar_shift_id')
+                                  ->whereDate('handover_date', $date);
+                          });
+                    } else {
+                        $q->whereNull('bar_shift_id')
+                          ->whereDate('handover_date', $date);
+                    }
+                });
             
         $paymentBreakdown = [];
         $handovers = $handoversQuery->get();
@@ -196,8 +204,16 @@ class DailyMasterSheetController extends Controller
         
         $handovers = \App\Models\FinancialHandover::where('department', 'bar')
             ->where(function($q) use ($date, $dailyShiftIds) {
-                $q->whereDate('handover_date', $date)
-                  ->orWhereIn('bar_shift_id', $dailyShiftIds);
+                if (!empty($dailyShiftIds)) {
+                    $q->whereIn('bar_shift_id', $dailyShiftIds)
+                      ->orWhere(function($sub) use ($date) {
+                          $sub->whereNull('bar_shift_id')
+                              ->whereDate('handover_date', $date);
+                      });
+                } else {
+                    $q->whereNull('bar_shift_id')
+                      ->whereDate('handover_date', $date);
+                }
             })
             ->get();
 
@@ -358,8 +374,16 @@ class DailyMasterSheetController extends Controller
             $handovers = FinancialHandover::where('user_id', $ownerId)
                 ->where('department', 'bar')
                 ->where(function($q) use ($ledger, $dailyShiftIds) {
-                    $q->whereDate('handover_date', $ledger->ledger_date)
-                      ->orWhereIn('bar_shift_id', $dailyShiftIds);
+                    if (!empty($dailyShiftIds)) {
+                        $q->whereIn('bar_shift_id', $dailyShiftIds)
+                          ->orWhere(function($sub) use ($ledger) {
+                              $sub->whereNull('bar_shift_id')
+                                  ->whereDate('handover_date', $ledger->ledger_date);
+                          });
+                    } else {
+                        $q->whereNull('bar_shift_id')
+                          ->whereDate('handover_date', $ledger->ledger_date);
+                    }
                 })
                 ->get();
 
@@ -461,10 +485,15 @@ class DailyMasterSheetController extends Controller
             $lDateFormatted = $ledger->ledger_date->format('Y-m-d');
             $isTransitionDate = in_array($lDateFormatted, ['2026-04-15', '2026-04-16', '2026-04-17', '2026-04-18']);
 
-            if ($ledger->status === 'open' || $isTransitionDate) {
-                // Important: Persist the NET collections (Model's syncTotals will handle Profit/Deficit)
+            $needsSave = false;
+            if ($ledger->total_cash_received != $handoverCash || $ledger->total_digital_received != $handoverDigital) {
                 $ledger->total_cash_received = $handoverCash;
                 $ledger->total_digital_received = $handoverDigital;
+                $needsSave = true;
+            }
+
+            if ($ledger->status === 'open' || $isTransitionDate || $needsSave) {
+                // Important: Persist the NET collections (Model's syncTotals will handle Profit/Deficit)
                 $ledger->save(); 
             }
 

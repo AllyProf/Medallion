@@ -122,8 +122,11 @@
   // We use the sum from our processed $waiters collection to ensure consistency with the table below.
   $totalCollections = $waiters->sum('cash_collected') + $waiters->sum('mobile_money_collected');
   
-  // Robust check: If we have a verified handover, the collections MUST match the handover amount
-  if ($todayHandover && $todayHandover->status === 'verified') {
+  // For closed ledgers (historical multi-shift days), use the full day ledger totals
+  // so the card shows ALL handovers (e.g. H63 + H66 = 491,000) not just one shift.
+  if (isset($ledger) && $ledger && $ledger->status === 'closed') {
+      $totalCollections = floatval($ledger->total_cash_received) + floatval($ledger->total_digital_received);
+  } elseif ($todayHandover && $todayHandover->status === 'verified') {
       $totalCollections = $todayHandover->amount;
   }
 @endphp
@@ -843,8 +846,12 @@
                           Profit:<br>
                           <strong style="color: #940000;">{{ number_format($finalProfit) }}</strong>
                           <br><small class="text-muted" style="font-size:0.55rem;">
-                             @if($stockProfit > $finalProfit)
-                                ({{ number_format($stockProfit) }} gen - {{ number_format($stockProfit - $finalProfit) }} exp)
+                             @php
+                                $_profitGen = floatval($ledger->profit_generated);
+                                $_profitExp = floatval($ledger->total_expenses_from_profit);
+                             @endphp
+                             @if($_profitExp > 0)
+                                ({{ number_format($_profitGen) }} gen - {{ number_format($_profitExp) }} exp)
                              @else
                                 (net)
                              @endif

@@ -491,6 +491,20 @@ class MenuService
                 ];
                 $children->push($receiveProfitsChild);
             }
+
+            // Inject Item Shortages for Managers, Accountants, and Super Admins
+            $itemShortagesChild = (object)[
+                'id' => 'mock_item_shortages_child',
+                'name' => 'Item Shortages',
+                'slug' => 'bar-item-shortages',
+                'icon' => 'fa-exclamation-circle text-danger',
+                'route' => 'bar.stock-shortages.index',
+                'parent_id' => $parentMenu->id,
+                'children' => collect(),
+                'full_url' => route('bar.stock-shortages.index'),
+                'is_placeholder' => false,
+            ];
+            $children->push($itemShortagesChild);
         }
 
         return $children;
@@ -996,7 +1010,7 @@ class MenuService
      */
     private function getCommonMenuChildren($parentMenu, User $user)
     {
-        return MenuItem::where('parent_id', $parentMenu->id)
+        $children = MenuItem::where('parent_id', $parentMenu->id)
             ->where('is_active', true)
             ->orderBy('sort_order')
             ->get()
@@ -1010,6 +1024,50 @@ class MenuService
                 return $this->canAccessMenu($user, $child);
             })
             ->values();
+
+        // Inject dynamic children for Owners under Financial Reconciliation
+        if ($parentMenu->slug === 'accountant-parent') {
+            $foodHistoryChild = (object)[
+                'id' => 'mock_food_history_child',
+                'name' => 'Kitchen Master history',
+                'slug' => 'food-master-history',
+                'icon' => 'fa-history',
+                'route' => 'accountant.food-master-sheet.history',
+                'parent_id' => $parentMenu->id,
+                'children' => collect(),
+                'full_url' => route('accountant.food-master-sheet.history'),
+                'is_placeholder' => false,
+            ];
+            $children->push($foodHistoryChild);
+            
+            $receiveProfitsChild = (object)[
+                'id' => 'mock_receive_profits_child',
+                'name' => 'Receive Profits',
+                'slug' => 'receive-profits',
+                'icon' => 'fa-money',
+                'route' => 'manager.master-sheet.collections',
+                'parent_id' => $parentMenu->id,
+                'children' => collect(),
+                'full_url' => route('manager.master-sheet.collections'),
+                'is_placeholder' => false,
+            ];
+            $children->push($receiveProfitsChild);
+
+            $itemShortagesChild = (object)[
+                'id' => 'mock_item_shortages_child',
+                'name' => 'Item Shortages',
+                'slug' => 'bar-item-shortages',
+                'icon' => 'fa-exclamation-circle text-danger',
+                'route' => 'bar.stock-shortages.index',
+                'parent_id' => $parentMenu->id,
+                'children' => collect(),
+                'full_url' => route('bar.stock-shortages.index'),
+                'is_placeholder' => false,
+            ];
+            $children->push($itemShortagesChild);
+        }
+
+        return $children;
     }
 
     /**
