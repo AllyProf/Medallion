@@ -367,6 +367,7 @@ Route::middleware('allow.staff')->group(function () {
         // Staff Item Shortages
         Route::get('stock-shortages', [\App\Http\Controllers\Bar\StaffItemShortageController::class, 'index'])->name('stock-shortages.index');
         Route::post('stock-shortages', [\App\Http\Controllers\Bar\StaffItemShortageController::class, 'store'])->name('stock-shortages.store');
+        Route::post('stock-shortages/{id}/approve', [\App\Http\Controllers\Bar\StaffItemShortageController::class, 'approve'])->name('stock-shortages.approve');
         Route::post('stock-shortages/{id}/waive', [\App\Http\Controllers\Bar\StaffItemShortageController::class, 'waive'])->name('stock-shortages.waive');
         Route::post('stock-shortages/{id}/charge', [\App\Http\Controllers\Bar\StaffItemShortageController::class, 'charge'])->name('stock-shortages.charge');
         Route::post('stock-shortages/{id}/undo', [\App\Http\Controllers\Bar\StaffItemShortageController::class, 'undo'])->name('stock-shortages.undo');

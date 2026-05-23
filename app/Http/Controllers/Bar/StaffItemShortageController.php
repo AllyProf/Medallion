@@ -49,7 +49,7 @@ class StaffItemShortageController extends Controller
             $query->whereBetween('created_at', [$request->start_date . ' 00:00:00', $request->end_date . ' 23:59:59']);
         }
 
-        $shortages = $query->with(['staff', 'productVariant.product', 'recorder'])
+        $shortages = $query->with(['staff', 'productVariant.product', 'recorder', 'recorderStaff', 'approvedBy'])
             ->orderBy('created_at', 'desc')
             ->paginate(15);
 
@@ -174,6 +174,22 @@ class StaffItemShortageController extends Controller
             }
         }
 
+        // Determine initial status based on who is recording this shortage
+        $recordingStaffId   = session('staff_id') ?? null;
+        $recordingStaff     = $recordingStaffId ? Staff::with('role')->find($recordingStaffId) : null;
+        $recordingRoleSlug  = strtolower($recordingStaff?->role?->slug ?? $recordingStaff?->role?->name ?? '');
+
+        // Managers and accountants pre-approve when they record (no extra Approve step needed)
+        // Counter staff, waiters, chefs, stock keepers NEED manager approval
+        $managementRoles    = ['manager', 'accountant', 'hr-manager'];
+        $isManagementRole   = in_array($recordingRoleSlug, $managementRoles);
+
+        // Counter staff: status starts 'pending' → needs manager approval
+        // Management staff: status starts 'approved' → Charge/Waive directly
+        $initialStatus          = $isManagementRole ? 'approved' : 'pending';
+        $initialApprovedBy      = $isManagementRole ? $recordingStaffId : null;
+        $initialApprovedAt      = $isManagementRole ? now() : null;
+
         DB::beginTransaction();
         try {
             // 1. Decrement the Counter Stock (Adjust to Physical Count)
@@ -191,19 +207,22 @@ class StaffItemShortageController extends Controller
 
             // 2. Create the Shortage Record
             $shortage = StaffItemShortage::create([
-                'user_id' => $ownerId,
-                'staff_id' => $staffId,
-                'product_variant_id' => $variant->id,
-                'bar_shift_id' => $barShiftId,
-                'quantity_short' => $quantityShort,
-                'buying_price' => $buyingPrice,
-                'selling_price' => $sellingPrice,
-                'expected_revenue' => $expectedRevenue,
-                'money_in_supply' => $moneyInSupply,
-                'lost_profit' => $lostProfit,
-                'status' => 'pending',
-                'notes' => $validated['notes'] ?? 'Discrepancy reported during stock review.',
-                'recorded_by' => auth()->id() ?? $ownerId,
+                'user_id'              => $ownerId,
+                'staff_id'             => $staffId,
+                'product_variant_id'   => $variant->id,
+                'bar_shift_id'         => $barShiftId,
+                'quantity_short'       => $quantityShort,
+                'buying_price'         => $buyingPrice,
+                'selling_price'        => $sellingPrice,
+                'expected_revenue'     => $expectedRevenue,
+                'money_in_supply'      => $moneyInSupply,
+                'lost_profit'          => $lostProfit,
+                'status'               => $initialStatus,
+                'notes'                => $validated['notes'] ?? 'Discrepancy reported during stock review.',
+                'recorded_by'          => auth()->id() ?? $ownerId,
+                'recorded_by_staff_id' => $recordingStaffId,
+                'approved_by_staff_id' => $initialApprovedBy,
+                'approved_at'          => $initialApprovedAt,
             ]);
 
             // 3. Create StockMovement for auditing
@@ -249,6 +268,34 @@ class StaffItemShortageController extends Controller
     }
 
     /**
+     * Approve / Acknowledge a shortage (Manager action — before charging or waiving)
+     */
+    public function approve($id)
+    {
+        $ownerId = $this->getOwnerId();
+        $shortage = StaffItemShortage::where('user_id', $ownerId)->findOrFail($id);
+
+        if ($shortage->status !== 'pending') {
+            return response()->json(['error' => 'Only pending shortages can be approved.'], 400);
+        }
+
+        // Record who approved and when
+        $approverStaffId = session('staff_id') ?? null;
+
+        $shortage->status              = 'approved';
+        $shortage->approved_by_staff_id = $approverStaffId;
+        $shortage->approved_at         = now();
+        $shortage->save();
+
+        $approverName = $approverStaffId ? (Staff::find($approverStaffId)?->full_name ?? 'Manager') : 'Manager';
+
+        return response()->json([
+            'success' => true,
+            'message' => "Shortage approved by {$approverName}. You can now Charge or Waive it."
+        ]);
+    }
+
+    /**
      * Waive / Excuse an Item Shortage
      */
     public function waive($id)
@@ -256,7 +303,7 @@ class StaffItemShortageController extends Controller
         $ownerId = $this->getOwnerId();
         $shortage = StaffItemShortage::where('user_id', $ownerId)->findOrFail($id);
 
-        if ($shortage->status !== 'pending') {
+        if (!in_array($shortage->status, ['pending', 'approved'])) {
             return response()->json(['error' => 'This shortage has already been processed.'], 400);
         }
 
@@ -277,7 +324,7 @@ class StaffItemShortageController extends Controller
         $ownerId = $this->getOwnerId();
         $shortage = StaffItemShortage::where('user_id', $ownerId)->findOrFail($id);
 
-        if ($shortage->status !== 'pending') {
+        if (!in_array($shortage->status, ['pending', 'approved'])) {
             return response()->json(['error' => 'This shortage has already been processed.'], 400);
         }
 

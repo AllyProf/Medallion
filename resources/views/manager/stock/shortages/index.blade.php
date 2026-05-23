@@ -66,6 +66,7 @@
                     <select name="status" class="form-control">
                         <option value="">-- All Statuses --</option>
                         <option value="pending" {{ request('status') === 'pending' ? 'selected' : '' }}>Pending Audit</option>
+                        <option value="approved" {{ request('status') === 'approved' ? 'selected' : '' }}>Approved (Awaiting Action)</option>
                         <option value="waived" {{ request('status') === 'waived' ? 'selected' : '' }}>Waived / Excused</option>
                         <option value="charged" {{ request('status') === 'charged' ? 'selected' : '' }}>Charged to Staff</option>
                     </select>
@@ -122,7 +123,16 @@
                             <tr>
                                 <td class="align-middle">
                                     <span class="font-weight-bold">{{ $shortage->created_at->format('M d, Y h:i A') }}</span><br>
-                                    <small class="text-muted"><i class="fa fa-user-circle"></i> {{ $shortage->recorder->name ?? 'System' }}</small>
+                                    @if($shortage->recorderStaff)
+                                        {{-- Counter/Staff who recorded it (captured from session) --}}
+                                        <small class="text-muted"><i class="fa fa-user-circle"></i> {{ $shortage->recorderStaff->full_name }}</small>
+                                    @else
+                                        {{-- Legacy record: recorded_by_staff_id not captured; recorded_by is always owner --}}
+                                        <small class="text-warning"><i class="fa fa-user-circle"></i> Counter Staff <span class="text-muted">(legacy)</span></small>
+                                    @endif
+                                    @if($shortage->status === 'approved' && $shortage->approvedBy)
+                                        <br><small class="text-success"><i class="fa fa-check"></i> Approved by {{ $shortage->approvedBy->full_name }}</small>
+                                    @endif
                                 </td>
                                 <td class="align-middle">
                                     <span class="text-primary font-weight-bold">{{ $shortage->productVariant->display_name ?? 'Product Deleted' }}</span>
@@ -154,6 +164,8 @@
                                 <td class="text-center align-middle">
                                     @if($shortage->status === 'pending')
                                         <span class="badge badge-warning text-uppercase"><i class="fa fa-hourglass-half"></i> Pending</span>
+                                    @elseif($shortage->status === 'approved')
+                                        <span class="badge badge-info text-uppercase"><i class="fa fa-thumbs-up"></i> Approved</span>
                                     @elseif($shortage->status === 'waived')
                                         <span class="badge badge-secondary text-uppercase"><i class="fa fa-times-circle"></i> Waived</span>
                                     @elseif($shortage->status === 'charged')
@@ -161,23 +173,34 @@
                                     @endif
                                 </td>
                                 <td class="text-center align-middle">
-                                    <div class="d-flex align-items-center justify-content-center">
+                                    <div class="d-flex flex-column align-items-center justify-content-center" style="gap:4px">
                                         @if($shortage->status === 'pending')
-                                            @if($shortage->staff_id)
-                                                <button type="button" class="btn btn-sm btn-success mr-1"
-                                                        onclick="chargeStaff({{ $shortage->id }}, '{{ addslashes($shortage->staff->full_name) }}', {{ $shortage->expected_revenue }})">
-                                                    <i class="fa fa-gavel"></i> Charge
-                                                </button>
-                                            @endif
-                                            <button type="button" class="btn btn-sm btn-secondary mr-1"
-                                                    onclick="waiveShortage({{ $shortage->id }})">
-                                                <i class="fa fa-gift"></i> Waive
+                                            {{-- Needs manager approval first (counter-recorded) --}}
+                                            <button type="button" class="btn btn-sm btn-info w-100"
+                                                    onclick="approveShortage({{ $shortage->id }})">
+                                                <i class="fa fa-thumbs-up"></i> Approve
                                             </button>
+
+                                        @elseif($shortage->status === 'approved')
+                                            {{-- Approved: Manager can now Charge or Waive --}}
+                                            <div class="d-flex" style="gap:4px">
+                                                @if($shortage->staff_id)
+                                                    <button type="button" class="btn btn-sm btn-success"
+                                                            onclick="chargeStaff({{ $shortage->id }}, '{{ addslashes($shortage->staff->full_name) }}', {{ $shortage->expected_revenue }})">
+                                                        <i class="fa fa-gavel"></i> Charge
+                                                    </button>
+                                                @endif
+                                                <button type="button" class="btn btn-sm btn-secondary"
+                                                        onclick="waiveShortage({{ $shortage->id }})">
+                                                    <i class="fa fa-gift"></i> Waive
+                                                </button>
+                                            </div>
+
                                         @else
-                                            <span class="badge badge-light text-muted mr-2 font-italic small">Processed</span>
+                                            <span class="badge badge-light text-muted font-italic small">Processed</span>
                                         @endif
-                                        
-                                        <button type="button" class="btn btn-sm btn-outline-danger"
+
+                                        <button type="button" class="btn btn-sm btn-outline-danger w-100"
                                                 title="Undo Shortage (Restore Stock)"
                                                 onclick="undoShortage({{ $shortage->id }}, '{{ addslashes($shortage->productVariant->display_name ?? 'Item') }}', {{ $shortage->quantity_short }})">
                                             <i class="fa fa-undo"></i> Undo
@@ -427,6 +450,43 @@ $(document).ready(function() {
         });
     });
 });
+
+function approveShortage(id) {
+    Swal.fire({
+        title: 'Approve this shortage?',
+        html: `Approving confirms you have reviewed this shortage. You can then <b>Charge</b> it to the responsible staff member or <b>Waive</b> it.<br><br><span class="text-muted small">The shortage will be marked as Approved with your name and timestamp.</span>`,
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonColor: '#17a2b8',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: '<i class="fa fa-thumbs-up"></i> Yes, Approve',
+        cancelButtonText: 'Cancel',
+        showLoaderOnConfirm: true,
+        preConfirm: () => {
+            return $.ajax({
+                url: `/bar/stock-shortages/${id}/approve`,
+                method: 'POST',
+                data: { _token: '{{ csrf_token() }}' }
+            }).then(response => {
+                if (!response.success) throw new Error(response.error || 'Failed to approve');
+                return response;
+            }).catch(error => {
+                Swal.showValidationMessage(`Request failed: ${error.message || error}`);
+            });
+        },
+        allowOutsideClick: () => !Swal.isLoading()
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({
+                title: 'Approved!',
+                text: result.value.message || 'Shortage approved. You can now Charge or Waive it.',
+                icon: 'success',
+                timer: 1800,
+                showConfirmButton: false
+            }).then(() => { location.reload(); });
+        }
+    });
+}
 
 function chargeStaff(id, name, amount) {
     Swal.fire({

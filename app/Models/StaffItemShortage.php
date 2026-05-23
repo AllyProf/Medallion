@@ -23,54 +23,60 @@ class StaffItemShortage extends Model
         'status',
         'notes',
         'recorded_by',
+        'recorded_by_staff_id',
+        'approved_by_staff_id',
+        'approved_at',
     ];
 
     protected $casts = [
-        'quantity_short' => 'decimal:2',
-        'buying_price' => 'decimal:2',
-        'selling_price' => 'decimal:2',
+        'quantity_short'   => 'decimal:2',
+        'buying_price'     => 'decimal:2',
+        'selling_price'    => 'decimal:2',
         'expected_revenue' => 'decimal:2',
-        'money_in_supply' => 'decimal:2',
-        'lost_profit' => 'decimal:2',
+        'money_in_supply'  => 'decimal:2',
+        'lost_profit'      => 'decimal:2',
+        'approved_at'      => 'datetime',
     ];
 
-    /**
-     * Get the restaurant/bar owner
-     */
+    /** Business owner (user) */
     public function owner()
     {
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    /**
-     * Get the staff attributed to the shortage
-     */
+    /** Staff attributed/responsible for the shortage */
     public function staff()
     {
         return $this->belongsTo(Staff::class, 'staff_id');
     }
 
-    /**
-     * Get the product variant that had a shortage
-     */
+    /** Product variant that had the shortage */
     public function productVariant()
     {
         return $this->belongsTo(ProductVariant::class, 'product_variant_id');
     }
 
-    /**
-     * Get the bar shift context if applicable
-     */
+    /** Bar shift context */
     public function shift()
     {
         return $this->belongsTo(BarShift::class, 'bar_shift_id');
     }
 
-    /**
-     * Get the manager or accountant who recorded this shortage
-     */
+    /** User (owner/admin) who created this record — kept for legacy */
     public function recorder()
     {
         return $this->belongsTo(User::class, 'recorded_by');
+    }
+
+    /** Counter staff member who physically recorded this shortage */
+    public function recorderStaff()
+    {
+        return $this->belongsTo(Staff::class, 'recorded_by_staff_id');
+    }
+
+    /** Manager/accountant who approved this shortage */
+    public function approvedBy()
+    {
+        return $this->belongsTo(Staff::class, 'approved_by_staff_id');
     }
 }
