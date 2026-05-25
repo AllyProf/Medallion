@@ -17,11 +17,21 @@
 </div>
 
 <div class="row">
+  @php
+      $targetVariantId = request('variant');
+      $activeVariant = $targetVariantId ? $product->variants->firstWhere('id', $targetVariantId) : null;
+      $referer = request()->headers->get('referer');
+      $returnUrl = route('bar.products.index');
+      if ($referer && str_contains($referer, route('bar.products.index')) && !str_contains($referer, '/edit')) {
+          $returnUrl = $referer;
+      }
+  @endphp
   <div class="col-md-9">
     <div class="tile shadow-sm border-0 rounded-lg">
       <form method="POST" action="{{ route('bar.products.update', $product) }}" id="productForm" enctype="multipart/form-data">
         @csrf
         @method('PUT')
+        <input type="hidden" name="return_url" value="{{ old('return_url', $returnUrl) }}">
         
         <div class="d-flex align-items-center mb-4">
             <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center mr-3" style="width: 40px; height: 40px;">
@@ -80,149 +90,166 @@
           <div class="tile-body">
             <div id="variantsContainer">
               @foreach($product->variants as $index => $variant)
-              <div class="variant-item mb-5 p-4 border rounded bg-white position-relative shadow-sm hover-shadow">
-                <div class="d-flex justify-content-between align-items-center mb-4">
-                  <h5 class="mb-0 font-weight-bold text-dark"><span class="badge badge-primary mr-2">{{ $index + 1 }}</span> Variant Details</h5>
-                  <button type="button" class="btn btn-sm btn-outline-danger remove-variant" style="{{ $product->variants->count() > 1 ? '' : 'display: none;' }}">
-                    <i class="fa fa-trash"></i> Remove Variant
-                  </button>
-                </div>
-                
-                <input type="hidden" name="variants[{{ $index }}][id]" value="{{ $variant->id }}">
-                
-                <div class="row">
-                  <div class="col-md-8">
-                    <div class="row">
-                        <div class="col-md-7">
-                            <div class="form-group">
-                                <label class="control-label">Exact Product Name <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control variant-name-input" name="variants[{{ $index }}][name]" value="{{ old('variants.'.$index.'.name', $variant->name) }}" required>
-                            </div>
-                        </div>
-                        <div class="col-md-5">
-                            <div class="form-group">
-                                <label class="control-label">Volume / Size <span class="text-danger">*</span></label>
-                                <div class="input-group">
-                                    <input type="number" class="form-control variant-measurement-input" name="variants[{{ $index }}][measurement]" value="{{ old('variants.'.$index.'.measurement', $variant->measurement) }}" required>
-                                    <div class="input-group-append">
-                                        <select class="form-control variant-unit-select" name="variants[{{ $index }}][unit]" required style="border-top-left-radius: 0; border-bottom-left-radius: 0; background-color: #f8f9fa; border-left:0;">
-                                            <option value="ml" {{ $variant->unit == 'ml' ? 'selected' : '' }}>ml</option>
-                                            <option value="L" {{ $variant->unit == 'L' ? 'selected' : '' }}>L</option>
-                                            <option value="PCS" {{ $variant->unit == 'PCS' ? 'selected' : '' }}>PCS</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                @if(!$targetVariantId || $variant->id == $targetVariantId)
+                  <div class="variant-item mb-5 p-4 border rounded bg-white position-relative shadow-sm hover-shadow">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                      <h5 class="mb-0 font-weight-bold text-dark"><span class="badge badge-primary mr-2">{{ $index + 1 }}</span> Variant Details</h5>
+                      <button type="button" class="btn btn-sm btn-outline-danger remove-variant" style="{{ $product->variants->count() > 1 && !$targetVariantId ? '' : 'display: none;' }}">
+                        <i class="fa fa-trash"></i> Remove Variant
+                      </button>
                     </div>
                     
-                    <div class="row mt-3">
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label class="control-label">Measurement Manner <span class="text-danger">*</span></label>
-                                <select class="form-control packaging-select" name="variants[{{ $index }}][packaging]" required>
-                                    <option value="Piece" {{ $variant->packaging == 'Piece' ? 'selected' : '' }}>Piece / Bottle</option>
-                                    <option value="Carton" {{ $variant->packaging == 'Carton' ? 'selected' : '' }}>Carton</option>
-                                    <option value="Crate" {{ $variant->packaging == 'Crate' ? 'selected' : '' }}>Crate</option>
-                                    <option value="Outer" {{ $variant->packaging == 'Outer' ? 'selected' : '' }}>Outer</option>
-                                </select>
+                    <input type="hidden" name="variants[{{ $index }}][id]" value="{{ $variant->id }}">
+                    
+                    <div class="row">
+                      <div class="col-md-8">
+                        <div class="row">
+                            <div class="col-md-7">
+                                <div class="form-group">
+                                    <label class="control-label">Exact Product Name <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control variant-name-input" name="variants[{{ $index }}][name]" value="{{ old('variants.'.$index.'.name', $variant->name) }}" required>
+                                </div>
                             </div>
-                        </div>
-                        <div class="col-md-4 items-per-package-container {{ in_array($variant->packaging, ['Carton', 'Crate', 'Outer']) ? '' : 'd-none' }}">
-                            <div class="form-group">
-                                <label class="control-label">Items in Package <span class="text-danger">*</span></label>
-                                <div class="input-group">
-                                    <input type="number" class="form-control" name="variants[{{ $index }}][items_per_package]" value="{{ $variant->items_per_package ?? 1 }}" min="1">
-                                    <div class="input-group-append">
-                                        <span class="input-group-text">pcs</span>
+                            <div class="col-md-5">
+                                <div class="form-group">
+                                    <label class="control-label">Volume / Size <span class="text-danger">*</span></label>
+                                    <div class="input-group">
+                                        <input type="number" class="form-control variant-measurement-input" name="variants[{{ $index }}][measurement]" value="{{ old('variants.'.$index.'.measurement', $variant->measurement) }}" required>
+                                        <div class="input-group-append">
+                                            <select class="form-control variant-unit-select" name="variants[{{ $index }}][unit]" required style="border-top-left-radius: 0; border-bottom-left-radius: 0; background-color: #f8f9fa; border-left:0;">
+                                                <option value="ml" {{ $variant->unit == 'ml' ? 'selected' : '' }}>ml</option>
+                                                <option value="L" {{ $variant->unit == 'L' ? 'selected' : '' }}>L</option>
+                                                <option value="PCS" {{ $variant->unit == 'PCS' ? 'selected' : '' }}>PCS</option>
+                                            </select>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label class="control-label">Selling Format <span class="text-danger">*</span></label>
-                                <select class="form-control selling-type-select" name="variants[{{ $index }}][selling_type]" required>
-                                    <option value="bottle" {{ $variant->selling_type == 'bottle' ? 'selected' : '' }}>Bottle Only</option>
-                                    <option value="glass" {{ $variant->selling_type == 'glass' ? 'selected' : '' }}>Glass Only</option>
-                                    <option value="mixed" {{ $variant->selling_type == 'mixed' ? 'selected' : '' }}>Mixed (Both)</option>
-                                </select>
+                        
+                        <div class="row mt-3">
+                            <div class="col-md-4">
+                                <div class="form-group">
+                                    <label class="control-label">Measurement Manner <span class="text-danger">*</span></label>
+                                    <select class="form-control packaging-select" name="variants[{{ $index }}][packaging]" required>
+                                        <option value="Piece" {{ $variant->packaging == 'Piece' ? 'selected' : '' }}>Piece / Bottle</option>
+                                        <option value="Carton" {{ $variant->packaging == 'Carton' ? 'selected' : '' }}>Carton</option>
+                                        <option value="Crate" {{ $variant->packaging == 'Crate' ? 'selected' : '' }}>Crate</option>
+                                        <option value="Outer" {{ $variant->packaging == 'Outer' ? 'selected' : '' }}>Outer</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-4 items-per-package-container {{ in_array($variant->packaging, ['Carton', 'Crate', 'Outer']) ? '' : 'd-none' }}">
+                                <div class="form-group">
+                                    <label class="control-label">Items in Package <span class="text-danger">*</span></label>
+                                    <div class="input-group">
+                                        <input type="number" class="form-control" name="variants[{{ $index }}][items_per_package]" value="{{ $variant->items_per_package ?? 1 }}" min="1">
+                                        <div class="input-group-append">
+                                            <span class="input-group-text">pcs</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-group">
+                                    <label class="control-label">Selling Format <span class="text-danger">*</span></label>
+                                    <select class="form-control selling-type-select" name="variants[{{ $index }}][selling_type]" required>
+                                        <option value="bottle" {{ $variant->selling_type == 'bottle' ? 'selected' : '' }}>Bottle Only</option>
+                                        <option value="glass" {{ $variant->selling_type == 'glass' ? 'selected' : '' }}>Glass Only</option>
+                                        <option value="mixed" {{ $variant->selling_type == 'mixed' ? 'selected' : '' }}>Mixed (Both)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-4 servings-container {{ in_array($variant->selling_type, ['glass', 'mixed']) ? '' : 'd-none' }}">
+                                <div class="form-group">
+                                    <label class="control-label text-primary font-weight-bold">Tots per Bottle <span class="text-danger">*</span></label>
+                                    <input type="number" class="form-control border-primary" name="variants[{{ $index }}][total_tots]" value="{{ $variant->total_tots }}" placeholder="e.g., 30">
+                                </div>
                             </div>
                         </div>
-                        <div class="col-md-4 servings-container {{ in_array($variant->selling_type, ['glass', 'mixed']) ? '' : 'd-none' }}">
-                            <div class="form-group">
-                                <label class="control-label text-primary font-weight-bold">Tots per Bottle <span class="text-danger">*</span></label>
-                                <input type="number" class="form-control border-primary" name="variants[{{ $index }}][total_tots]" value="{{ $variant->total_tots }}" placeholder="e.g., 30">
-                            </div>
-                        </div>
-                    </div>
 
-                    <div class="row mt-3 border-top pt-3">
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label class="control-label">Buying Price (Cost) <span class="text-muted small">(per Unit)</span></label>
-                                <div class="input-group">
-                                    <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
-                                    <input type="number" class="form-control" name="variants[{{ $index }}][buying_price_per_unit]" value="{{ $variant->buying_price_per_unit }}" min="0" step="0.01">
+                        <div class="row mt-3 border-top pt-3">
+                            <div class="col-md-4">
+                                <div class="form-group">
+                                    <label class="control-label">Buying Price (Cost) <span class="text-muted small">(per Unit)</span></label>
+                                    <div class="input-group">
+                                        <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
+                                        <input type="number" class="form-control" name="variants[{{ $index }}][buying_price_per_unit]" value="{{ $variant->buying_price_per_unit }}" min="0" step="0.01">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="form-group">
+                                    <label class="control-label font-weight-bold text-success">Selling Price (Bottle)</label>
+                                    <div class="input-group font-weight-bold">
+                                        <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
+                                        <input type="number" class="form-control border-success text-success" name="variants[{{ $index }}][selling_price_per_unit]" value="{{ $variant->selling_price_per_unit }}" min="0">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4 servings-container {{ in_array($variant->selling_type, ['glass', 'mixed']) ? '' : 'd-none' }}">
+                                <div class="form-group">
+                                    <label class="control-label font-weight-bold text-info">Selling Price (Glass/Tot)</label>
+                                    <div class="input-group">
+                                        <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
+                                        <input type="number" class="form-control border-info text-info" name="variants[{{ $index }}][selling_price_per_tot]" value="{{ $variant->selling_price_per_tot }}" min="0">
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label class="control-label font-weight-bold text-success">Selling Price (Bottle)</label>
-                                <div class="input-group font-weight-bold">
-                                    <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
-                                    <input type="number" class="form-control border-success text-success" name="variants[{{ $index }}][selling_price_per_unit]" value="{{ $variant->selling_price_per_unit }}" min="0">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4 servings-container {{ in_array($variant->selling_type, ['glass', 'mixed']) ? '' : 'd-none' }}">
-                            <div class="form-group">
-                                <label class="control-label font-weight-bold text-info">Selling Price (Glass/Tot)</label>
-                                <div class="input-group">
-                                    <div class="input-group-prepend"><span class="input-group-text">TSh</span></div>
-                                    <input type="number" class="form-control border-info text-info" name="variants[{{ $index }}][selling_price_per_tot]" value="{{ $variant->selling_price_per_tot }}" min="0">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                  </div>
+                      </div>
 
-                  <div class="col-md-4 border-left">
-                    <div class="form-group mb-0 h-100 d-flex flex-column text-center">
-                      <label class="control-label font-weight-bold mb-3 d-block">Product Image</label>
-                      <div class="image-upload-wrapper flex-grow-1">
-                        <label class="image-upload-area" for="variant-img-{{ $index }}">
-                          <input type="file" class="variant-image-input d-none" id="variant-img-{{ $index }}" name="variants[{{ $index }}][image]" accept="image/*">
-                          
-                          <div class="upload-placeholder {{ $variant->image ? 'd-none' : '' }}">
-                                <div class="upload-icon mb-2"><i class="fa fa-cloud-upload"></i></div>
-                                <span class="d-block font-weight-bold small">Click to Upload</span>
+                      <div class="col-md-4 border-left">
+                        <div class="form-group mb-0 h-100 d-flex flex-column text-center">
+                          <label class="control-label font-weight-bold mb-3 d-block">Product Image</label>
+                          <div class="image-upload-wrapper flex-grow-1">
+                            <label class="image-upload-area" for="variant-img-{{ $index }}">
+                              <input type="file" class="variant-image-input d-none" id="variant-img-{{ $index }}" name="variants[{{ $index }}][image]" accept="image/*">
+                              
+                              <div class="upload-placeholder {{ $variant->image ? 'd-none' : '' }}">
+                                    <div class="upload-icon mb-2"><i class="fa fa-cloud-upload"></i></div>
+                                    <span class="d-block font-weight-bold small">Click to Upload</span>
+                              </div>
+                              
+                              <div class="variant-image-preview {{ $variant->image ? '' : 'd-none' }}">
+                                <img src="{{ $variant->image ? asset('storage/' . $variant->image) : '' }}" alt="Preview">
+                                <div class="change-overlay"><i class="fa fa-refresh mr-1"></i> Change Image</div>
+                              </div>
+                            </label>
                           </div>
-                          
-                          <div class="variant-image-preview {{ $variant->image ? '' : 'd-none' }}">
-                            <img src="{{ $variant->image ? asset('storage/' . $variant->image) : '' }}" alt="Preview">
-                            <div class="change-overlay"><i class="fa fa-refresh mr-1"></i> Change Image</div>
-                          </div>
-                        </label>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </div>
+                @else
+                  <!-- Keep variant hidden to prevent deletion during update -->
+                  <input type="hidden" name="variants[{{ $index }}][id]" value="{{ $variant->id }}">
+                  <input type="hidden" name="variants[{{ $index }}][name]" value="{{ $variant->name }}">
+                  <input type="hidden" name="variants[{{ $index }}][measurement]" value="{{ $variant->measurement }}">
+                  <input type="hidden" name="variants[{{ $index }}][unit]" value="{{ $variant->unit }}">
+                  <input type="hidden" name="variants[{{ $index }}][packaging]" value="{{ $variant->packaging }}">
+                  <input type="hidden" name="variants[{{ $index }}][items_per_package]" value="{{ $variant->items_per_package }}">
+                  <input type="hidden" name="variants[{{ $index }}][selling_type]" value="{{ $variant->selling_type }}">
+                  <input type="hidden" name="variants[{{ $index }}][total_tots]" value="{{ $variant->total_tots }}">
+                  <input type="hidden" name="variants[{{ $index }}][buying_price_per_unit]" value="{{ $variant->buying_price_per_unit }}">
+                  <input type="hidden" name="variants[{{ $index }}][selling_price_per_unit]" value="{{ $variant->selling_price_per_unit }}">
+                  <input type="hidden" name="variants[{{ $index }}][selling_price_per_tot]" value="{{ $variant->selling_price_per_tot }}">
+                @endif
               @endforeach
             </div>
 
+            @if(!$targetVariantId)
             <div class="text-center mt-4">
               <button type="button" class="btn btn-outline-primary border-dashed px-5 py-2 font-weight-bold" id="addVariant">
                 <i class="fa fa-plus-circle mr-2"></i> Add Another Size/Variant
               </button>
             </div>
+            @endif
           </div>
         </div>
 
         <div class="tile-footer border-top pt-4 mt-5 text-right">
-          <a class="btn btn-light btn-lg px-4 mr-3" href="{{ route('bar.products.index') }}">
+          <a class="btn btn-light btn-lg px-4 mr-3" href="{{ $returnUrl }}">
               <i class="fa fa-times-circle mr-1"></i> Cancel
           </a>
           <button class="btn btn-primary btn-lg shadow-sm px-5" type="submit">
@@ -236,19 +263,31 @@
   <div class="col-md-3">
     <div class="tile shadow-sm border-0 rounded-lg bg-light text-center p-4">
         <div class="mb-3">
-            @if($product->image)
-                <img src="{{ asset('storage/' . $product->image) }}" class="img-fluid rounded shadow-sm border" style="max-height: 150px;">
+            @php
+              $sidebarImage = $product->image;
+              if ($activeVariant && $activeVariant->image) {
+                  $sidebarImage = $activeVariant->image;
+              }
+            @endphp
+            @if($sidebarImage)
+                <img src="{{ asset('storage/' . $sidebarImage) }}" class="img-fluid rounded shadow-sm border" style="max-height: 150px;">
             @else
                 <div class="bg-secondary text-white rounded d-flex align-items-center justify-content-center mx-auto" style="width: 100px; height: 100px;">
                     <i class="fa fa-cube fa-3x"></i>
                 </div>
             @endif
         </div>
-        <h4 class="mb-1 font-weight-bold">{{ $product->name }}</h4>
+        <h4 class="mb-1 font-weight-bold">{{ $activeVariant ? $activeVariant->name : $product->name }}</h4>
         <p class="text-primary font-weight-bold small mb-3 text-uppercase">{{ $product->category }}</p>
-        <div class="badge badge-primary px-3 py-2 rounded-pill">
-            {{ $product->variants->count() }} Variants Found
-        </div>
+        @if($activeVariant)
+            <div class="badge badge-info px-3 py-2 rounded-pill">
+                Editing Variant
+            </div>
+        @else
+            <div class="badge badge-primary px-3 py-2 rounded-pill">
+                {{ $product->variants->count() }} Variants Found
+            </div>
+        @endif
     </div>
     
     <div class="tile shadow-sm border-0 rounded-lg">

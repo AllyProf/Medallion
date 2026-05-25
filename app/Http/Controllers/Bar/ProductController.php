@@ -443,6 +443,15 @@ class ProductController extends Controller
                         $variant->update($updateData);
                         $submittedVariantIds[] = $variant->id;
 
+                        // Sync selling prices into all StockLocation records for this variant.
+                        // stock_locations.selling_price takes priority over product_variants in the
+                        // counter stock view, so we must cascade the price change here.
+                        \App\Models\StockLocation::where('product_variant_id', $variant->id)
+                            ->update([
+                                'selling_price'         => $variantData['selling_price_per_unit'] ?? 0,
+                                'selling_price_per_tot' => $variantData['selling_price_per_tot'] ?? 0,
+                            ]);
+
                         // Update product main image if it's the first variant and has new image
                         if ($index === 0 && $vImagePath) {
                             $product->update(['image' => $vImagePath]);
@@ -483,6 +492,12 @@ class ProductController extends Controller
             }
 
             DB::commit();
+
+            // Redirect back to the page the user came from (e.g., filtered search results)
+            $returnUrl = $request->input('return_url');
+            if ($returnUrl && str_starts_with($returnUrl, route('bar.products.index'))) {
+                return redirect($returnUrl)->with('alert_success', 'Product updated successfully.');
+            }
 
             return redirect()->route('bar.products.index')
                 ->with('alert_success', 'Product updated successfully.');

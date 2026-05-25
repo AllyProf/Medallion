@@ -71,7 +71,7 @@
             <td class="text-center align-middle">
                 <div class="btn-group">
                     @if($canEdit)
-                        <a href="{{ route('bar.products.edit', $product) }}" class="btn btn-outline-primary btn-sm border-0" title="Edit">
+                        <a href="{{ route('bar.products.edit', [$product, 'variant' => $variant->id]) }}" class="btn btn-outline-primary btn-sm border-0" title="Edit">
                             <i class="fa fa-pencil fa-lg"></i>
                         </a>
                     @endif

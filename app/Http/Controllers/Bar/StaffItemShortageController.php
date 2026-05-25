@@ -146,30 +146,59 @@ class StaffItemShortageController extends Controller
         $barShiftId = null;
 
         if (!$staffId) {
-            // Find the most recent shift at this location branch to attribute the shortage to
-            $currentStaff = Staff::find(session('staff_id'));
-            $branch = $currentStaff ? $currentStaff->location_branch : 'Counter';
+            // Auto-attribute to the active counter staff currently on an open shift.
+            // We do NOT use the recording manager's branch — we look for counter role shifts directly.
+            $counterRoles = ['counter', 'bar counter', 'stock keeper', 'stockkeeper'];
 
-            // Find previous closed shift at this branch
-            $prevShift = BarShift::where('user_id', $ownerId)
-                ->where('location_branch', $branch)
-                ->where('status', 'closed')
-                ->orderBy('closed_at', 'desc')
+            // 1. Find the most recent OPEN shift where the staff is active AND has a counter role
+            $activeShift = BarShift::where('user_id', $ownerId)
+                ->where('status', 'open')
+                ->whereHas('staff', function ($q) use ($counterRoles) {
+                    $q->where('is_active', true)
+                      ->whereHas('role', function ($rq) use ($counterRoles) {
+                          $rq->whereIn(DB::raw('LOWER(TRIM(name))'), $counterRoles);
+                      });
+                })
+                ->orderBy('created_at', 'desc')
+                ->with('staff')
                 ->first();
 
-            if ($prevShift) {
-                $staffId = $prevShift->staff_id;
-                $barShiftId = $prevShift->id;
-            } else {
-                // Fallback to active/open shift if there is no previous closed shift
-                $activeShift = BarShift::where('user_id', $ownerId)
-                    ->where('location_branch', $branch)
-                    ->where('status', 'open')
+            if ($activeShift) {
+                $staffId    = $activeShift->staff_id;
+                $barShiftId = $activeShift->id;
+            }
+
+            // 2. Fallback: most recent CLOSED shift with an active counter staff
+            if (!$staffId) {
+                $prevShift = BarShift::where('user_id', $ownerId)
+                    ->where('status', 'closed')
+                    ->whereHas('staff', function ($q) use ($counterRoles) {
+                        $q->where('is_active', true)
+                          ->whereHas('role', function ($rq) use ($counterRoles) {
+                              $rq->whereIn(DB::raw('LOWER(TRIM(name))'), $counterRoles);
+                          });
+                    })
+                    ->orderBy('closed_at', 'desc')
                     ->first();
-                
-                if ($activeShift) {
-                    $staffId = $activeShift->staff_id;
-                    $barShiftId = $activeShift->id;
+
+                if ($prevShift) {
+                    $staffId    = $prevShift->staff_id;
+                    $barShiftId = $prevShift->id;
+                }
+            }
+
+            // 3. Last resort: any active counter staff (no shift context needed)
+            if (!$staffId) {
+                $fallback = Staff::where('user_id', $ownerId)
+                    ->where('is_active', true)
+                    ->whereHas('role', function ($q) use ($counterRoles) {
+                        $q->whereIn(DB::raw('LOWER(TRIM(name))'), $counterRoles);
+                    })
+                    ->orderBy('full_name')
+                    ->first();
+
+                if ($fallback) {
+                    $staffId = $fallback->id;
                 }
             }
         }
