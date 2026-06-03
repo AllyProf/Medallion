@@ -1309,6 +1309,10 @@ class AccountantController extends Controller
 
     public function staffShortages()
     {
+        if (!$this->hasPermission('finance', 'view') && !$this->hasPermission('reports', 'view')) {
+            abort(403, 'You do not have permission to view staff shortages.');
+        }
+
         $ownerId = $this->getOwnerId();
         
         // 1. Outstanding Shortages (Current Debt)
@@ -1369,11 +1373,111 @@ class AccountantController extends Controller
             return strcmp($b['date'], $a['date']);
         });
 
+        $staffMembers = Staff::where('user_id', $ownerId)
+            ->where('is_active', true)
+            ->with('role')
+            ->orderBy('full_name')
+            ->get();
+
         return view('accountant.staff_shortages', compact(
             'staffShortageSummaries', 
             'totalOutstandingShortages',
-            'settlementHistory'
+            'settlementHistory',
+            'staffMembers'
         ));
+    }
+
+    /**
+     * Manually record a cash shortage against a staff member.
+     */
+    public function recordStaffShortage(Request $request)
+    {
+        if (!$this->hasPermission('finance', 'edit') && !$this->hasPermission('reports', 'edit')) {
+            return response()->json(['success' => false, 'error' => 'You do not have permission to record staff shortages.'], 403);
+        }
+
+        $validated = $request->validate([
+            'waiter_id' => 'required|exists:staff,id',
+            'amount' => 'required|numeric|min:1',
+            'reconciliation_date' => 'required|date',
+            'reconciliation_type' => 'required|in:bar,food',
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        $ownerId = $this->getOwnerId();
+        $staff = Staff::where('id', $validated['waiter_id'])->where('user_id', $ownerId)->first();
+        if (!$staff) {
+            return response()->json(['success' => false, 'error' => 'Staff member not found for this business.'], 404);
+        }
+
+        $amount = (float) $validated['amount'];
+        $date = $validated['reconciliation_date'];
+        $type = $validated['reconciliation_type'];
+        $recordedBy = auth()->user()->name ?? session('staff_name', 'Accountant');
+
+        DB::beginTransaction();
+        try {
+            $reconciliation = WaiterDailyReconciliation::firstOrNew([
+                'user_id' => $ownerId,
+                'waiter_id' => $staff->id,
+                'reconciliation_date' => $date,
+                'reconciliation_type' => $type,
+            ]);
+
+            $notesData = json_decode($reconciliation->notes ?? '', true);
+            if (!is_array($notesData)) {
+                $notesData = $reconciliation->notes
+                    ? ['legacy_notes' => $reconciliation->notes]
+                    : [];
+            }
+
+            $notesData['manual_shortages'][] = [
+                'amount' => $amount,
+                'date' => now()->toDateTimeString(),
+                'recorded_by' => $recordedBy,
+                'note' => $validated['notes'] ?? null,
+            ];
+            $reconciliation->notes = json_encode($notesData);
+
+            if (empty(floatval($reconciliation->total_sales))) {
+                $reconciliation->expected_amount = floatval($reconciliation->expected_amount) + $amount;
+            } else {
+                $reconciliation->submitted_amount = floatval($reconciliation->submitted_amount) - $amount;
+            }
+
+            $reconciliation->difference = floatval($reconciliation->submitted_amount) - floatval($reconciliation->expected_amount);
+            $reconciliation->status = 'partial';
+            $reconciliation->save();
+
+            DB::commit();
+
+            $smsSent = false;
+            try {
+                $reconciliation->load('waiter');
+                $smsService = new \App\Services\HandoverSmsService();
+                $smsSent = (bool) $smsService->sendManualStaffShortageSms($reconciliation, $amount);
+            } catch (\Exception $e) {
+                Log::error('Failed to send manual staff shortage SMS: ' . $e->getMessage());
+            }
+
+            $message = 'Shortage of TSh ' . number_format($amount) . ' recorded for ' . $staff->full_name . '.';
+            if (!$staff->phone_number) {
+                $message .= ' (No phone number on file — SMS not sent.)';
+            } elseif ($smsSent) {
+                $message .= ' SMS notification sent.';
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'sms_sent' => $smsSent,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Record staff shortage failed: ' . $e->getMessage());
+
+            return response()->json(['success' => false, 'error' => 'Failed to record shortage. Please try again.'], 500);
+        }
     }
 
     /**

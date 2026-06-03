@@ -446,6 +446,31 @@ class HandoverSmsService
     }
 
     /**
+     * Notify staff when the accountant manually records a cash shortage.
+     */
+    public function sendManualStaffShortageSms(\App\Models\WaiterDailyReconciliation $reconciliation, float $amountRecorded)
+    {
+        $waiter = $reconciliation->waiter;
+        if (!$waiter || !$waiter->phone_number) {
+            return false;
+        }
+
+        $recorded = number_format($amountRecorded, 0);
+        $totalDebt = number_format(abs((float) $reconciliation->difference), 0);
+        $date = \Carbon\Carbon::parse($reconciliation->reconciliation_date)->format('M d, Y');
+        $dept = ($reconciliation->reconciliation_type === 'food') ? 'KITCHEN' : 'BAR/DRINKS';
+
+        $message = "SHORTAGE RECORDED - MEDALLION\n\n";
+        $message .= 'Hello ' . ($waiter->full_name ?? 'Staff') . ",\n";
+        $message .= "The Accountant has recorded a shortage of TSh {$recorded} against your {$dept} shift on {$date}.\n";
+        $message .= "Your total outstanding debt for this shift is now TSh {$totalDebt}.\n";
+        $message .= "\nPlease see the Accountant if you have questions.\n";
+        $message .= "\nMEDALLION Financial Audit.";
+
+        return $this->smsService->sendSms($waiter->phone_number, $message);
+    }
+
+    /**
      * Send Shortage Settlement SMS when a staff member pays back a deficit
      */
     public function sendShortageSettlementSms(\App\Models\WaiterDailyReconciliation $reconciliation, $amountPaid)

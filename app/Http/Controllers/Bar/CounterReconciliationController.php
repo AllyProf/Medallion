@@ -918,6 +918,39 @@ class CounterReconciliationController extends Controller
     }
 
     /**
+     * Resolve shift context for reconcile/submit actions (respects shift_id from URL).
+     */
+    private function resolveReconciliationShiftIds(Request $request, int $ownerId): array
+    {
+        if ($request->filled('shift_id')) {
+            $numericId = (int) preg_replace('/[^0-9]/', '', (string) $request->input('shift_id'));
+            $shift = \App\Models\BarShift::where('user_id', $ownerId)->where('id', $numericId)->first();
+            if ($shift) {
+                return ['ids' => [$shift->id], 'primary' => $shift];
+            }
+        }
+
+        $targetIds = $request->input('target_shift_ids', []);
+        if (is_array($targetIds) && !empty($targetIds)) {
+            $ids = array_values(array_filter(array_map('intval', $targetIds)));
+            $primary = \App\Models\BarShift::where('user_id', $ownerId)
+                ->whereIn('id', $ids)
+                ->orderBy('opened_at')
+                ->first();
+
+            return ['ids' => $ids, 'primary' => $primary];
+        }
+
+        $openIds = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->pluck('id')
+            ->toArray();
+        $primary = !empty($openIds) ? \App\Models\BarShift::find($openIds[0]) : null;
+
+        return ['ids' => $openIds, 'primary' => $primary];
+    }
+
+    /**
      * Verify a waiter's reconciliation
      */
     public function verifyReconciliation(Request $request, WaiterDailyReconciliation $reconciliation)
@@ -977,9 +1010,10 @@ class CounterReconciliationController extends Controller
             'waiter_id' => 'required|exists:staff,id',
             'date' => 'required|date',
             'amount' => 'nullable|numeric|min:0',
+            'shift_id' => 'nullable',
+            'target_shift_ids' => 'nullable|array',
+            'target_shift_ids.*' => 'integer',
         ]);
-        
-        $newSubmittedAmount = $validated['amount'] ?? 0;
 
         // Check if current user is accountant
         $currentStaff = $this->getCurrentStaff();
@@ -998,15 +1032,19 @@ class CounterReconciliationController extends Controller
 
         $location = session('active_location');
 
-        // REQUIRE ACTIVE SHIFT (Check if ANY shift is open for the business, or the specific staff member)
-        $ownerId = $this->getOwnerId();
-        $allOpenShiftIds = \App\Models\BarShift::where('user_id', $ownerId)
-            ->where('status', 'open')
-            ->pluck('id')
-            ->toArray();
+        $shiftContext = $this->resolveReconciliationShiftIds($request, $ownerId);
+        $targetShiftIds = $shiftContext['ids'];
+        $primaryShift = $shiftContext['primary'];
 
-        // Get all served bar orders (with drinks) for this waiter on this date that are not yet paid
-        // Counter only marks bar orders as paid, not food orders
+        $applyShiftScope = function ($q) use ($targetShiftIds, $validated) {
+            if (!empty($targetShiftIds)) {
+                return $q->whereIn('bar_shift_id', $targetShiftIds);
+            }
+
+            return $q->whereDate('created_at', $validated['date']);
+        };
+
+        // Get all served bar orders (with drinks) for this waiter on this shift that are not yet paid
         $ordersQuery = BarOrder::query()
             ->where('waiter_id', $waiter->id)
             ->when($location && $location !== 'all', function ($q) use ($location) {
@@ -1015,27 +1053,19 @@ class CounterReconciliationController extends Controller
                 });
             });
 
-        // If not accountant, filter by owner
         if (!$isAccountant && !$isSuperAdmin) {
             $ordersQuery->where('user_id', $ownerId);
         }
 
         $orders = $ordersQuery
-            ->when(!empty($allOpenShiftIds), function ($q) use ($allOpenShiftIds) {
-                return $q->whereIn('bar_shift_id', $allOpenShiftIds);
-            }, function ($q) use ($validated) {
-                return $q->whereDate('created_at', $validated['date']);
-            })
+            ->when(true, $applyShiftScope)
             ->where('status', 'served')
             ->where('payment_status', '!=', 'paid')
             ->whereHas('items')
             ->get();
 
-        // Continue even if no unpaid orders exist - we still need to create/update the reconciliation record
-        // to officially mark the waiter as 'reconciled' for the daily handover.
-
-        if (empty($allOpenShiftIds) && !$isAccountant && !$isSuperAdmin) {
-            return response()->json(['error' => 'Please open a shift before reconciling waiters.'], 403);
+        if (empty($targetShiftIds) && !$isAccountant && !$isSuperAdmin) {
+            return response()->json(['error' => 'Please open a shift or select the shift you are reconciling.'], 403);
         }
 
         // Calculate expected amount (total bar sales for this waiter on this date)
@@ -1049,34 +1079,29 @@ class CounterReconciliationController extends Controller
         }
 
         $expectedAmount = $expectedOrdersQuery
-            ->when(!empty($allOpenShiftIds), function ($q) use ($allOpenShiftIds) {
-                return $q->whereIn('bar_shift_id', $allOpenShiftIds);
-            }, function ($q) use ($validated) {
-                return $q->whereDate('created_at', $validated['date']);
-            })
+            ->when(true, $applyShiftScope)
             ->where('status', 'served')
-            ->whereHas('items') // Only bar orders
+            ->whereHas('items')
             ->with('items')
             ->get()
             ->sum(function ($order) {
                 return $order->items->sum('total_price');
             });
 
+        $businessDate = $validated['date'];
+        if ($primaryShift) {
+            $businessDate = $primaryShift->opened_at->format('Y-m-d');
+        }
+
         DB::beginTransaction();
         try {
             $totalAmount = 0;
             $updatedCount = 0;
             foreach ($orders as $order) {
-                // Force as paid during reconciliation to clear the waiter's list
-                // but DO NOT record fake balancing payments to avoid messing up the cash audit.
                 $order->payment_status = 'paid';
-                
-                // Keep the paid_amount as it is (what was actually recorded via POS/Waiter)
-                // This ensures Recorded (System) matches Submitted (Physical) for a clean audit.
-                
-                $order->paid_by_waiter_id = $waiter->id; 
-                if (!$order->bar_shift_id && !empty($allOpenShiftIds)) {
-                    $order->bar_shift_id = $allOpenShiftIds[0];
+                $order->paid_by_waiter_id = $waiter->id;
+                if (!$order->bar_shift_id && !empty($targetShiftIds)) {
+                    $order->bar_shift_id = $targetShiftIds[0];
                 }
                 $order->save();
 
@@ -1084,40 +1109,14 @@ class CounterReconciliationController extends Controller
                 $updatedCount++;
             }
 
-            DB::commit();
-
-            \Log::info('Bulk mark orders as paid', [
-                'waiter_id' => $waiter->id,
-                'date' => $validated['date'],
-                'orders_count' => $updatedCount,
-                'total_amount' => $totalAmount,
-            ]);
-
-            // Check if reconciliation already exists for this shift/date
-            $existingReconciliation = \App\Models\WaiterDailyReconciliation::where('user_id', $ownerId)
-                ->where('waiter_id', $waiter->id)
-                ->where('reconciliation_date', $validated['date'])
-                ->when(!empty($allOpenShiftIds), function ($q) use ($allOpenShiftIds) {
-                    return $q->whereIn('bar_shift_id', $allOpenShiftIds);
-                })
-                ->first();
-
-            $previousSubmittedAmount = $existingReconciliation ? $existingReconciliation->submitted_amount : 0;
-
-            // Calculate submitted amount from OrderPayments (what waiters have already recorded in POS)
             $allOrdersWithPaymentsQuery = BarOrder::query()
                 ->where('waiter_id', $waiter->id)
-                ->when(!empty($allOpenShiftIds), function ($q) use ($allOpenShiftIds) {
-                    return $q->whereIn('bar_shift_id', $allOpenShiftIds);
-                }, function ($q) use ($validated) {
-                    return $q->whereDate('created_at', $validated['date']);
-                })
+                ->when(true, $applyShiftScope)
                 ->where('status', 'served')
-                ->whereHas('items') // Only bar orders
-                ->whereHas('orderPayments') // Must have recorded payments
+                ->whereHas('items')
+                ->whereHas('orderPayments')
                 ->with(['items', 'orderPayments']);
 
-            // If not accountant, filter by owner
             if (!$isAccountant && !$isSuperAdmin) {
                 $allOrdersWithPaymentsQuery->where('user_id', $ownerId);
             }
@@ -1125,30 +1124,19 @@ class CounterReconciliationController extends Controller
             $calculatedSubmittedAmount = $allOrdersWithPaymentsQuery
                 ->get()
                 ->sum(function ($order) {
-                    // Sum recorded payments but cap at order total to avoid double counting
                     return min($order->orderPayments->sum('amount'), $order->total_amount);
                 });
 
-            // Extract newly submitted cash from the modal breakdown
             $breakdown = $request->input('breakdown', []);
             $submittedCash = $breakdown['cash'] ?? 0;
-
-            // Total submitted amount is System Recorded + Newly Submitted Cash
             $submittedAmount = $calculatedSubmittedAmount + $submittedCash;
-
-            // Calculate final difference
             $difference = $submittedAmount - $expectedAmount;
 
-            // Get bar orders for cash/mobile money calculation
             $barOrdersQuery = BarOrder::query()
                 ->where('waiter_id', $waiter->id)
-                ->when(!empty($allOpenShiftIds), function ($q) use ($allOpenShiftIds) {
-                    return $q->whereIn('bar_shift_id', $allOpenShiftIds);
-                }, function ($q) use ($validated) {
-                    return $q->whereDate('created_at', $validated['date']);
-                })
+                ->when(true, $applyShiftScope)
                 ->where('status', 'served')
-                ->whereHas('items') // Only bar orders
+                ->whereHas('items')
                 ->with(['items', 'orderPayments']);
 
             if (!$isAccountant && !$isSuperAdmin) {
@@ -1156,12 +1144,10 @@ class CounterReconciliationController extends Controller
             }
             $barOrders = $barOrdersQuery->get();
 
-            // Calculate recorded platform breakdown from orders
             $waiterPlatformTotals = [];
             foreach ($barOrders as $order) {
                 if ($order->orderPayments->count() > 0) {
                     $orderPaymentsSum = $order->orderPayments->sum('amount');
-                    // Cap the payments at the order total to avoid double counting during bulk reconciliation
                     $cappedTotal = min($orderPaymentsSum, $order->total_amount);
 
                     if ($order->orderPayments->count() === 1) {
@@ -1169,7 +1155,6 @@ class CounterReconciliationController extends Controller
                         $pKey = ($payment->payment_method === 'cash') ? 'cash' : strtolower(trim(str_replace(' ', '_', $payment->mobile_money_number ?? 'mobile')));
                         $waiterPlatformTotals[$pKey] = ($waiterPlatformTotals[$pKey] ?? 0) + $cappedTotal;
                     } else {
-                        // If multiple payments (rare but possible), spread the capped total across methods
                         foreach ($order->orderPayments as $payment) {
                             $ratio = ($orderPaymentsSum > 0) ? ($payment->amount / $orderPaymentsSum) : 0;
                             $pKey = ($payment->payment_method === 'cash') ? 'cash' : strtolower(trim(str_replace(' ', '_', $payment->mobile_money_number ?? 'mobile')));
@@ -1182,10 +1167,7 @@ class CounterReconciliationController extends Controller
                 }
             }
 
-            $breakdown = $request->input('breakdown', []);
             $newManualCash = $breakdown['cash'] ?? 0;
-            
-            // Sum POS-recorded cash + newly submitted manual cash
             $posCash = $waiterPlatformTotals['cash'] ?? 0;
             $finalCashCollected = $posCash + $newManualCash;
 
@@ -1196,29 +1178,18 @@ class CounterReconciliationController extends Controller
                 }
             }
 
-            // [LOGIC FIX] LOCK DATE TO BUSINESS START DATE
-            $businessDate = $validated['date'];
-            if (!empty($allOpenShiftIds)) {
-                $primaryShift = \App\Models\BarShift::find($allOpenShiftIds[0]);
-                if ($primaryShift) {
-                    $businessDate = $primaryShift->opened_at->format('Y-m-d');
-                }
-            }
-
             $matchArray = [
                 'user_id' => $ownerId,
                 'waiter_id' => $waiter->id,
                 'reconciliation_date' => $businessDate,
-                'reconciliation_type' => 'bar', // Bar-specific reconciliation
+                'reconciliation_type' => 'bar',
             ];
-            if (!empty($allOpenShiftIds)) {
-                // Prioritize the waiter's actually used shift if it's among the open ones
-                $waiterShiftId = $barOrders->whereIn('bar_shift_id', $allOpenShiftIds)->pluck('bar_shift_id')->first() 
-                                 ?? $allOpenShiftIds[0];
+            if (!empty($targetShiftIds)) {
+                $waiterShiftId = $barOrders->whereIn('bar_shift_id', $targetShiftIds)->pluck('bar_shift_id')->first()
+                    ?? $targetShiftIds[0];
                 $matchArray['bar_shift_id'] = $waiterShiftId;
             }
 
-            // Create or update bar-specific reconciliation record
             $reconciliation = \App\Models\WaiterDailyReconciliation::updateOrCreate(
                 $matchArray,
                 [
@@ -1237,6 +1208,17 @@ class CounterReconciliationController extends Controller
                     'bar_shift_id' => $matchArray['bar_shift_id'] ?? null,
                 ]
             );
+
+            DB::commit();
+
+            \Log::info('Bulk mark orders as paid', [
+                'waiter_id' => $waiter->id,
+                'date' => $validated['date'],
+                'shift_ids' => $targetShiftIds,
+                'orders_count' => $updatedCount,
+                'total_amount' => $totalAmount,
+                'reconciliation_id' => $reconciliation->id,
+            ]);
 
             // Create notification for waiter
             try {
@@ -1634,24 +1616,25 @@ class CounterReconciliationController extends Controller
                 ->get();
 
             foreach ($orders as $order) {
-                // Delete balancing payments
                 \App\Models\OrderPayment::where('order_id', $order->id)
                     ->where('notes', 'Settled during waiter reconciliation')
                     ->delete();
 
-                // Recalculate paid amount from remaining payments
                 $order->load('orderPayments');
                 $remainingPaid = (float) $order->orderPayments->sum('amount');
-                
+
                 $order->update([
                     'status' => 'served',
                     'payment_status' => ($remainingPaid >= $order->total_amount - 0.01 && $remainingPaid > 0) ? 'paid' : ($remainingPaid > 0 ? 'partial' : 'pending'),
                     'paid_amount' => $remainingPaid,
-                    'paid_by_waiter_id' => null
+                    'paid_by_waiter_id' => null,
+                    'reconciliation_id' => null,
                 ]);
             }
 
-            // 3. Delete the reconciliation record
+            \App\Models\BarOrder::where('reconciliation_id', $reconciliation->id)
+                ->update(['reconciliation_id' => null]);
+
             $reconciliation->delete();
 
             DB::commit();

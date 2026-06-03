@@ -129,6 +129,12 @@
   } elseif ($todayHandover && $todayHandover->status === 'verified') {
       $totalCollections = $todayHandover->amount;
   }
+
+  // Management (accountant/manager): hide waiter rows while counter shift is still open
+  $hideReconciliationDuringLiveShift = $isManagementRole
+      && !$todayHandover
+      && $bar_shift
+      && $bar_shift->status === 'open';
 @endphp
 
 @if($isManagementRole && $todayHandover)
@@ -211,8 +217,9 @@
         @if($bar_shift)
             <h3 class="text-dark font-weight-bold">Counter Shift in Progress</h3>
             <p class="text-muted lead px-md-5 mx-auto" style="max-width: 700px;">
-                Shift <strong>#{{ $bar_shift->formatted_id }}</strong> is currently active. 
-                Waiters are actively selling. You can monitor the real-time progress below, but final verification is locked until the counter staff closes and submits the shift.
+                Shift <strong>#{{ $bar_shift->formatted_id }}</strong> is currently active.
+                Waiters are actively selling. Reconciliation details are hidden until the counter staff closes and submits this shift.
+                Use <strong>Refresh Sequence</strong> to check when the handover is ready for verification.
             </p>
         @else
             <h3 class="text-dark font-weight-bold">Waiting for Shift Opening</h3>
@@ -233,7 +240,7 @@
 @endif
 
 
-@if(!$isManagementRole || $todayHandover || ($bar_shift && (!$isAccountant || $bar_shift->status === 'closed' || $date !== now()->format('Y-m-d'))))
+@if(!$hideReconciliationDuringLiveShift && (!$isManagementRole || $todayHandover || ($bar_shift && (!$isAccountant || $bar_shift->status === 'closed' || $date !== now()->format('Y-m-d')))))
 <!-- Waiters List -->
 
 <div class="row">
@@ -401,6 +408,7 @@
                         <button class="btn btn-sm btn-success mark-all-paid-btn mr-1 mb-1 font-weight-bold" 
                                 data-waiter-id="{{ $data['waiter']->id }}"
                                 data-date="{{ $date }}"
+                                data-shift-id="{{ !empty($targetShiftIds) ? $targetShiftIds[0] : ($bar_shift->id ?? request('shift_id')) }}"
                                 data-total-amount="{{ $data['expected_amount'] }}"
                                 data-recorded-amount="{{ $data['recorded_amount'] ?? 0 }}"
                                 data-submitted-amount="{{ $data['submitted_amount'] ?? 0 }}"
@@ -1615,6 +1623,7 @@ $(document).ready(function() {
   $(document).on('click', '.mark-all-paid-btn', function() {
     const waiterId = $(this).data('waiter-id');
     const date = $(this).data('date');
+    const shiftId = $(this).data('shift-id') || '';
     const totalAmount = parseFloat($(this).data('total-amount'));
     const recordedAmount = parseFloat($(this).data('recorded-amount')) || 0;
     const submittedAmount = parseFloat($(this).data('submitted-amount')) || 0;
@@ -1782,7 +1791,9 @@ $(document).ready(function() {
           data: { 
             _token: '{{ csrf_token() }}', 
             waiter_id: waiterId, 
-            date: date, 
+            date: date,
+            shift_id: shiftId,
+            target_shift_ids: @json($targetShiftIds ?? []),
             amount: result.value.amount,
             breakdown: result.value.breakdown,
             notes: result.value.notes

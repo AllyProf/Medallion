@@ -378,6 +378,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::get('dashboard', [\App\Http\Controllers\Accountant\AccountantController::class, 'dashboard'])->name('dashboard');
         Route::get('reconciliations', [\App\Http\Controllers\Accountant\AccountantController::class, 'reconciliations'])->name('reconciliations');
         Route::get('staff-shortages', [\App\Http\Controllers\Accountant\AccountantController::class, 'staffShortages'])->name('staff-shortages');
+        Route::post('staff-shortages/record', [\App\Http\Controllers\Accountant\AccountantController::class, 'recordStaffShortage'])->name('staff-shortages.record');
         Route::get('reconciliations/orders', [\App\Http\Controllers\Accountant\AccountantController::class, 'getDepartmentOrders'])->name('reconciliations.orders');
         Route::post('reconciliations/pay-shortage', [\App\Http\Controllers\Accountant\AccountantController::class, 'payShortage'])->name('reconciliations.pay-shortage');
         Route::get('reconciliations/{id}', [\App\Http\Controllers\Accountant\AccountantController::class, 'reconciliationDetails'])->name('reconciliation-details');

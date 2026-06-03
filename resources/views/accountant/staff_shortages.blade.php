@@ -47,7 +47,12 @@
 <div class="app-title">
   <div>
     <h1><i class="fa fa-exclamation-triangle text-danger"></i> Outstanding Staff Shortages</h1>
-    <p class="text-muted mb-0">Settle waiter debts directly from this page — no navigation needed.</p>
+    <p class="text-muted mb-0">Record new shortages or settle existing debts — all from this page.</p>
+  </div>
+  <div class="d-flex align-items-center flex-wrap" style="gap:10px;">
+    <button type="button" class="btn btn-danger font-weight-bold shadow-sm" data-toggle="modal" data-target="#recordStaffShortageModal">
+      <i class="fa fa-plus-circle mr-1"></i> Record Staff Shortage
+    </button>
   </div>
   <ul class="app-breadcrumb breadcrumb">
     <li class="breadcrumb-item"><i class="fa fa-home fa-lg"></i></li>
@@ -228,6 +233,69 @@
     </div>
 </div>
 
+{{-- Record Staff Shortage Modal --}}
+<div class="modal fade" id="recordStaffShortageModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content" style="border-radius:12px; border:none; overflow:hidden;">
+      <div class="modal-header" style="background:linear-gradient(135deg, #dc3545,#a71d2a); color:#fff; border:none;">
+        <h5 class="modal-title font-weight-bold">
+          <i class="fa fa-plus-circle mr-2"></i> Record Staff Shortage
+        </h5>
+        <button type="button" class="close text-white" data-dismiss="modal">
+          <span>&times;</span>
+        </button>
+      </div>
+      <form id="recordStaffShortageForm">
+        <div class="modal-body p-4">
+          <div class="alert alert-light border py-2 mb-3" style="border-radius:8px; font-size:0.85rem;">
+            <i class="fa fa-info-circle text-danger mr-1"></i>
+            Logs a cash shortage against the selected staff member. The amount appears in their outstanding debt until settled.
+          </div>
+          <div class="form-group">
+            <label class="font-weight-bold">Staff Member <span class="text-danger">*</span></label>
+            <select name="waiter_id" id="record-waiter-id" class="form-control" required>
+              <option value="">— Select staff —</option>
+              @foreach($staffMembers as $member)
+                <option value="{{ $member->id }}">
+                  {{ $member->full_name }} — {{ $member->role->name ?? 'Staff' }}
+                </option>
+              @endforeach
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="font-weight-bold">Department <span class="text-danger">*</span></label>
+            <select name="reconciliation_type" id="record-dept" class="form-control" required>
+              <option value="bar">Drinks (Bar / Counter)</option>
+              <option value="food">Kitchen (Food)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="font-weight-bold">Shortage Date <span class="text-danger">*</span></label>
+            <input type="date" name="reconciliation_date" id="record-date" class="form-control"
+                   value="{{ now()->format('Y-m-d') }}" max="{{ now()->format('Y-m-d') }}" required>
+          </div>
+          <div class="form-group">
+            <label class="font-weight-bold">Shortage Amount (TSh) <span class="text-danger">*</span></label>
+            <input type="number" name="amount" id="record-amount" class="form-control" min="1" step="1"
+                   placeholder="e.g. 15000" required style="font-size:1.1rem; font-weight:700;">
+          </div>
+          <div class="form-group mb-0">
+            <label class="font-weight-bold">Reason / Notes <small class="text-muted font-weight-normal">(optional)</small></label>
+            <textarea name="notes" id="record-notes" class="form-control" rows="2"
+                      placeholder="e.g. Missing cash from shift handover, till discrepancy…"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer border-0 pt-0">
+          <button type="button" class="btn btn-light" data-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger font-weight-bold px-4" id="confirmRecordShortageBtn">
+            <i class="fa fa-save mr-1"></i> Save Shortage
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 {{-- Settlement Modal --}}
 <div class="modal fade" id="settleModal" tabindex="-1" role="dialog">
   <div class="modal-dialog modal-dialog-centered" role="document">
@@ -289,6 +357,59 @@
 @push('scripts')
 <script>
 $(document).ready(function() {
+
+  // Record new staff shortage
+  $('#recordStaffShortageForm').on('submit', function(e) {
+    e.preventDefault();
+    const btn = $('#confirmRecordShortageBtn');
+    const amount = parseFloat($('#record-amount').val());
+
+    if (!amount || amount <= 0) {
+      Swal.fire('Invalid', 'Please enter a valid shortage amount.', 'warning');
+      return;
+    }
+
+    btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin mr-1"></i> Saving...');
+
+    $.ajax({
+      url: '{{ route("accountant.staff-shortages.record") }}',
+      method: 'POST',
+      data: {
+        _token: '{{ csrf_token() }}',
+        waiter_id: $('#record-waiter-id').val(),
+        reconciliation_type: $('#record-dept').val(),
+        reconciliation_date: $('#record-date').val(),
+        amount: amount,
+        notes: $('#record-notes').val()
+      },
+      success: function(resp) {
+        if (resp.success) {
+          $('#recordStaffShortageModal').modal('hide');
+          Swal.fire({
+            icon: 'success',
+            title: 'Shortage Recorded',
+            text: resp.message,
+            timer: 2000,
+            showConfirmButton: false
+          }).then(() => location.reload());
+        } else {
+          Swal.fire('Error', resp.error || 'Failed to record shortage.', 'error');
+          btn.prop('disabled', false).html('<i class="fa fa-save mr-1"></i> Save Shortage');
+        }
+      },
+      error: function(xhr) {
+        const err = xhr.responseJSON?.error || xhr.responseJSON?.message || 'A server error occurred.';
+        Swal.fire('Error', err, 'error');
+        btn.prop('disabled', false).html('<i class="fa fa-save mr-1"></i> Save Shortage');
+      }
+    });
+  });
+
+  $('#recordStaffShortageModal').on('hidden.bs.modal', function() {
+    $('#recordStaffShortageForm')[0].reset();
+    $('#record-date').val('{{ now()->format('Y-m-d') }}');
+    $('#confirmRecordShortageBtn').prop('disabled', false).html('<i class="fa fa-save mr-1"></i> Save Shortage');
+  });
 
   // Open settlement modal
   $(document).on('click', '.settle-btn', function() {
