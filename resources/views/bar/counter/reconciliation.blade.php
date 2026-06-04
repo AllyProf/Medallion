@@ -332,7 +332,12 @@
                   </td>
                   <td class="audit-col-bg">
                     @if($isCounter)
-                      <span class="badge badge-light border text-muted">At Counter</span>
+                      @if($data['submitted_amount'] > 0)
+                        <strong class="text-success">TSh {{ number_format($data['submitted_amount'], 0) }}</strong>
+                        <br><small class="text-muted">Handover balance</small>
+                      @else
+                        <span class="badge badge-light border text-muted">At Counter</span>
+                      @endif
                     @elseif($data['submitted_amount'] > 0)
                       <strong class="text-success">TSh {{ number_format($data['submitted_amount'], 0) }}</strong>
                     @else

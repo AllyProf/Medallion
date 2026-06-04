@@ -622,48 +622,35 @@ class CounterReconciliationController extends Controller
             ->sortByDesc('total_sales')
             ->values();
 
-        // [REFINED] Absolute Handover Discrepancy Attribution
-        // The Counter staff (Neema) is responsible for the gap between the physical handover
-        // and the sum of all other staff submissions + their own expected sales.
-        if ($todayHandover && $todayHandover->status !== 'verified') {
-            // 1. Sum what was submitted by ALL OTHER waiters
-            $otherStaffSubmitted = $waiters->filter(function($w) {
-                $roleName = strtolower($w['waiter']->role->name ?? '');
-                return !in_array($roleName, ['counter', 'counter-staff', 'bar-manager']);
-            })->sum(function($w) {
+        // Counter handover gap: only after a pending handover exists for THIS shift and the shift is no longer open.
+        // During a live open shift, waiter submissions must not be subtracted from a partial/wrong handover total.
+        $applyCounterHandoverMath = $todayHandover
+            && $todayHandover->status === 'pending'
+            && !$isLiveOpenShiftView
+            && $primaryShiftId
+            && (int) $todayHandover->bar_shift_id === $primaryShiftId;
+
+        if ($applyCounterHandoverMath) {
+            $otherStaffSubmitted = $waiters->filter(function ($w) {
+                $roleName = strtolower($w['waiter']->role->slug ?? $w['waiter']->role->name ?? '');
+
+                return ! in_array($roleName, ['counter', 'counter-staff', 'bar-manager', 'bar-counter', 'bar_counter']);
+            })->sum(function ($w) {
                 return ($w['submitted_amount'] > 0 || $w['reconciliation']) ? $w['submitted_amount'] : $w['recorded_amount'];
             });
 
-            $waiters = $waiters->map(function($data) use ($todayHandover, $otherStaffSubmitted, $ownerId, $date, $targetShiftIds) {
-                $roleName = strtolower($data['waiter']->role->name ?? '');
-                $isCounter = in_array($roleName, ['counter', 'counter-staff', 'bar-manager']);
-                
-                if ($isCounter) {
-                    // Counter Actual = Handover - what others gave them
-                    $actualCounterCash = $todayHandover->amount - $otherStaffSubmitted;
-                    $newDiff = $actualCounterCash - $data['expected_amount'];
-                    
-                    $data['difference'] = $newDiff;
-                    $data['submitted_amount'] = $actualCounterCash;
-                    $data['cash_collected'] = $actualCounterCash; // Ensure UI cards match
+            $waiters = $waiters->map(function ($data) use ($todayHandover, $otherStaffSubmitted) {
+                $roleName = strtolower($data['waiter']->role->slug ?? $data['waiter']->role->name ?? '');
+                $isCounterStaff = in_array($roleName, ['counter', 'counter-staff', 'bar-manager', 'bar-counter', 'bar_counter']);
 
-                    // Update or create the reconciliation record for the counter
-                    $data['reconciliation'] = \App\Models\WaiterDailyReconciliation::updateOrCreate(
-                        [
-                            'user_id' => $ownerId,
-                            'waiter_id' => $data['waiter']->id,
-                            'bar_shift_id' => $targetShiftIds[0] ?? null,
-                            'reconciliation_date' => $date,
-                            'reconciliation_type' => 'bar',
-                        ],
-                        [
-                            'expected_amount' => $data['expected_amount'],
-                            'submitted_amount' => $data['submitted_amount'],
-                            'difference' => $newDiff,
-                            'status' => 'submitted',
-                        ]
-                    );
+                if ($isCounterStaff) {
+                    $actualCounterCash = max(0, (float) $todayHandover->amount - (float) $otherStaffSubmitted);
+                    $data['difference'] = $actualCounterCash - (float) $data['expected_amount'];
+                    $data['submitted_amount'] = $actualCounterCash;
+                    $data['cash_collected'] = $actualCounterCash;
+                    $data['recorded_amount'] = $actualCounterCash;
                 }
+
                 return $data;
             });
         }
