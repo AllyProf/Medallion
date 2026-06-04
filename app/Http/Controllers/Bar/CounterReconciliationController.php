@@ -516,13 +516,11 @@ class CounterReconciliationController extends Controller
                     ? $waiter->dailyReconciliations->firstWhere('bar_shift_id', $primaryShiftId)
                     : $waiter->dailyReconciliations->first();
 
-                // On live shift view, ignore stale / prior-shift reconciliation rows on this shift
+                // On live shift view, ignore only clearly wrong reconciliation rows (wrong shift or wrong expected sales)
                 if ($reconciliation && $isLiveOpenShiftView) {
                     $shiftMismatch = $primaryShiftId && (int) $reconciliation->bar_shift_id !== $primaryShiftId;
                     $salesMismatch = abs((float) $reconciliation->expected_amount - (float) $totalSales) >= 1.0;
-                    $partialPriorSubmit = (float) $reconciliation->submitted_amount > 0
-                        && (float) $reconciliation->submitted_amount + 1 < (float) $totalSales;
-                    if ($shiftMismatch || $salesMismatch || $partialPriorSubmit) {
+                    if ($shiftMismatch || $salesMismatch) {
                         $reconciliation = null;
                     }
                 }
@@ -1075,10 +1073,17 @@ class CounterReconciliationController extends Controller
         $shiftContext = $this->resolveReconciliationShiftIds($request, $ownerId);
         $targetShiftIds = $shiftContext['ids'];
         $primaryShift = $shiftContext['primary'];
+        $strictLiveShiftScope = $primaryShift && $primaryShift->status === 'open';
+        $shiftStartedAt = $strictLiveShiftScope ? $primaryShift->opened_at : null;
 
-        $applyShiftScope = function ($q) use ($targetShiftIds, $validated) {
+        $applyShiftScope = function ($q) use ($targetShiftIds, $validated, $shiftStartedAt) {
             if (!empty($targetShiftIds)) {
-                return $q->whereIn('bar_shift_id', $targetShiftIds);
+                $q->whereIn('bar_shift_id', $targetShiftIds);
+                if ($shiftStartedAt) {
+                    $q->where('created_at', '>=', $shiftStartedAt);
+                }
+
+                return $q;
             }
 
             return $q->whereDate('created_at', $validated['date']);
@@ -1120,7 +1125,7 @@ class CounterReconciliationController extends Controller
 
         $expectedAmount = $expectedOrdersQuery
             ->when(true, $applyShiftScope)
-            ->where('status', 'served')
+            ->where('status', '!=', 'cancelled')
             ->whereHas('items')
             ->with('items')
             ->get()

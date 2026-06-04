@@ -1800,8 +1800,11 @@ $(document).ready(function() {
           },
           success: function(response) {
             if (response.success) {
-              showToast('success', 'Reconciliation submitted.', 'Success!');
+              showToast('success', response.message || 'Reconciliation submitted.', 'Success!');
               setTimeout(() => { location.reload(); }, 1200);
+            } else {
+              Swal.fire({ icon: 'error', title: 'Error', text: response.error || response.message || 'Reconciliation was not saved.' });
+              btn.prop('disabled', false).html('<i class="fa fa-hand-holding-usd"></i> Reconcile');
             }
           },
           error: function(xhr) {
