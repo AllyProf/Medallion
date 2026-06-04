@@ -669,11 +669,22 @@ class CounterReconciliationController extends Controller
 
                 if ($isCounterStaff) {
                     $actualCounterCash = max(0, (float) $todayHandover->amount - (float) $otherStaffSubmitted);
-                    $data['difference'] = $actualCounterCash - (float) $data['expected_amount'];
-                    $data['submitted_amount'] = $actualCounterCash;
-                    $data['cash_collected'] = $actualCounterCash;
-                    $data['recorded_amount'] = $actualCounterCash;
-                    $data['status'] = abs($data['difference']) < 0.01 ? 'paid' : 'partial';
+                    $gap = $actualCounterCash - (float) $data['expected_amount'];
+
+                    // Counter own sales are not waiter "submitted" cash — only surface a gap when drawer math fails
+                    if (abs($gap) < 0.01) {
+                        $data['difference'] = 0;
+                        $data['submitted_amount'] = 0;
+                        if (! empty($data['reconciliation'])) {
+                            $data['status'] = $data['reconciliation']->status ?: 'paid';
+                        } else {
+                            $data['status'] = 'paid';
+                        }
+                    } else {
+                        $data['difference'] = $gap;
+                        $data['submitted_amount'] = $actualCounterCash;
+                        $data['status'] = 'partial';
+                    }
                 }
 
                 return $data;

@@ -333,10 +333,10 @@
                   <td class="audit-col-bg">
                     @if($isCounter)
                       @if($data['submitted_amount'] > 0)
-                        <strong class="text-success">TSh {{ number_format($data['submitted_amount'], 0) }}</strong>
-                        <br><small class="text-muted">Handover balance</small>
+                        <strong class="text-warning">TSh {{ number_format($data['submitted_amount'], 0) }}</strong>
+                        <br><small class="text-muted">Drawer check</small>
                       @else
-                        <span class="badge badge-light border text-muted">At Counter</span>
+                        <span class="badge badge-light border text-muted">{{ isset($todayHandover) && $todayHandover ? 'In handover' : 'At Counter' }}</span>
                       @endif
                     @elseif($data['submitted_amount'] > 0)
                       <strong class="text-success">TSh {{ number_format($data['submitted_amount'], 0) }}</strong>
@@ -362,7 +362,9 @@
                   <td class="text-center">
                     @if($isCounter)
                       @if($data['submitted_amount'] > 0)
-                        <span class="badge badge-info"><i class="fa fa-handshake-o"></i> Handover</span>
+                        <span class="badge badge-warning"><i class="fa fa-exclamation-triangle"></i> Check drawer</span>
+                      @elseif(isset($todayHandover) && $todayHandover)
+                        <span class="badge badge-success"><i class="fa fa-check"></i> Balanced</span>
                       @else
                         <span class="badge badge-dark">At Counter</span>
                       @endif
