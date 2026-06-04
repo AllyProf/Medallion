@@ -512,12 +512,17 @@ class CounterReconciliationController extends Controller
                 // Re-calculate Total Recorded to match the above logic
                 $totalRecordedAmount = $cashCollected + $mobileMoneyCollected;
 
+                $roleSlug = strtolower($waiter->role->slug ?? $waiter->role->name ?? '');
+                $isCounterStaff = in_array($roleSlug, ['counter', 'counter-staff', 'bar-manager', 'bar-counter', 'bar_counter']);
+
                 $reconciliation = $primaryShiftId
                     ? $waiter->dailyReconciliations->firstWhere('bar_shift_id', $primaryShiftId)
                     : $waiter->dailyReconciliations->first();
 
-                // On live shift view, ignore only clearly wrong reconciliation rows (wrong shift or wrong expected sales)
-                if ($reconciliation && $isLiveOpenShiftView) {
+                // Counter staff are not waiter-reconciled; drop legacy auto-created rows on live shift
+                if ($isCounterStaff && $isLiveOpenShiftView) {
+                    $reconciliation = null;
+                } elseif ($reconciliation && $isLiveOpenShiftView) {
                     $shiftMismatch = $primaryShiftId && (int) $reconciliation->bar_shift_id !== $primaryShiftId;
                     $salesMismatch = abs((float) $reconciliation->expected_amount - (float) $totalSales) >= 1.0;
                     if ($shiftMismatch || $salesMismatch) {
@@ -525,39 +530,40 @@ class CounterReconciliationController extends Controller
                     }
                 }
 
-                // Submitted amount: use reconciliation if exists, otherwise 0 (not yet submitted)
-                // Don't use totalPaidAmount here - that would show as submitted before reconciliation
-                $submittedAmount = $reconciliation ? $reconciliation->submitted_amount : 0;
-
-                // Calculate difference:
-                // If submitted, use submitted - total. Else use recorded - total.
-                $difference = ($submittedAmount > 0 || $reconciliation)
-                    ? ($submittedAmount - $totalSales)
-                    : ($totalRecordedAmount - $totalSales);
-
-                // Removed auto-generation of reconciliation records for Counter staff.
-                // Counter staff must manually reconcile their own shortages to provide a reason,
-                // otherwise the Handover process will remain locked.
-
-                // Determine status intelligently
-                $status = 'pending';
-                if ($reconciliation) {
-                    // If reconciliation exists, use its status
-                    $status = $reconciliation->status;
-                } else {
-                    // No reconciliation record - determine status based on payment
+                if ($isCounterStaff) {
+                    // Counter: collections in drawer vs own kiosk/bar sales (not waiter submit flow)
+                    $submittedAmount = 0;
+                    $difference = $totalRecordedAmount - $totalSales;
+                    $finalCash = $cashCollected;
+                    $finalDigital = $mobileMoneyCollected;
+                    $status = 'pending';
                     if ($hasUnpaidOrders) {
-                        $status = 'pending'; // Still has unpaid orders
-                    } elseif ($totalPaidAmount > 0 && abs($difference) < 0.01) {
-                        $status = 'paid'; // All orders paid and amounts match
-                    } elseif ($totalPaidAmount > 0) {
-                        $status = 'partial'; // Some orders paid but amounts don't match
+                        $status = 'pending';
+                    } elseif ($totalRecordedAmount > 0 && abs($difference) < 0.01) {
+                        $status = 'paid';
+                    } elseif ($totalRecordedAmount > 0) {
+                        $status = 'partial';
                     }
-                }
+                } else {
+                    $submittedAmount = $reconciliation ? $reconciliation->submitted_amount : 0;
+                    $difference = ($submittedAmount > 0 || $reconciliation)
+                        ? ($submittedAmount - $totalSales)
+                        : ($totalRecordedAmount - $totalSales);
 
-                // Final amounts for the UI: Use reconciliation record if it exists
-                $finalCash = $reconciliation ? $reconciliation->cash_collected : $cashCollected;
-                $finalDigital = $reconciliation ? $reconciliation->mobile_money_collected : $mobileMoneyCollected;
+                    $status = 'pending';
+                    if ($reconciliation) {
+                        $status = $reconciliation->status;
+                    } elseif ($hasUnpaidOrders) {
+                        $status = 'pending';
+                    } elseif ($totalPaidAmount > 0 && abs($difference) < 0.01) {
+                        $status = 'paid';
+                    } elseif ($totalPaidAmount > 0) {
+                        $status = 'partial';
+                    }
+
+                    $finalCash = $reconciliation ? $reconciliation->cash_collected : $cashCollected;
+                    $finalDigital = $reconciliation ? $reconciliation->mobile_money_collected : $mobileMoneyCollected;
+                }
 
                 $waiterProfit = 0;
                 foreach ($barOrders->where('status', 'served') as $order) {
@@ -589,6 +595,7 @@ class CounterReconciliationController extends Controller
 
                 return [
                     'waiter' => $waiter,
+                    'is_counter_staff' => $isCounterStaff,
                     'total_sales' => $totalSales,
                     'bar_sales' => $barSales,
                     'food_sales' => $foodSales,
@@ -649,6 +656,7 @@ class CounterReconciliationController extends Controller
                     $data['submitted_amount'] = $actualCounterCash;
                     $data['cash_collected'] = $actualCounterCash;
                     $data['recorded_amount'] = $actualCounterCash;
+                    $data['status'] = abs($data['difference']) < 0.01 ? 'paid' : 'partial';
                 }
 
                 return $data;

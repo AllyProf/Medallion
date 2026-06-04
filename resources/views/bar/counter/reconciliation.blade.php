@@ -276,7 +276,7 @@
               <tbody>
                 @foreach($waiters as $index => $data)
                 @php 
-                  $isCounter = in_array(strtolower($data['waiter']->role->slug ?? ''), ['counter', 'counter-staff', 'bar-manager']); 
+                  $isCounter = !empty($data['is_counter_staff']) || in_array(strtolower($data['waiter']->role->slug ?? ''), ['counter', 'counter-staff', 'bar-manager', 'bar-counter', 'bar_counter']); 
                   
                   // Accountant Focus Filter:
                   // Hide 'Pending' waiters from the Accountant's view during an active shift.
@@ -345,7 +345,7 @@
                     @endif
                   </td>
                   <td class="diff-col-bg text-center">
-                    @if($isCounter || $data['submitted_amount'] > 0 || $data['reconciliation'])
+                    @if($isCounter || $data['submitted_amount'] > 0 || (!$isCounter && $data['reconciliation']))
                       <strong class="{{ $data['difference'] >= 0 ? 'text-success' : 'text-danger' }}">
                         @if($data['difference'] > 0)
                           +{{ number_format($data['difference'], 0) }}
@@ -361,10 +361,10 @@
                   </td>
                   <td class="text-center">
                     @if($isCounter)
-                      @if($data['reconciliation'])
-                        <span class="badge badge-success"><i class="fa fa-check-circle"></i> Reconciled</span>
+                      @if($data['submitted_amount'] > 0)
+                        <span class="badge badge-info"><i class="fa fa-handshake-o"></i> Handover</span>
                       @else
-                        <span class="badge badge-dark">Self-Managed</span>
+                        <span class="badge badge-dark">At Counter</span>
                       @endif
                     @elseif($data['status'] === 'reconciled')
                       <span class="badge badge-success"><i class="fa fa-check-circle"></i> Reconciled</span>
@@ -408,8 +408,8 @@
                         </button>
                       @endif
 
-                      {{-- Show Reconcile button ONLY IF no formal reconciliation has been submitted yet AND NOT accountant view --}}
-                      @if(!$data['reconciliation'] && Route::currentRouteName() !== 'accountant.counter.reconciliation')
+                      {{-- Show Reconcile button ONLY for waiters (not counter staff) --}}
+                      @if(!$isCounter && !$data['reconciliation'] && Route::currentRouteName() !== 'accountant.counter.reconciliation')
                         <button class="btn btn-sm btn-success mark-all-paid-btn mr-1 mb-1 font-weight-bold" 
                                 data-waiter-id="{{ $data['waiter']->id }}"
                                 data-date="{{ $date }}"
@@ -424,8 +424,8 @@
                         </button>
                       @endif
 
-                      {{-- Show Undo button if a reconciliation record exists and it's not verified AND NOT accountant view --}}
-                      @if($data['reconciliation'] && $data['status'] !== 'verified' && Route::currentRouteName() !== 'accountant.counter.reconciliation')
+                      {{-- Show Undo button for waiters only --}}
+                      @if(!$isCounter && $data['reconciliation'] && $data['status'] !== 'verified' && Route::currentRouteName() !== 'accountant.counter.reconciliation')
                         <button class="btn btn-sm btn-sm btn-outline-danger reset-btn mb-1" 
                                 data-reconciliation-id="{{ $data['reconciliation']->id }}" title="Reset/Undo Reconciliation">
                           <i class="fa fa-undo"></i> Undo
