@@ -519,30 +519,47 @@ class CounterReconciliationController extends Controller
                     ? $waiter->dailyReconciliations->firstWhere('bar_shift_id', $primaryShiftId)
                     : $waiter->dailyReconciliations->first();
 
-                // Counter staff are not waiter-reconciled; drop legacy auto-created rows on live shift
-                if ($isCounterStaff && $isLiveOpenShiftView) {
-                    $reconciliation = null;
-                } elseif ($reconciliation && $isLiveOpenShiftView) {
+                // Drop stale reconciliation rows on live shift (wrong shift, sales drift, or waiter-style shortage with no submit)
+                if ($reconciliation && $isLiveOpenShiftView) {
                     $shiftMismatch = $primaryShiftId && (int) $reconciliation->bar_shift_id !== $primaryShiftId;
                     $salesMismatch = abs((float) $reconciliation->expected_amount - (float) $totalSales) >= 1.0;
-                    if ($shiftMismatch || $salesMismatch) {
+                    $bogusWaiterStyleRow = (float) $reconciliation->submitted_amount <= 0
+                        && (float) $reconciliation->difference < -0.01;
+                    if ($shiftMismatch || $salesMismatch || $bogusWaiterStyleRow) {
                         $reconciliation = null;
                     }
                 }
 
                 if ($isCounterStaff) {
-                    // Counter: collections in drawer vs own kiosk/bar sales (not waiter submit flow)
+                    // Counter: drawer collections vs own sales; use saved shift recon when present (not waiter submit flow)
                     $submittedAmount = 0;
-                    $difference = $totalRecordedAmount - $totalSales;
+                    $difference = $isLiveOpenShiftView ? 0 : ($totalRecordedAmount - $totalSales);
                     $finalCash = $cashCollected;
                     $finalDigital = $mobileMoneyCollected;
                     $status = 'pending';
+
+                    if ($reconciliation) {
+                        $reconRecorded = (float) $reconciliation->cash_collected + (float) $reconciliation->mobile_money_collected;
+                        if ($reconRecorded > 0) {
+                            $finalCash = (float) $reconciliation->cash_collected;
+                            $finalDigital = (float) $reconciliation->mobile_money_collected;
+                            $totalRecordedAmount = max($totalRecordedAmount, $reconRecorded);
+                        }
+                        $difference = (float) $reconciliation->difference;
+                        if (abs($difference) < 0.01 && $isLiveOpenShiftView) {
+                            $difference = 0;
+                        }
+                        $status = $reconciliation->status ?: $status;
+                    }
+
                     if ($hasUnpaidOrders) {
                         $status = 'pending';
-                    } elseif ($totalRecordedAmount > 0 && abs($difference) < 0.01) {
-                        $status = 'paid';
-                    } elseif ($totalRecordedAmount > 0) {
-                        $status = 'partial';
+                    } elseif (! $reconciliation) {
+                        if ($totalRecordedAmount > 0 && abs($difference) < 0.01) {
+                            $status = 'paid';
+                        } elseif ($totalRecordedAmount > 0) {
+                            $status = 'partial';
+                        }
                     }
                 } else {
                     $submittedAmount = $reconciliation ? $reconciliation->submitted_amount : 0;
