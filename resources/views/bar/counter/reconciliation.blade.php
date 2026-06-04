@@ -1524,7 +1524,8 @@ $(document).ready(function() {
       method: 'GET',
       data: { 
         date: date,
-        target_shift_ids: @json($targetShiftIds ?? [])
+        target_shift_ids: @json($targetShiftIds ?? []),
+        bar_shift_id: @json($primaryShiftId ?? null)
       },
       success: function(response) {
         try {

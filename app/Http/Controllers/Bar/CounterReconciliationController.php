@@ -276,7 +276,11 @@ class CounterReconciliationController extends Controller
         }
 
         $primaryShiftId = !empty($targetShiftIds) ? (int) $targetShiftIds[0] : null;
-        $strictShiftOrderScope = $isLiveOpenShiftView && $primaryShiftId;
+        $primaryShift = ($primaryShiftId && count($targetShiftIds) === 1)
+            ? \App\Models\BarShift::find($primaryShiftId)
+            : null;
+        // Single-shift views (live or post-handover): exclude orders created before shift opened
+        $strictShiftOrderScope = $primaryShift !== null && count($targetShiftIds) === 1;
 
         $reconciliationDate = $todayHandover ? $todayHandover->handover_date : $date;
 
@@ -348,7 +352,7 @@ class CounterReconciliationController extends Controller
                 },
             ])
             ->get()
-            ->map(function ($waiter) use ($ownerId, $date, $isAccountant, $isSuperAdmin, $location, $targetShiftIds, $bar_shift, $primaryShiftId, $strictShiftOrderScope, $isLiveOpenShiftView) {
+            ->map(function ($waiter) use ($ownerId, $date, $isAccountant, $isSuperAdmin, $location, $targetShiftIds, $primaryShift, $primaryShiftId, $strictShiftOrderScope, $isLiveOpenShiftView) {
                 $ordersQuery = BarOrder::query()
                     ->where('waiter_id', $waiter->id)
                     ->when($location && $location !== 'all', function ($q) use ($location) {
@@ -368,16 +372,31 @@ class CounterReconciliationController extends Controller
                 }
 
                 $allOrders = $ordersQuery
-                    ->when(!empty($targetShiftIds), function ($q) use ($targetShiftIds, $date, $strictShiftOrderScope) {
-                        if ($strictShiftOrderScope) {
-                            return $q->whereIn('bar_shift_id', $targetShiftIds);
+                    ->when(!empty($targetShiftIds), function ($q) use ($targetShiftIds, $date, $strictShiftOrderScope, $primaryShift) {
+                        if ($strictShiftOrderScope && $primaryShift) {
+                            return $q->where(function ($sq) use ($targetShiftIds, $date, $primaryShift) {
+                                $sq->where(function ($inner) use ($targetShiftIds, $primaryShift) {
+                                    $inner->whereIn('bar_shift_id', $targetShiftIds)
+                                        ->where('created_at', '>=', $primaryShift->opened_at);
+                                    if ($primaryShift->closed_at) {
+                                        $inner->where('created_at', '<=', $primaryShift->closed_at);
+                                    }
+                                })->orWhere(function ($subq) use ($date, $primaryShift) {
+                                    $subq->whereNull('bar_shift_id')
+                                        ->whereDate('created_at', $date)
+                                        ->where('created_at', '>=', $primaryShift->opened_at);
+                                    if ($primaryShift->closed_at) {
+                                        $subq->where('created_at', '<=', $primaryShift->closed_at);
+                                    }
+                                });
+                            });
                         }
 
                         return $q->where(function ($sq) use ($targetShiftIds, $date) {
                             $sq->whereIn('bar_shift_id', $targetShiftIds)
                                 ->orWhere(function ($subq) use ($date) {
                                     $subq->whereNull('bar_shift_id')
-                                        ->whereDate('created_at', $date);
+                                         ->whereDate('created_at', $date);
                                 });
                         });
                     }, function ($q) use ($date) {
@@ -388,11 +407,19 @@ class CounterReconciliationController extends Controller
                     ->with(['items.transferSales.stockTransfer', 'items.productVariant.product', 'kitchenOrderItems', 'table', 'orderPayments'])
                     ->get();
 
-                // Live shift: only orders placed after this shift opened (exclude prior-shift carryover)
-                if ($strictShiftOrderScope && $bar_shift) {
-                    $shiftStartedAt = $bar_shift->opened_at;
-                    $allOrders = $allOrders->filter(function ($order) use ($shiftStartedAt) {
-                        return $order->created_at >= $shiftStartedAt;
+                // Safety net: drop orders outside this shift window (e.g. old orders wrongly tagged to shift)
+                if ($strictShiftOrderScope && $primaryShift) {
+                    $shiftStartedAt = $primaryShift->opened_at;
+                    $shiftEndedAt = $primaryShift->closed_at;
+                    $allOrders = $allOrders->filter(function ($order) use ($shiftStartedAt, $shiftEndedAt) {
+                        if ($order->created_at < $shiftStartedAt) {
+                            return false;
+                        }
+                        if ($shiftEndedAt && $order->created_at > $shiftEndedAt) {
+                            return false;
+                        }
+
+                        return true;
                     })->values();
                 }
 
@@ -963,7 +990,8 @@ class CounterReconciliationController extends Controller
             'closedPriorShifts',
             'waitingProfit',
             'shiftProfitMargin',
-            'targetShiftIds'
+            'targetShiftIds',
+            'primaryShiftId'
         ));
     }
 
@@ -1096,15 +1124,32 @@ class CounterReconciliationController extends Controller
         $shiftContext = $this->resolveReconciliationShiftIds($request, $ownerId);
         $targetShiftIds = $shiftContext['ids'];
         $primaryShift = $shiftContext['primary'];
-        $strictLiveShiftScope = $primaryShift && $primaryShift->status === 'open';
-        $shiftStartedAt = $strictLiveShiftScope ? $primaryShift->opened_at : null;
+        $singleShiftScope = $primaryShift && count($targetShiftIds) === 1;
+        $shiftStartedAt = $singleShiftScope ? $primaryShift->opened_at : null;
+        $shiftEndedAt = ($singleShiftScope && $primaryShift->closed_at) ? $primaryShift->closed_at : null;
 
-        $applyShiftScope = function ($q) use ($targetShiftIds, $validated, $shiftStartedAt) {
+        $applyShiftScope = function ($q) use ($targetShiftIds, $validated, $shiftStartedAt, $shiftEndedAt, $singleShiftScope, $primaryShift) {
             if (!empty($targetShiftIds)) {
-                $q->whereIn('bar_shift_id', $targetShiftIds);
-                if ($shiftStartedAt) {
-                    $q->where('created_at', '>=', $shiftStartedAt);
+                if ($singleShiftScope && $primaryShift) {
+                    return $q->where(function ($sq) use ($targetShiftIds, $validated, $shiftStartedAt, $shiftEndedAt, $primaryShift) {
+                        $sq->where(function ($inner) use ($targetShiftIds, $shiftStartedAt, $shiftEndedAt) {
+                            $inner->whereIn('bar_shift_id', $targetShiftIds)
+                                ->where('created_at', '>=', $shiftStartedAt);
+                            if ($shiftEndedAt) {
+                                $inner->where('created_at', '<=', $shiftEndedAt);
+                            }
+                        })->orWhere(function ($subq) use ($validated, $shiftStartedAt, $shiftEndedAt, $primaryShift) {
+                            $subq->whereNull('bar_shift_id')
+                                ->whereDate('created_at', $primaryShift->opened_at->format('Y-m-d'))
+                                ->where('created_at', '>=', $shiftStartedAt);
+                            if ($shiftEndedAt) {
+                                $subq->where('created_at', '<=', $shiftEndedAt);
+                            }
+                        });
+                    });
                 }
+
+                $q->whereIn('bar_shift_id', $targetShiftIds);
 
                 return $q;
             }
@@ -1434,6 +1479,12 @@ class CounterReconciliationController extends Controller
             $targetShiftIds = [$bar_shift->id];
         }
 
+        $primaryShift = (count($targetShiftIds) === 1)
+            ? \App\Models\BarShift::find($targetShiftIds[0])
+            : ($bar_shift ?? null);
+        $strictSingleShift = $primaryShift !== null && count($targetShiftIds) === 1;
+        $kioskDate = $primaryShift ? $primaryShift->opened_at->format('Y-m-d') : $date;
+
         // Return all orders (both bar and food) for counter reconciliation view
         $ordersQuery = BarOrder::query()
             ->where('waiter_id', $waiter->id);
@@ -1445,16 +1496,34 @@ class CounterReconciliationController extends Controller
         }
 
         $orders = $ordersQuery
-            ->when(!empty($targetShiftIds), function ($q) use ($targetShiftIds, $date, $bar_shift) {
-                return $q->where(function($sq) use ($targetShiftIds, $date, $bar_shift) {
-                    $sq->whereIn('bar_shift_id', $targetShiftIds)
-                       ->orWhere(function($subq) use ($date, $bar_shift) {
-                           // Include Kiosk orders (which might have bar_shift_id = null)
-                           $subq->whereNull('bar_shift_id')
-                                ->whereDate('created_at', $date);
+            ->when(!empty($targetShiftIds), function ($q) use ($targetShiftIds, $kioskDate, $strictSingleShift, $primaryShift) {
+                if ($strictSingleShift && $primaryShift) {
+                    return $q->where(function ($sq) use ($targetShiftIds, $kioskDate, $primaryShift) {
+                        $sq->where(function ($inner) use ($targetShiftIds, $primaryShift) {
+                            $inner->whereIn('bar_shift_id', $targetShiftIds)
+                                ->where('created_at', '>=', $primaryShift->opened_at);
+                            if ($primaryShift->closed_at) {
+                                $inner->where('created_at', '<=', $primaryShift->closed_at);
+                            }
+                        })->orWhere(function ($subq) use ($kioskDate, $primaryShift) {
+                            $subq->whereNull('bar_shift_id')
+                                ->whereDate('created_at', $kioskDate)
+                                ->where('created_at', '>=', $primaryShift->opened_at);
+                            if ($primaryShift->closed_at) {
+                                $subq->where('created_at', '<=', $primaryShift->closed_at);
+                            }
+                        });
+                    });
+                }
 
-                            if ($bar_shift) {
-                                $subq->where('created_at', '>=', $bar_shift->opened_at);
+                return $q->where(function ($sq) use ($targetShiftIds, $kioskDate, $primaryShift) {
+                    $sq->whereIn('bar_shift_id', $targetShiftIds)
+                       ->orWhere(function ($subq) use ($kioskDate, $primaryShift) {
+                           $subq->whereNull('bar_shift_id')
+                                ->whereDate('created_at', $kioskDate);
+
+                            if ($primaryShift) {
+                                $subq->where('created_at', '>=', $primaryShift->opened_at);
                             }
                        });
                 });
