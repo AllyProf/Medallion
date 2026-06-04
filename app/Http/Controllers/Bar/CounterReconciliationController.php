@@ -247,6 +247,11 @@ class CounterReconciliationController extends Controller
             : [];
 
         $targetShiftIds = [];
+        $isLiveOpenShiftView = $bar_shift
+            && $bar_shift->status === 'open'
+            && !$requestedShiftId
+            && !$requestedDate;
+
         if ($searchShift) {
             $targetShiftIds = [$searchShift->id];
         } elseif (!empty($allShiftsForDate)) {
@@ -255,6 +260,9 @@ class CounterReconciliationController extends Controller
             $targetShiftIds = $allShiftsForDate;
         } elseif ($todayHandover && $todayHandover->bar_shift_id) {
             $targetShiftIds = [$todayHandover->bar_shift_id];
+        } elseif ($isLiveOpenShiftView) {
+            // Live counter dashboard: only the active shift — never bleed in prior-shift reconciliations
+            $targetShiftIds = [$bar_shift->id];
         } elseif (!empty($allOpenShiftIds)) {
             // [ROBUST DISCOVERY]
             // We include ALL open shifts regardless of date. This is crucial when a new 
@@ -266,6 +274,9 @@ class CounterReconciliationController extends Controller
         } elseif ($targetShiftId) {
             $targetShiftIds = [$targetShiftId];
         }
+
+        $primaryShiftId = !empty($targetShiftIds) ? (int) $targetShiftIds[0] : null;
+        $strictShiftOrderScope = $isLiveOpenShiftView && $primaryShiftId;
 
         $reconciliationDate = $todayHandover ? $todayHandover->handover_date : $date;
 
@@ -337,7 +348,7 @@ class CounterReconciliationController extends Controller
                 },
             ])
             ->get()
-            ->map(function ($waiter) use ($ownerId, $date, $isAccountant, $isSuperAdmin, $location, $targetShiftIds, $bar_shift) {
+            ->map(function ($waiter) use ($ownerId, $date, $isAccountant, $isSuperAdmin, $location, $targetShiftIds, $bar_shift, $primaryShiftId, $strictShiftOrderScope, $isLiveOpenShiftView) {
                 $ordersQuery = BarOrder::query()
                     ->where('waiter_id', $waiter->id)
                     ->when($location && $location !== 'all', function ($q) use ($location) {
@@ -357,13 +368,17 @@ class CounterReconciliationController extends Controller
                 }
 
                 $allOrders = $ordersQuery
-                    ->when(!empty($targetShiftIds), function ($q) use ($targetShiftIds, $date, $bar_shift) {
-                        return $q->where(function($sq) use ($targetShiftIds, $date, $bar_shift) {
+                    ->when(!empty($targetShiftIds), function ($q) use ($targetShiftIds, $date, $strictShiftOrderScope) {
+                        if ($strictShiftOrderScope) {
+                            return $q->whereIn('bar_shift_id', $targetShiftIds);
+                        }
+
+                        return $q->where(function ($sq) use ($targetShiftIds, $date) {
                             $sq->whereIn('bar_shift_id', $targetShiftIds)
-                               ->orWhere(function($subq) use ($date) {
-                                   $subq->whereNull('bar_shift_id')
+                                ->orWhere(function ($subq) use ($date) {
+                                    $subq->whereNull('bar_shift_id')
                                         ->whereDate('created_at', $date);
-                               });
+                                });
                         });
                     }, function ($q) use ($date) {
                         return $q->whereDate('created_at', $date)
@@ -372,6 +387,14 @@ class CounterReconciliationController extends Controller
                     ->where('status', '!=', 'cancelled')
                     ->with(['items.transferSales.stockTransfer', 'items.productVariant.product', 'kitchenOrderItems', 'table', 'orderPayments'])
                     ->get();
+
+                // Live shift: only orders placed after this shift opened (exclude prior-shift carryover)
+                if ($strictShiftOrderScope && $bar_shift) {
+                    $shiftStartedAt = $bar_shift->opened_at;
+                    $allOrders = $allOrders->filter(function ($order) use ($shiftStartedAt) {
+                        return $order->created_at >= $shiftStartedAt;
+                    })->values();
+                }
 
                 // Separate bar orders (drinks) from food orders
                 // Bar orders: orders that have items (drinks) - may also have food
@@ -489,7 +512,20 @@ class CounterReconciliationController extends Controller
                 // Re-calculate Total Recorded to match the above logic
                 $totalRecordedAmount = $cashCollected + $mobileMoneyCollected;
 
-                $reconciliation = $waiter->dailyReconciliations->first();
+                $reconciliation = $primaryShiftId
+                    ? $waiter->dailyReconciliations->firstWhere('bar_shift_id', $primaryShiftId)
+                    : $waiter->dailyReconciliations->first();
+
+                // On live shift view, ignore stale / prior-shift reconciliation rows on this shift
+                if ($reconciliation && $isLiveOpenShiftView) {
+                    $shiftMismatch = $primaryShiftId && (int) $reconciliation->bar_shift_id !== $primaryShiftId;
+                    $salesMismatch = abs((float) $reconciliation->expected_amount - (float) $totalSales) >= 1.0;
+                    $partialPriorSubmit = (float) $reconciliation->submitted_amount > 0
+                        && (float) $reconciliation->submitted_amount + 1 < (float) $totalSales;
+                    if ($shiftMismatch || $salesMismatch || $partialPriorSubmit) {
+                        $reconciliation = null;
+                    }
+                }
 
                 // Submitted amount: use reconciliation if exists, otherwise 0 (not yet submitted)
                 // Don't use totalPaidAmount here - that would show as submitted before reconciliation
@@ -568,7 +604,7 @@ class CounterReconciliationController extends Controller
                     'recorded_cash' => $cashCollected,
                     'recorded_digital' => $mobileMoneyCollected,
                     'expected_amount' => $totalSales,
-                    'recorded_amount' => $reconciliation ? $reconciliation->submitted_amount : $totalRecordedAmount,
+                    'recorded_amount' => $totalRecordedAmount,
                     'submitted_amount' => $submittedAmount,
                     'difference' => $difference,
                     'status' => $status,
@@ -578,7 +614,11 @@ class CounterReconciliationController extends Controller
                     'profit' => $waiterProfit,
                 ];
             })
-            ->filter(function ($data) {
+            ->filter(function ($data) use ($isLiveOpenShiftView) {
+                if ($isLiveOpenShiftView) {
+                    return $data['bar_orders_count'] > 0;
+                }
+
                 return $data['total_orders'] > 0 || ! empty($data['reconciliation']);
             })
             ->sortByDesc('total_sales')
