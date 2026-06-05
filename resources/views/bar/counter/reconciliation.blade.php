@@ -410,8 +410,8 @@
                         </button>
                       @endif
 
-                      {{-- Show Reconcile button ONLY for waiters (not counter staff) --}}
-                      @if(!$isCounter && !$data['reconciliation'] && Route::currentRouteName() !== 'accountant.counter.reconciliation')
+                      {{-- Reconcile / Record: waiters submit collections; counter records own kiosk sales --}}
+                      @if(!$data['reconciliation'] && Route::currentRouteName() !== 'accountant.counter.reconciliation')
                         <button class="btn btn-sm btn-success mark-all-paid-btn mr-1 mb-1 font-weight-bold" 
                                 data-waiter-id="{{ $data['waiter']->id }}"
                                 data-date="{{ $date }}"
@@ -421,13 +421,14 @@
                                 data-submitted-amount="{{ $data['submitted_amount'] ?? 0 }}"
                                 data-difference="{{ $data['difference'] ?? 0 }}"
                                 data-breakdown="{{ json_encode($data['platform_totals'] ?? []) }}"
-                                data-waiter-name="{{ $data['waiter']->full_name }}" title="Reconcile Staff">
-                          <i class="fa fa-hand-holding-usd"></i> Reconcile
+                                data-waiter-name="{{ $data['waiter']->full_name }}"
+                                data-is-counter="{{ $isCounter ? '1' : '0' }}"
+                                title="{{ $isCounter ? 'Record counter sales for this shift' : 'Reconcile Staff' }}">
+                          <i class="fa fa-hand-holding-usd"></i> {{ $isCounter ? 'Record' : 'Reconcile' }}
                         </button>
                       @endif
 
-                      {{-- Show Undo button for waiters only --}}
-                      @if(!$isCounter && $data['reconciliation'] && $data['status'] !== 'verified' && Route::currentRouteName() !== 'accountant.counter.reconciliation')
+                      @if($data['reconciliation'] && $data['status'] !== 'verified' && Route::currentRouteName() !== 'accountant.counter.reconciliation')
                         <button class="btn btn-sm btn-sm btn-outline-danger reset-btn mb-1" 
                                 data-reconciliation-id="{{ $data['reconciliation']->id }}" title="Reset/Undo Reconciliation">
                           <i class="fa fa-undo"></i> Undo
@@ -1637,6 +1638,7 @@ $(document).ready(function() {
     const submittedAmount = parseFloat($(this).data('submitted-amount')) || 0;
     const difference = parseFloat($(this).data('difference')) || 0;
     const waiterName = $(this).data('waiter-name') || 'this waiter';
+    const isCounterStaff = $(this).data('is-counter') === 1 || $(this).data('is-counter') === '1';
     const breakdown = $(this).data('breakdown') || {};
     const btn = $(this);
     
@@ -1677,11 +1679,14 @@ $(document).ready(function() {
     let differenceHtml = initialDiff > 0 ? `<span class="text-success">+TSh ${Math.abs(initialDiff).toLocaleString()}</span>` : (initialDiff < 0 ? `<span class="text-danger">TSh ${initialDiff.toLocaleString()}</span>` : `<span class="text-muted">TSh 0</span>`);
     
     Swal.fire({
-      title: 'Submit Payment',
+      title: isCounterStaff ? 'Record Counter Sales' : 'Submit Payment',
       width: '600px',
       html: `
         <div class="text-left">
-          <p class="mb-2">Record actual collections for <strong>${waiterName}</strong>. <br><small class="text-info"><i class="fa fa-info-circle"></i> Note: All 'Served' orders will be automatically marked as 'Paid' upon submission.</small></p>
+          <p class="mb-2">${isCounterStaff
+            ? `Record your kiosk/bar sales for <strong>${waiterName}</strong>.`
+            : `Record actual collections for <strong>${waiterName}</strong>.`}
+            <br><small class="text-info"><i class="fa fa-info-circle"></i> Note: All 'Served' orders will be automatically marked as 'Paid' upon submission.</small></p>
           <div class="alert alert-light border p-2 mb-3">
             <div class="row small"><div class="col-6">Expected:</div><div class="col-6 text-right"><strong>TSh ${totalAmount.toLocaleString()}</strong></div></div>
             ${recordedAmount > 0 ? `<div class="row small mt-1"><div class="col-6">System Recorded:</div><div class="col-6 text-right text-info"><strong>TSh ${recordedAmount.toLocaleString()}</strong></div></div>` : ''}
@@ -1712,7 +1717,7 @@ $(document).ready(function() {
         </div>
       `,
       showCancelButton: true,
-      confirmButtonText: 'Submit Payment',
+      confirmButtonText: isCounterStaff ? 'Record Sales' : 'Submit Payment',
       didOpen: () => {
         const confirmBtn = Swal.getConfirmButton();
         const updateTotal = () => {

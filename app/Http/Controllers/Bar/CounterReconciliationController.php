@@ -1291,6 +1291,18 @@ class CounterReconciliationController extends Controller
                 }
             }
 
+            $roleSlug = strtolower($waiter->role->slug ?? $waiter->role->name ?? '');
+            $isCounterStaff = in_array($roleSlug, ['counter', 'counter-staff', 'bar-manager', 'bar-counter', 'bar_counter']);
+            if ($isCounterStaff) {
+                $recordedTotal = (float) $finalCashCollected + (float) $finalDigitalCollected;
+                $submittedAmount = max($submittedAmount, $recordedTotal);
+                $difference = $submittedAmount - $expectedAmount;
+                if (abs($difference) < 0.01) {
+                    $submittedAmount = $expectedAmount;
+                    $difference = 0;
+                }
+            }
+
             $matchArray = [
                 'user_id' => $ownerId,
                 'waiter_id' => $waiter->id,
