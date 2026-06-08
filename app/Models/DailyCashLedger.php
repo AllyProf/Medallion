@@ -144,15 +144,39 @@ class DailyCashLedger extends Model
             ->whereIn('status', ['served', 'delivered'])
             ->sum('total_amount');
 
-        // [GROSS PROFIT] Expected margin (Selling - Buying) for the day
+        // [GROSS PROFIT] Selling - buying (handles tot sales and transfer-stock cost like counter reconciliation)
         $grossProfit = \App\Models\BarOrder::whereIn('bar_shift_id', !empty($dailyShiftIds) ? $dailyShiftIds : [0])
             ->whereIn('status', ['served', 'delivered'])
-            ->with('items.productVariant')
+            ->with(['items.productVariant', 'items.transferSales.stockTransfer'])
             ->get()
-            ->sum(function($order) {
-                return $order->items->sum(function($item) {
-                    $buyingPrice = $item->productVariant->buying_price_per_unit ?? 0;
-                    return ($item->unit_price - $buyingPrice) * $item->quantity;
+            ->sum(function ($order) {
+                return $order->items->sum(function ($item) use ($order) {
+                    if ($item->transferSales->count() > 0) {
+                        return $item->transferSales->sum(function ($ts) use ($order) {
+                            $variant = $ts->stockTransfer->productVariant ?? $item->productVariant;
+                            $whStock = \App\Models\StockLocation::where('user_id', $order->user_id)
+                                ->where('product_variant_id', $ts->stockTransfer->product_variant_id)
+                                ->where('location', 'warehouse')
+                                ->first();
+                            $buyingPrice = $whStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0;
+
+                            return (float) $ts->total_price - ((float) $ts->quantity * (float) $buyingPrice);
+                        });
+                    }
+
+                    $variant = $item->productVariant;
+                    if (! $variant) {
+                        return 0;
+                    }
+
+                    $qty = (float) $item->quantity;
+                    if (($item->sell_type ?? 'unit') === 'tot') {
+                        $totsPerBtl = $variant->total_tots ?: 1;
+                        $qty = $item->quantity / $totsPerBtl;
+                    }
+                    $buyingPrice = $variant->buying_price_per_unit ?? 0;
+
+                    return (float) $item->total_price - ($qty * (float) $buyingPrice);
                 });
             });
 
