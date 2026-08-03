@@ -997,12 +997,12 @@ class CounterController extends Controller
         }
         $sheetDate = $sheetDateCarbon->format('Y-m-d');
         $isToday = $sheetDate === now()->format('Y-m-d');
-        $dayEnd = $sheetDateCarbon->copy()->endOfDay();
 
         $openBottles = \App\Models\OpenBottle::where('user_id', $ownerId)
             ->get()
             ->groupBy('product_variant_id');
 
+        // Stock In / Sold for the selected sheet date only
         $receivedOnDate = \App\Models\StockMovement::where('user_id', $ownerId)
             ->where('to_location', $location)
             ->whereDate('created_at', $sheetDate)
@@ -1018,43 +1018,21 @@ class CounterController extends Controller
             ->groupBy('product_variant_id')
             ->pluck('total_sold', 'product_variant_id');
 
-        $inflowsAfter = \App\Models\StockMovement::where('user_id', $ownerId)
-            ->where('to_location', $location)
-            ->where('created_at', '>', $dayEnd)
-            ->selectRaw('product_variant_id, SUM(quantity) as total_qty')
-            ->groupBy('product_variant_id')
-            ->pluck('total_qty', 'product_variant_id');
-
-        $outflowsAfter = \App\Models\StockMovement::where('user_id', $ownerId)
-            ->where('from_location', $location)
-            ->where('created_at', '>', $dayEnd)
-            ->selectRaw('product_variant_id, SUM(quantity) as total_qty')
-            ->groupBy('product_variant_id')
-            ->pluck('total_qty', 'product_variant_id');
-
+        // Qty / Closing always use current (today) stock — including any adjustments made today
         $stockData = ProductVariant::with(['product', 'stockLocations' => function ($q) use ($ownerId) {
             $q->where('user_id', $ownerId);
         }])
             ->whereHas('product', fn ($q) => $q->where('user_id', $ownerId))
             ->get()
-            ->map(function ($variant) use ($openBottles, $receivedOnDate, $soldOnDate, $inflowsAfter, $outflowsAfter, $isToday, $location) {
+            ->map(function ($variant) use ($openBottles, $receivedOnDate, $soldOnDate) {
                 $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
 
-                $warehouseQtyNow = $warehouseStock ? (float) $warehouseStock->quantity : 0;
-                $counterQtyNow = $counterStock ? (float) $counterStock->quantity : 0;
-                $openTots = ($isToday && $openBottles->has($variant->id))
+                $warehouseQty = $warehouseStock ? (float) $warehouseStock->quantity : 0;
+                $counterQty = $counterStock ? (float) $counterStock->quantity : 0;
+                $openTots = $openBottles->has($variant->id)
                     ? $openBottles->get($variant->id)->sum('tots_remaining')
                     : 0;
-
-                // Closing qty as of selected date: current - inflows_after + outflows_after
-                $afterIn = (float) ($inflowsAfter->get($variant->id) ?? 0);
-                $afterOut = (float) ($outflowsAfter->get($variant->id) ?? 0);
-                $currentLocQty = $location === 'warehouse' ? $warehouseQtyNow : $counterQtyNow;
-                $closingQty = max(0, $currentLocQty - $afterIn + $afterOut);
-
-                $warehouseQty = $location === 'warehouse' ? $closingQty : $warehouseQtyNow;
-                $counterQty = $location === 'counter' ? $closingQty : $counterQtyNow;
 
                 $received = (float) ($receivedOnDate->get($variant->id) ?? 0);
                 $sold = (float) ($soldOnDate->get($variant->id) ?? 0);
