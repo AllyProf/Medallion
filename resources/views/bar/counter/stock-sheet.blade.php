@@ -115,14 +115,39 @@
         <hr class="orange-divider">
     </div>
 
+    @php
+        $sheetDate = $sheetDate ?? now()->format('Y-m-d');
+        $sheetDateLabel = $sheetDateLabel ?? \Carbon\Carbon::parse($sheetDate)->format('d M Y');
+        $isToday = $isToday ?? ($sheetDate === now()->format('Y-m-d'));
+    @endphp
+
     <div class="report-sub-meta">
         <span>Staff: {{ $staff ? $staff->full_name : 'Accountant' }}</span>
-        <span>| Report #: STOCK-{{ strtoupper($location[0]) }}-{{ date('Ymd') }}-{{ strtoupper(substr(uniqid(), -4)) }}</span>
+        <span>| Sheet Date: {{ $sheetDateLabel }}</span>
+        <span>| Report #: STOCK-{{ strtoupper($location[0]) }}-{{ str_replace('-', '', $sheetDate) }}-{{ strtoupper(substr(uniqid(), -4)) }}</span>
     </div>
 
     <div class="title-area">
         <h2 class="main-report-title">Shift Stock Sheet</h2>
         <div class="official-stamp">Official</div>
+    </div>
+
+    <div class="arena-toolbar d-print-none">
+        <form method="GET" action="{{ route('bar.stock-sheet', $location) }}" class="row align-items-end">
+            <div class="col-md-4 col-sm-6 form-group">
+                <label for="sheet-date"><i class="fa fa-calendar"></i> Sheet Date</label>
+                <input type="date" id="sheet-date" name="date" value="{{ $sheetDate }}" max="{{ now()->format('Y-m-d') }}" class="form-control" required>
+            </div>
+            <div class="col-md-8 col-sm-6 form-group" style="padding-top: 4px;">
+                <button type="submit" class="btn btn-print shadow-sm mr-2"><i class="fa fa-search"></i> Load Sheet</button>
+                <a href="{{ route('bar.stock-sheet', [$location, 'date' => now()->subDay()->format('Y-m-d')]) }}" class="btn btn-outline-secondary shadow-sm mr-2">
+                    Yesterday
+                </a>
+                @if(!$isToday)
+                    <a href="{{ route('bar.stock-sheet', $location) }}" class="btn btn-outline-secondary shadow-sm">Today</a>
+                @endif
+            </div>
+        </form>
     </div>
 
     <div class="text-center mb-4 d-print-none">
@@ -134,15 +159,15 @@
     </div>
 
     @php
-        $filteredItems = $location == 'warehouse' 
-                          ? $stockData->filter(fn($r) => $r['warehouse_qty'] > 0)
-                          : $stockData->filter(fn($r) => $r['counter_qty'] > 0 || $r['open_tots'] > 0);
+        $filteredItems = $location == 'warehouse'
+                          ? $stockData->filter(fn($r) => $r['warehouse_qty'] > 0 || $r['received_today'] > 0 || $r['sold_today'] > 0)
+                          : $stockData->filter(fn($r) => $r['counter_qty'] > 0 || $r['open_tots'] > 0 || $r['received_today'] > 0 || $r['sold_today'] > 0);
     @endphp
 
     <div class="report-stats-grid">
         <div>
             <div class="stats-card-title">Report Information</div>
-            <div class="stats-row"><strong>Report Date:</strong> <span>{{ date('d M Y') }}</span></div>
+            <div class="stats-row"><strong>Report Date:</strong> <span>{{ $sheetDateLabel }}{{ $isToday ? '' : ' (historical)' }}</span></div>
             <div class="stats-row"><strong>Audit Location:</strong> <span>{{ ucfirst($location) }}</span></div>
             <div class="stats-row"><strong>System Certification:</strong> <span>MauzoLink Audit Tool</span></div>
         </div>
@@ -286,7 +311,7 @@
     </div>
     
     <div class="text-center mt-4 small text-muted italic">
-        Date Generated: {{ date('d M Y, H:i') }} | Certified Audit Snapshot
+        Sheet Date: {{ $sheetDateLabel }} | Printed: {{ $generatedAt ?? now()->format('d M Y, H:i') }} | Certified Audit Snapshot
     </div>
 
 </div>

@@ -988,55 +988,86 @@ class CounterController extends Controller
             }
         }
 
-        // Basic filtering: warehouse or counter
-        // We'll call the general report 'warehouse' by default or 'counter'
+        // Sheet date (default today) — allows printing yesterday or any past day
+        $sheetDate = $request->get('date', now()->format('Y-m-d'));
+        try {
+            $sheetDateCarbon = \Carbon\Carbon::parse($sheetDate)->startOfDay();
+        } catch (\Exception $e) {
+            $sheetDateCarbon = now()->startOfDay();
+        }
+        $sheetDate = $sheetDateCarbon->format('Y-m-d');
+        $isToday = $sheetDate === now()->format('Y-m-d');
+        $dayEnd = $sheetDateCarbon->copy()->endOfDay();
 
         $openBottles = \App\Models\OpenBottle::where('user_id', $ownerId)
             ->get()
             ->groupBy('product_variant_id');
-            
-        $receivedEver = \App\Models\StockMovement::where('user_id', $ownerId)
+
+        $receivedOnDate = \App\Models\StockMovement::where('user_id', $ownerId)
             ->where('to_location', $location)
+            ->whereDate('created_at', $sheetDate)
             ->selectRaw('product_variant_id, SUM(quantity) as total_received')
             ->groupBy('product_variant_id')
             ->pluck('total_received', 'product_variant_id');
 
-        $soldEver = \App\Models\StockMovement::where('user_id', $ownerId)
+        $soldOnDate = \App\Models\StockMovement::where('user_id', $ownerId)
             ->whereIn('movement_type', ['sale', 'transfer', 'usage'])
             ->where('from_location', $location)
+            ->whereDate('created_at', $sheetDate)
             ->selectRaw('product_variant_id, SUM(quantity) as total_sold')
             ->groupBy('product_variant_id')
             ->pluck('total_sold', 'product_variant_id');
+
+        $inflowsAfter = \App\Models\StockMovement::where('user_id', $ownerId)
+            ->where('to_location', $location)
+            ->where('created_at', '>', $dayEnd)
+            ->selectRaw('product_variant_id, SUM(quantity) as total_qty')
+            ->groupBy('product_variant_id')
+            ->pluck('total_qty', 'product_variant_id');
+
+        $outflowsAfter = \App\Models\StockMovement::where('user_id', $ownerId)
+            ->where('from_location', $location)
+            ->where('created_at', '>', $dayEnd)
+            ->selectRaw('product_variant_id, SUM(quantity) as total_qty')
+            ->groupBy('product_variant_id')
+            ->pluck('total_qty', 'product_variant_id');
 
         $stockData = ProductVariant::with(['product', 'stockLocations' => function ($q) use ($ownerId) {
             $q->where('user_id', $ownerId);
         }])
             ->whereHas('product', fn ($q) => $q->where('user_id', $ownerId))
             ->get()
-            ->map(function ($variant) use ($openBottles, $receivedEver, $soldEver) {
+            ->map(function ($variant) use ($openBottles, $receivedOnDate, $soldOnDate, $inflowsAfter, $outflowsAfter, $isToday, $location) {
                 $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
 
-                $warehouseQty = $warehouseStock ? (float) $warehouseStock->quantity : 0;
-                $counterQty = $counterStock ? (float) $counterStock->quantity : 0;
-                $openTots = $openBottles->has($variant->id) ? $openBottles->get($variant->id)->sum('tots_remaining') : 0;
-                $totalQty = $warehouseQty + $counterQty;
-                
-                $received = $receivedEver->get($variant->id) ?? 0;
-                $sold = $soldEver->get($variant->id) ?? 0;
+                $warehouseQtyNow = $warehouseStock ? (float) $warehouseStock->quantity : 0;
+                $counterQtyNow = $counterStock ? (float) $counterStock->quantity : 0;
+                $openTots = ($isToday && $openBottles->has($variant->id))
+                    ? $openBottles->get($variant->id)->sum('tots_remaining')
+                    : 0;
+
+                // Closing qty as of selected date: current - inflows_after + outflows_after
+                $afterIn = (float) ($inflowsAfter->get($variant->id) ?? 0);
+                $afterOut = (float) ($outflowsAfter->get($variant->id) ?? 0);
+                $currentLocQty = $location === 'warehouse' ? $warehouseQtyNow : $counterQtyNow;
+                $closingQty = max(0, $currentLocQty - $afterIn + $afterOut);
+
+                $warehouseQty = $location === 'warehouse' ? $closingQty : $warehouseQtyNow;
+                $counterQty = $location === 'counter' ? $closingQty : $counterQtyNow;
+
+                $received = (float) ($receivedOnDate->get($variant->id) ?? 0);
+                $sold = (float) ($soldOnDate->get($variant->id) ?? 0);
 
                 $itemsPerPkg = (int) ($variant->items_per_package ?? 1);
                 if ($itemsPerPkg <= 0) {
                     $itemsPerPkg = 1;
                 }
 
-                // CLEAN SPECIFIC ITEM NAME
                 $displayName = $variant->name ?? $variant->product->name;
                 if (in_array(strtolower($displayName), ['none', 'standard', 'regular', '-', 'default', '', 'standard packaging', 'none packaging'])) {
                     $displayName = $variant->product->name;
                 }
-
-                // If the product name is already in the variant name, simplify
                 if (str_contains($displayName, $variant->product->name) && $displayName != $variant->product->name) {
                     $displayName = trim(str_replace($variant->product->name, '', $displayName), ' -');
                 }
@@ -1052,7 +1083,7 @@ class CounterController extends Controller
                     'warehouse_qty' => $warehouseQty,
                     'counter_qty' => $counterQty,
                     'open_tots' => $openTots,
-                    'total_in_stock' => $totalQty,
+                    'total_in_stock' => $warehouseQty + $counterQty,
                     'received_today' => $received,
                     'sold_today' => $sold,
                     'unit' => $variant->inventory_unit,
@@ -1062,7 +1093,7 @@ class CounterController extends Controller
             })
             ->sortBy([
                 ['brand', 'asc'],
-                ['item_name', 'asc']
+                ['item_name', 'asc'],
             ])
             ->values();
 
@@ -1072,7 +1103,7 @@ class CounterController extends Controller
         // Find specific staff for Signatures
         $allStaff = \App\Models\Staff::where('user_id', $ownerId)->with('role')->get();
         $accountant = $allStaff->filter(fn ($s) => str_contains(strtolower($s->role->name ?? ''), 'accountant'))->first()?->full_name ?? ($staff && str_contains(strtolower($staff->role->name ?? ''), 'accountant') ? $staff->full_name : 'Authorized Accountant');
-        
+
         if ($location === 'warehouse') {
             $stockKeeper = $allStaff->filter(fn ($s) => str_contains(strtolower($s->role->name ?? ''), 'keeper'))->first()?->full_name ?? 'Authorized Stock Keeper';
         } else {
@@ -1081,13 +1112,14 @@ class CounterController extends Controller
 
         $businessName = $owner->business_name ?? 'MEDALLION Bar';
         $generatedAt = now()->format('d M Y, H:i');
+        $sheetDateLabel = $sheetDateCarbon->format('d M Y');
 
         // Basic Sales Stats for the Header
         $todayStats = [
-            'bottles_sold' => \App\Models\OrderItem::whereHas('order', function ($q) use ($ownerId) {
-                $q->where('user_id', $ownerId)->whereDate('created_at', today());
+            'bottles_sold' => \App\Models\OrderItem::whereHas('order', function ($q) use ($ownerId, $sheetDate) {
+                $q->where('user_id', $ownerId)->whereDate('created_at', $sheetDate);
             })->sum('quantity'),
-            'total_revenue' => \App\Models\BarOrder::where('user_id', $ownerId)->whereDate('created_at', today())->where('payment_status', 'paid')->sum('total_amount'),
+            'total_revenue' => \App\Models\BarOrder::where('user_id', $ownerId)->whereDate('created_at', $sheetDate)->where('payment_status', 'paid')->sum('total_amount'),
             'sales_variants' => $stockData->count(),
             'inventory_items' => $stockData->where('total_in_stock', '>', 0)->count(),
         ];
@@ -1096,16 +1128,16 @@ class CounterController extends Controller
         if ($request->get('export') === 'csv') {
             $locationRequested = $location;
 
-            $filename = 'bar_stock_sheet_'.$locationRequested.'_'.date('Y-m-d').'.csv';
+            $filename = 'bar_stock_sheet_'.$locationRequested.'_'.$sheetDate.'.csv';
             $headers = [
                 'Content-Type' => 'text/csv',
                 'Content-Disposition' => 'attachment; filename="'.$filename.'"',
             ];
 
-            $callback = function () use ($stockData, $businessName, $generatedAt, $locationRequested) {
+            $callback = function () use ($stockData, $businessName, $generatedAt, $locationRequested, $sheetDateLabel) {
                 $handle = fopen('php://output', 'w');
                 $title = strtoupper($locationRequested)." STOCK SHEET - $businessName";
-                fputcsv($handle, [$title, "Generated: $generatedAt"]);
+                fputcsv($handle, [$title, "Sheet Date: $sheetDateLabel", "Generated: $generatedAt"]);
                 fputcsv($handle, []);
 
                 if ($locationRequested === 'warehouse') {
@@ -1144,7 +1176,10 @@ class CounterController extends Controller
             'staff',
             'todayStats',
             'accountant',
-            'stockKeeper'
+            'stockKeeper',
+            'sheetDate',
+            'sheetDateLabel',
+            'isToday'
         ));
     }
 
