@@ -105,6 +105,27 @@
       .app-sidebar__user {
         background: #222d32; /* Neutral dark background */
         border-bottom: 1px solid rgba(255,255,255,0.05);
+        align-items: flex-start;
+      }
+      .app-sidebar__user-info {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding-right: 4px;
+      }
+      .app-sidebar__user-name {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        word-break: break-word;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.25;
+        text-transform: uppercase;
+      }
+      .app-sidebar__user-designation {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
       }
     </style>
     @stack('styles')
@@ -268,8 +289,8 @@
           @else
             <img class="app-sidebar__user-avatar" src="https://ui-avatars.com/api/?name={{ urlencode(session('staff_name')) }}&background=940000&color=fff" alt="Staff Image">
           @endif
-          <div>
-            <p class="app-sidebar__user-name">{{ implode(' ', array_slice(explode(' ', session('staff_name')), 0, 2)) }}</p>
+          <div class="app-sidebar__user-info">
+            <p class="app-sidebar__user-name">{{ session('staff_name') }}</p>
             <p class="app-sidebar__user-designation">
               @php
                 $staffRole = \App\Models\Role::find(session('staff_role_id'));
@@ -283,8 +304,8 @@
           @else
             <img class="app-sidebar__user-avatar" src="https://ui-avatars.com/api/?name={{ urlencode(Auth::user()->name) }}&background=940000&color=fff" alt="User Image">
           @endif
-          <div>
-            <p class="app-sidebar__user-name">{{ implode(' ', array_slice(explode(' ', Auth::user()->name), 0, 2)) }}</p>
+          <div class="app-sidebar__user-info">
+            <p class="app-sidebar__user-name">{{ Auth::user()->name }}</p>
             <p class="app-sidebar__user-designation">
               @php
                 $userRoles = Auth::user()->userRoles()->get();
