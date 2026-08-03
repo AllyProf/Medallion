@@ -238,7 +238,26 @@
                         <td class="text-left">
                             <span class="item-name-text">{{ $item['item_name'] }}</span>
                         </td>
-                        <td><span class="uom-badge">{{ $item['measurement'] }}</span></td>
+                        <td>
+                            @php
+                                $sizeUnit = strtolower(trim((string)($item['size_unit'] ?? 'ml')));
+                                if (in_array($sizeUnit, ['l', 'ltr', 'litre', 'liter', 'litres', 'liters'], true)) {
+                                    $sizeLabel = 'litre';
+                                } elseif ($sizeUnit === '') {
+                                    $sizeLabel = 'ml';
+                                } else {
+                                    $sizeLabel = $sizeUnit;
+                                }
+                                $meas = trim((string)($item['measurement'] ?? ''));
+                            @endphp
+                            <span class="uom-badge">
+                                @if($meas !== '')
+                                    {{ $meas }} {{ $sizeLabel }}
+                                @else
+                                    {{ $sizeLabel }}
+                                @endif
+                            </span>
+                        </td>
                         <td><span class="text-muted small">{{ $item['packaging'] }} ({{ $item['items_per_pkg'] }})</span></td>
                         
                             <td class="text-success font-weight-bold" style="background:#f4fbf7;">

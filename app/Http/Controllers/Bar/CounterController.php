@@ -1054,6 +1054,7 @@ class CounterController extends Controller
                     'item_id' => $variant->id,
                     'item_name' => $displayName,
                     'measurement' => $variant->measurement ?? '',
+                    'size_unit' => $variant->unit ?? 'ml',
                     'packaging' => $variant->packaging ?? 'Piece',
                     'items_per_pkg' => $itemsPerPkg,
                     'brand' => $variant->product->brand ?? '-',
