@@ -34,6 +34,36 @@
     .btn-print { background: #e67e22; color: #fff; padding: 10px 25px; border-radius: 6px; border: none; font-weight: 700; }
     .btn-print:hover { background: #d35400; color: #fff; }
 
+    .arena-toolbar {
+        background: #fff7f0;
+        border: 1.5px solid var(--report-border);
+        border-radius: 8px;
+        padding: 14px 16px;
+        margin-bottom: 22px;
+    }
+    .arena-toolbar .form-group { margin-bottom: 0; }
+    .arena-toolbar label { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; color: var(--report-orange); margin-bottom: 4px; display: block; }
+    .arena-toolbar .form-control { border: 1px solid #d5d5d5; font-size: 0.85rem; height: 36px; }
+    .arena-totals {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 12px;
+        margin: 0 0 22px;
+    }
+    .arena-total-card {
+        border: 1.5px solid #333;
+        border-top: 3px solid var(--report-orange);
+        padding: 10px 12px;
+        background: #fff;
+    }
+    .arena-total-card .label { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; color: #777; }
+    .arena-total-card .value { font-size: 1.15rem; font-weight: 800; color: #1a1a1a; margin-top: 2px; }
+    .price-col { background: #fffaf5; font-weight: 700; }
+    .value-col { background: #f4fbf7; font-weight: 800; }
+    .sell-value-col { background: #f0f7ff; font-weight: 800; }
+    .totals-row td { background: #2c3e50 !important; color: #fff !important; font-weight: 800; }
+    .category-subtotal td { background: #efe6dc !important; font-weight: 800; }
+
     .report-stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px; }
     .stats-card-title { font-size: 0.95rem; font-weight: 800; color: var(--report-orange); text-transform: uppercase; border-bottom: 2px solid var(--report-orange); padding-bottom: 5px; margin-bottom: 10px; }
     .stats-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 0.88rem; }
@@ -96,6 +126,9 @@
     </div>
 
     <div class="text-center mb-4 d-print-none">
+        <a href="{{ route('bar.price-arena', $location) }}" class="btn btn-outline-secondary shadow-sm mr-2">
+            <i class="fa fa-money"></i> Open Price Arena
+        </a>
         <button onclick="window.print()" class="btn btn-print shadow-sm"><i class="fa fa-print"></i> Print Report / PDF</button>
         <div class="mt-2 text-success" style="font-weight:600; font-size:0.85rem;"><i class="fa fa-leaf"></i> Tip: Select "Print on both sides" in your printer dialogue to save paper!</div>
     </div>

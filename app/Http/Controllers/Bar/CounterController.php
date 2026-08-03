@@ -1109,23 +1109,23 @@ class CounterController extends Controller
                 fputcsv($handle, []);
 
                 if ($locationRequested === 'warehouse') {
-                    fputcsv($handle, ['#', 'ITEM NAME', 'VARIANT', 'BRAND', 'CATEGORY', 'QTY IN WAREHOUSE', 'UNIT', 'BUYING PRICE', 'STOCK VALUE (TZS)', 'STATUS']);
+                    fputcsv($handle, ['#', 'ITEM NAME', 'BRAND', 'CATEGORY', 'QTY IN WAREHOUSE', 'UNIT', 'BUYING PRICE', 'STOCK VALUE (TZS)']);
                     $filteredData = $stockData->filter(fn ($r) => $r['warehouse_qty'] > 0)->values();
                     foreach ($filteredData as $i => $row) {
                         fputcsv($handle, [
-                            $i + 1, $row['item_name'], $row['variant'], $row['brand'], $row['category'],
+                            $i + 1, $row['item_name'], $row['brand'], $row['category'],
                             $row['warehouse_qty'], $row['unit'], number_format($row['buying_price']),
-                            number_format($row['warehouse_qty'] * $row['buying_price']), $row['status'],
+                            number_format($row['warehouse_qty'] * $row['buying_price']),
                         ]);
                     }
                 } else {
-                    fputcsv($handle, ['#', 'ITEM NAME', 'VARIANT', 'BRAND', 'CATEGORY', 'QTY AT COUNTER', 'UNIT', 'SELLING PRICE', 'STOCK VALUE (TZS)', 'STATUS']);
+                    fputcsv($handle, ['#', 'ITEM NAME', 'BRAND', 'CATEGORY', 'QTY AT COUNTER', 'UNIT', 'SELLING PRICE', 'STOCK VALUE (TZS)']);
                     $filteredData = $stockData->filter(fn ($r) => $r['counter_qty'] > 0)->values();
                     foreach ($filteredData as $i => $row) {
                         fputcsv($handle, [
-                            $i + 1, $row['item_name'], $row['variant'], $row['brand'], $row['category'],
+                            $i + 1, $row['item_name'], $row['brand'], $row['category'],
                             $row['counter_qty'], $row['unit'], number_format($row['selling_price']),
-                            number_format($row['counter_qty'] * $row['selling_price']), $row['status'],
+                            number_format($row['counter_qty'] * $row['selling_price']),
                         ]);
                     }
                 }
@@ -1135,7 +1135,175 @@ class CounterController extends Controller
             return response()->stream($callback, 200, $headers);
         }
 
-        return view('bar.counter.stock-sheet', compact('stockData', 'businessName', 'generatedAt', 'location', 'owner', 'staff', 'todayStats', 'accountant', 'stockKeeper'));
+        return view('bar.counter.stock-sheet', compact(
+            'stockData',
+            'businessName',
+            'generatedAt',
+            'location',
+            'owner',
+            'staff',
+            'todayStats',
+            'accountant',
+            'stockKeeper'
+        ));
+    }
+
+    /**
+     * Dedicated Price Arena page — buying / selling / both values by category.
+     */
+    public function priceArena(Request $request, $location = 'warehouse')
+    {
+        $ownerId = $this->getOwnerId();
+        $location = in_array($location, ['warehouse', 'counter'], true) ? $location : 'warehouse';
+
+        $staffMember = $this->getCurrentStaff();
+        if ($staffMember && $location === 'warehouse') {
+            $roleSlug = $staffMember->role->slug ?? strtolower(trim($staffMember->role->name ?? ''));
+            if (in_array($roleSlug, ['counter', 'bar counter'])) {
+                return redirect()->route('bar.price-arena', 'counter')->with('error', 'Unauthorized access to warehouse price arena.');
+            }
+        }
+
+        $openBottles = \App\Models\OpenBottle::where('user_id', $ownerId)
+            ->get()
+            ->groupBy('product_variant_id');
+
+        $stockData = ProductVariant::with(['product', 'stockLocations' => function ($q) use ($ownerId) {
+            $q->where('user_id', $ownerId);
+        }])
+            ->whereHas('product', fn ($q) => $q->where('user_id', $ownerId))
+            ->get()
+            ->map(function ($variant) use ($openBottles) {
+                $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
+                $counterStock = $variant->stockLocations->where('location', 'counter')->first();
+                $warehouseQty = $warehouseStock ? (float) $warehouseStock->quantity : 0;
+                $counterQty = $counterStock ? (float) $counterStock->quantity : 0;
+                $openTots = $openBottles->has($variant->id) ? $openBottles->get($variant->id)->sum('tots_remaining') : 0;
+
+                $displayName = $variant->name ?? $variant->product->name;
+                if (in_array(strtolower($displayName), ['none', 'standard', 'regular', '-', 'default', '', 'standard packaging', 'none packaging'])) {
+                    $displayName = $variant->product->name;
+                }
+                if (str_contains($displayName, $variant->product->name) && $displayName != $variant->product->name) {
+                    $displayName = trim(str_replace($variant->product->name, '', $displayName), ' -');
+                }
+
+                return [
+                    'item_id' => $variant->id,
+                    'item_name' => $displayName,
+                    'measurement' => $variant->measurement ?? '',
+                    'size_unit' => $variant->unit ?? 'ml',
+                    'packaging' => $variant->packaging ?? 'Piece',
+                    'items_per_pkg' => max(1, (int) ($variant->items_per_package ?? 1)),
+                    'brand' => $variant->product->brand ?? '-',
+                    'category' => $variant->product->category ?? 'General',
+                    'warehouse_qty' => $warehouseQty,
+                    'counter_qty' => $counterQty,
+                    'open_tots' => $openTots,
+                    'unit' => $variant->inventory_unit,
+                    'buying_price' => (float) ($warehouseStock->average_buying_price ?? $variant->buying_price_per_unit ?? 0),
+                    'selling_price' => (float) ($counterStock->selling_price ?? $variant->selling_price_per_unit ?? 0),
+                ];
+            })
+            ->sortBy([['category', 'asc'], ['item_name', 'asc']])
+            ->values();
+
+        $priceMode = in_array($request->get('price_mode'), ['buying', 'selling', 'both'], true)
+            ? $request->get('price_mode')
+            : 'both';
+        $categoryFilter = trim((string) $request->get('category', 'all')) ?: 'all';
+
+        $inStockItems = $stockData->filter(function ($r) use ($location) {
+            return $location === 'warehouse'
+                ? (float) $r['warehouse_qty'] > 0
+                : ((float) $r['counter_qty'] > 0 || (float) $r['open_tots'] > 0);
+        })->values();
+
+        $availableCategories = $inStockItems->pluck('category')->unique()->sort()->values();
+
+        $priceItems = $categoryFilter === 'all'
+            ? $inStockItems
+            : $inStockItems->filter(fn ($r) => strcasecmp((string) $r['category'], $categoryFilter) === 0)->values();
+
+        $priceTotals = [
+            'qty' => $priceItems->sum(fn ($r) => $location === 'warehouse' ? (float) $r['warehouse_qty'] : (float) $r['counter_qty']),
+            'buying_value' => $priceItems->sum(function ($r) use ($location) {
+                $qty = $location === 'warehouse' ? (float) $r['warehouse_qty'] : (float) $r['counter_qty'];
+
+                return $qty * (float) $r['buying_price'];
+            }),
+            'selling_value' => $priceItems->sum(function ($r) use ($location) {
+                $qty = $location === 'warehouse' ? (float) $r['warehouse_qty'] : (float) $r['counter_qty'];
+
+                return $qty * (float) $r['selling_price'];
+            }),
+        ];
+        $priceTotals['margin_value'] = $priceTotals['selling_value'] - $priceTotals['buying_value'];
+
+        $owner = \App\Models\User::find($ownerId);
+        $staff = $this->getCurrentStaff();
+        $allStaff = \App\Models\Staff::where('user_id', $ownerId)->with('role')->get();
+        $accountant = $allStaff->filter(fn ($s) => str_contains(strtolower($s->role->name ?? ''), 'accountant'))->first()?->full_name
+            ?? ($staff && str_contains(strtolower($staff->role->name ?? ''), 'accountant') ? $staff->full_name : 'Authorized Accountant');
+        $stockKeeper = $location === 'warehouse'
+            ? ($allStaff->filter(fn ($s) => str_contains(strtolower($s->role->name ?? ''), 'keeper'))->first()?->full_name ?? 'Authorized Stock Keeper')
+            : ($allStaff->filter(fn ($s) => str_contains(strtolower($s->role->name ?? ''), 'counter'))->first()?->full_name ?? ($staff ? $staff->full_name : 'Authorized Counter Staff'));
+
+        $businessName = $owner->business_name ?? 'MEDALLION Bar';
+        $generatedAt = now()->format('d M Y, H:i');
+
+        if ($request->get('export') === 'csv') {
+            $filename = 'bar_price_arena_'.$location.'_'.date('Y-m-d').'.csv';
+            $headers = [
+                'Content-Type' => 'text/csv',
+                'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+            ];
+
+            $callback = function () use ($priceItems, $businessName, $generatedAt, $location, $priceMode) {
+                $handle = fopen('php://output', 'w');
+                fputcsv($handle, [strtoupper($location)." PRICE ARENA - $businessName", "Generated: $generatedAt"]);
+                fputcsv($handle, []);
+                $header = ['#', 'ITEM NAME', 'CATEGORY', 'QTY', 'UNIT'];
+                if (in_array($priceMode, ['buying', 'both'], true)) {
+                    $header = array_merge($header, ['BUYING PRICE', 'BUYING VALUE']);
+                }
+                if (in_array($priceMode, ['selling', 'both'], true)) {
+                    $header = array_merge($header, ['SELLING PRICE', 'SELLING VALUE']);
+                }
+                fputcsv($handle, $header);
+                foreach ($priceItems->values() as $i => $row) {
+                    $qty = $location === 'warehouse' ? (float) $row['warehouse_qty'] : (float) $row['counter_qty'];
+                    $line = [$i + 1, $row['item_name'], $row['category'], $qty, $row['unit']];
+                    if (in_array($priceMode, ['buying', 'both'], true)) {
+                        $line[] = number_format((float) $row['buying_price'], 0);
+                        $line[] = number_format($qty * (float) $row['buying_price'], 0);
+                    }
+                    if (in_array($priceMode, ['selling', 'both'], true)) {
+                        $line[] = number_format((float) $row['selling_price'], 0);
+                        $line[] = number_format($qty * (float) $row['selling_price'], 0);
+                    }
+                    fputcsv($handle, $line);
+                }
+                fclose($handle);
+            };
+
+            return response()->stream($callback, 200, $headers);
+        }
+
+        return view('bar.counter.price-arena', compact(
+            'location',
+            'owner',
+            'staff',
+            'businessName',
+            'generatedAt',
+            'accountant',
+            'stockKeeper',
+            'priceMode',
+            'categoryFilter',
+            'availableCategories',
+            'priceItems',
+            'priceTotals'
+        ));
     }
 
     /**

@@ -630,7 +630,7 @@
             </li>
           @else
             {{-- Standard Stock Sheet View --}}
-            <li class="treeview {{ request()->routeIs('bar.stock-sheet') ? 'is-expanded' : '' }}">
+            <li class="treeview {{ request()->routeIs('bar.stock-sheet') || request()->routeIs('bar.price-arena') ? 'is-expanded' : '' }}">
               <a class="app-menu__item" href="#" data-toggle="treeview">
                 <i class="app-menu__icon fa fa-clipboard"></i>
                 <span class="app-menu__label">Stock Sheet</span>
@@ -647,6 +647,18 @@
                   <a class="treeview-item {{ request()->routeIs('bar.stock-sheet') && request()->route('location') == 'counter' ? 'active' : '' }}" 
                      href="{{ route('bar.stock-sheet', 'counter') }}">
                     <i class="icon fa fa-angle-right"></i> Counter
+                  </a>
+                </li>
+                <li>
+                  <a class="treeview-item {{ request()->routeIs('bar.price-arena') && (request()->route('location') == 'warehouse' || !request()->route('location')) ? 'active' : '' }}" 
+                     href="{{ route('bar.price-arena', 'warehouse') }}">
+                    <i class="icon fa fa-angle-right"></i> Price Arena (Warehouse)
+                  </a>
+                </li>
+                <li>
+                  <a class="treeview-item {{ request()->routeIs('bar.price-arena') && request()->route('location') == 'counter' ? 'active' : '' }}" 
+                     href="{{ route('bar.price-arena', 'counter') }}">
+                    <i class="icon fa fa-angle-right"></i> Price Arena (Counter)
                   </a>
                 </li>
               </ul>

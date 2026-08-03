@@ -272,6 +272,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::post('counter/update-threshold', [\App\Http\Controllers\Bar\CounterController::class, 'updateThreshold'])->name('counter.update-threshold');
         Route::get('counter/warehouse-stock', [\App\Http\Controllers\Bar\CounterController::class, 'warehouseStock'])->name('counter.warehouse-stock');
         Route::get('counter/stock-sheet/{location?}', [\App\Http\Controllers\Bar\CounterController::class, 'stockSheet'])->name('stock-sheet');
+        Route::get('counter/price-arena/{location?}', [\App\Http\Controllers\Bar\CounterController::class, 'priceArena'])->name('price-arena');
         Route::get('counter/counter-stock', [\App\Http\Controllers\Bar\CounterController::class, 'counterStock'])->name('counter.counter-stock');
         Route::get('counter/analytics', [\App\Http\Controllers\Bar\CounterController::class, 'analytics'])->name('counter.analytics');
         Route::get('counter/stock-transfer-requests', [\App\Http\Controllers\Bar\CounterController::class, 'stockTransferRequests'])->name('counter.stock-transfer-requests');
