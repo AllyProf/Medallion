@@ -1178,6 +1178,17 @@ class CounterController extends Controller
             }
         }
 
+        // Sheet date (default today) — allows viewing/printing for specific date
+        $sheetDate = $request->get('date', now()->format('Y-m-d'));
+        try {
+            $sheetDateCarbon = \Carbon\Carbon::parse($sheetDate)->startOfDay();
+        } catch (\Exception $e) {
+            $sheetDateCarbon = now()->startOfDay();
+        }
+        $sheetDate = $sheetDateCarbon->format('Y-m-d');
+        $isToday = $sheetDate === now()->format('Y-m-d');
+        $sheetDateLabel = $sheetDateCarbon->format('d M Y');
+
         $openBottles = \App\Models\OpenBottle::where('user_id', $ownerId)
             ->get()
             ->groupBy('product_variant_id');
@@ -1267,15 +1278,15 @@ class CounterController extends Controller
         $generatedAt = now()->format('d M Y, H:i');
 
         if ($request->get('export') === 'csv') {
-            $filename = 'bar_price_arena_'.$location.'_'.date('Y-m-d').'.csv';
+            $filename = 'bar_price_arena_'.$location.'_'.$sheetDate.'.csv';
             $headers = [
                 'Content-Type' => 'text/csv',
                 'Content-Disposition' => 'attachment; filename="'.$filename.'"',
             ];
 
-            $callback = function () use ($priceItems, $businessName, $generatedAt, $location, $priceMode) {
+            $callback = function () use ($priceItems, $businessName, $generatedAt, $location, $priceMode, $sheetDateLabel) {
                 $handle = fopen('php://output', 'w');
-                fputcsv($handle, [strtoupper($location)." PRICE ARENA - $businessName", "Generated: $generatedAt"]);
+                fputcsv($handle, [strtoupper($location)." PRICE ARENA - $businessName", "Sheet Date: $sheetDateLabel", "Generated: $generatedAt"]);
                 fputcsv($handle, []);
                 $header = ['#', 'ITEM NAME', 'CATEGORY', 'QTY', 'UNIT'];
                 if (in_array($priceMode, ['buying', 'both'], true)) {
@@ -1316,7 +1327,10 @@ class CounterController extends Controller
             'categoryFilter',
             'availableCategories',
             'priceItems',
-            'priceTotals'
+            'priceTotals',
+            'sheetDate',
+            'sheetDateLabel',
+            'isToday'
         ));
     }
 

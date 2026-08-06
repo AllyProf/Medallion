@@ -92,29 +92,40 @@
         <div class="biz-contact-info">
             {{ $owner->city }} | Mobile: {{ $owner->phone }} | Email: {{ $owner->email }}
         </div>
-        <div class="operations-title">{{ strtoupper($location) }} Price Arena</div>
+        <div class="operations-title">{{ $location == 'warehouse' ? 'WAREHOUSE PRICE' : 'COUNTOR PRICE' }}</div>
         <hr class="orange-divider">
     </div>
 
+    @php
+        $sheetDate = $sheetDate ?? now()->format('Y-m-d');
+        $sheetDateLabel = $sheetDateLabel ?? \Carbon\Carbon::parse($sheetDate)->format('d M Y');
+        $isToday = $isToday ?? ($sheetDate === now()->format('Y-m-d'));
+    @endphp
+
     <div class="report-sub-meta">
         <span>Staff: {{ $staff ? $staff->full_name : 'Accountant' }}</span>
-        <span>| Report #: PRICE-{{ strtoupper($location[0]) }}-{{ date('Ymd') }}-{{ strtoupper(substr(uniqid(), -4)) }}</span>
+        <span>| Sheet Date: {{ $sheetDateLabel }}</span>
+        <span>| Report #: PRICE-{{ strtoupper($location[0]) }}-{{ str_replace('-', '', $sheetDate) }}-{{ strtoupper(substr(uniqid(), -4)) }}</span>
     </div>
 
     <div class="title-area">
-        <h2 class="main-report-title">Price Arena</h2>
+        <h2 class="main-report-title">{{ $location == 'warehouse' ? 'Warehouse Price' : 'Countor Price' }}</h2>
     </div>
 
     <div class="arena-toolbar d-print-none">
         <form method="GET" action="{{ route('bar.price-arena', $location) }}" class="row align-items-end">
-            <div class="col-md-3 form-group mb-2 mb-md-0">
+            <div class="col-md-2 col-sm-6 form-group mb-2 mb-md-0">
+                <label for="sheet-date" title="Sheet Date"><i class="fa fa-calendar"></i></label>
+                <input type="date" id="sheet-date" name="date" value="{{ $sheetDate }}" max="{{ now()->format('Y-m-d') }}" class="form-control" onchange="this.form.submit()">
+            </div>
+            <div class="col-md-2 col-sm-6 form-group mb-2 mb-md-0">
                 <label>Location</label>
                 <select name="location_switch" class="form-control" onchange="window.location.href=this.value">
-                    <option value="{{ route('bar.price-arena', ['warehouse', 'price_mode' => $priceMode, 'category' => $categoryFilter]) }}" {{ $location === 'warehouse' ? 'selected' : '' }}>Warehouse</option>
-                    <option value="{{ route('bar.price-arena', ['counter', 'price_mode' => $priceMode, 'category' => $categoryFilter]) }}" {{ $location === 'counter' ? 'selected' : '' }}>Counter</option>
+                    <option value="{{ route('bar.price-arena', ['warehouse', 'price_mode' => $priceMode, 'category' => $categoryFilter, 'date' => $sheetDate]) }}" {{ $location === 'warehouse' ? 'selected' : '' }}>Warehouse</option>
+                    <option value="{{ route('bar.price-arena', ['counter', 'price_mode' => $priceMode, 'category' => $categoryFilter, 'date' => $sheetDate]) }}" {{ $location === 'counter' ? 'selected' : '' }}>Counter</option>
                 </select>
             </div>
-            <div class="col-md-3 form-group mb-2 mb-md-0">
+            <div class="col-md-3 col-sm-6 form-group mb-2 mb-md-0">
                 <label>Price View</label>
                 <select name="price_mode" class="form-control" onchange="this.form.submit()">
                     <option value="buying" {{ $priceMode === 'buying' ? 'selected' : '' }}>Buying Price Only</option>
@@ -122,7 +133,7 @@
                     <option value="both" {{ $priceMode === 'both' ? 'selected' : '' }}>Buying + Selling</option>
                 </select>
             </div>
-            <div class="col-md-3 form-group mb-2 mb-md-0">
+            <div class="col-md-3 col-sm-6 form-group mb-2 mb-md-0">
                 <label>Category</label>
                 <select name="category" class="form-control" onchange="this.form.submit()">
                     <option value="all" {{ $categoryFilter === 'all' ? 'selected' : '' }}>All Categories</option>
@@ -131,7 +142,7 @@
                     @endforeach
                 </select>
             </div>
-            <div class="col-md-3 form-group mb-0 text-md-right">
+            <div class="col-md-2 col-sm-12 form-group mb-0 text-md-right">
                 <button type="button" onclick="window.print()" class="btn btn-print btn-sm"><i class="fa fa-print"></i> Print</button>
             </div>
         </form>
@@ -140,7 +151,7 @@
     <div class="report-stats-grid">
         <div>
             <div class="stats-card-title">Report Information</div>
-            <div class="stats-row"><strong>Report Date:</strong> <span>{{ date('d M Y') }}</span></div>
+            <div class="stats-row"><strong>Report Date:</strong> <span>{{ $sheetDateLabel }}{{ $isToday ? '' : ' (historical)' }}</span></div>
             <div class="stats-row"><strong>Location:</strong> <span>{{ ucfirst($location) }}</span></div>
             <div class="stats-row"><strong>System Certification:</strong> <span>MauzoLink Audit Tool</span></div>
         </div>
@@ -292,23 +303,39 @@
         </tbody>
     </table>
 
-    <div class="mt-5 pt-5 row">
-        <div class="col-md-6 border-top pt-2">
-            <small class="font-weight-bold text-uppercase" style="letter-spacing:1px;">
-                {{ $location == 'warehouse' ? 'Stock Keeper' : 'Counter Staff' }} Name & Signature
-            </small>
-            <div class="mt-2 font-weight-bold" style="font-size:1.1rem; color: #d35400;">{{ $stockKeeper }}</div>
+    <div class="mt-5 pt-4 row">
+        <div class="col-md-6 border-top pt-3">
+            <div class="font-weight-bold text-uppercase" style="letter-spacing:0.5px; color: #2c3e50; font-size: 0.95rem;">
+                Saini ya Mmiliki wa Restaurant
+            </div>
+            <div class="mt-2 font-weight-bold" style="font-size: 1.05rem; color: #d35400;">
+                CAESSAR SHAYO
+            </div>
             <div class="mt-2 text-muted">_______________________________________</div>
+            <div class="mt-3 font-weight-bold" style="font-size: 0.88rem; color: #444;">
+                Tarehe: <span style="border-bottom: 1px dotted #555; padding-bottom: 2px; display: inline-block; min-width: 160px;">{{ $sheetDateLabel }}</span>
+            </div>
+            <div class="mt-2 font-weight-bold" style="font-size: 0.88rem; color: #444;">
+                Mbele ya: <span style="border-bottom: 1px dotted #555; padding-bottom: 2px; display: inline-block; min-width: 160px;">_______________________</span>
+            </div>
+            <div class="mt-3 font-weight-bold text-uppercase" style="font-size: 0.95rem; color: #d35400; letter-spacing: 0.5px;">
+                Wakili
+            </div>
         </div>
-        <div class="col-md-6 border-top pt-2 text-right">
-            <small class="font-weight-bold text-uppercase" style="letter-spacing:1px;">Accountant Name & Signature</small>
-            <div class="mt-2 font-weight-bold" style="font-size:1.1rem; color: #d35400;">{{ $accountant }}</div>
+
+        <div class="col-md-6 border-top pt-3 text-right">
+            <div class="font-weight-bold text-uppercase" style="letter-spacing:0.5px; color: #2c3e50; font-size: 0.95rem;">
+                Saini ya Mwendesha Biashara
+            </div>
             <div class="mt-2 text-muted">_______________________________________</div>
+            <div class="mt-4 pt-3 font-weight-bold text-uppercase" style="font-size: 0.95rem; color: #d35400; letter-spacing: 1px;">
+                SAINI & MHURI
+            </div>
         </div>
     </div>
 
     <div class="text-center mt-4 small text-muted italic">
-        Date Generated: {{ $generatedAt }} | Price Arena Snapshot
+        Sheet Date: {{ $sheetDateLabel }} | Date Generated: {{ $generatedAt }} | Certified {{ $location == 'warehouse' ? 'Warehouse Price' : 'Countor Price' }} Snapshot
     </div>
 </div>
 @endsection

@@ -135,23 +135,17 @@
     <div class="arena-toolbar d-print-none">
         <form method="GET" action="{{ route('bar.stock-sheet', $location) }}" class="row align-items-end">
             <div class="col-md-4 col-sm-6 form-group">
-                <label for="sheet-date"><i class="fa fa-calendar"></i> Sheet Date</label>
+                <label for="sheet-date" title="Sheet Date"><i class="fa fa-calendar"></i></label>
                 <input type="date" id="sheet-date" name="date" value="{{ $sheetDate }}" max="{{ now()->format('Y-m-d') }}" class="form-control" required>
             </div>
             <div class="col-md-8 col-sm-6 form-group" style="padding-top: 4px;">
                 <button type="submit" class="btn btn-print shadow-sm mr-2"><i class="fa fa-search"></i> Load Sheet</button>
-                <a href="{{ route('bar.stock-sheet', [$location, 'date' => now()->subDay()->format('Y-m-d')]) }}" class="btn btn-outline-secondary shadow-sm mr-2">
-                    Yesterday
-                </a>
-                @if(!$isToday)
-                    <a href="{{ route('bar.stock-sheet', $location) }}" class="btn btn-outline-secondary shadow-sm">Today</a>
-                @endif
             </div>
         </form>
     </div>
 
     <div class="text-center mb-4 d-print-none">
-        <a href="{{ route('bar.price-arena', $location) }}" class="btn btn-outline-secondary shadow-sm mr-2">
+        <a href="{{ route('bar.price-arena', [$location, 'date' => $sheetDate]) }}" class="btn btn-outline-secondary shadow-sm mr-2">
             <i class="fa fa-money"></i> Open Price Arena
         </a>
         <button onclick="window.print()" class="btn btn-print shadow-sm"><i class="fa fa-print"></i> Print Report / PDF</button>
