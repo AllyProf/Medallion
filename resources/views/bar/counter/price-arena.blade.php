@@ -304,7 +304,7 @@
     </table>
 
     <div class="mt-5 pt-4 row">
-        <div class="col-md-6 border-top pt-3">
+        <div class="col-6 border-top pt-3">
             <div class="font-weight-bold text-uppercase" style="letter-spacing:0.5px; color: #2c3e50; font-size: 0.95rem;">
                 Saini ya Mmiliki wa Restaurant
             </div>
@@ -323,7 +323,7 @@
             </div>
         </div>
 
-        <div class="col-md-6 border-top pt-3 text-right">
+        <div class="col-6 border-top pt-3 text-right">
             <div class="font-weight-bold text-uppercase" style="letter-spacing:0.5px; color: #2c3e50; font-size: 0.95rem;">
                 Saini ya Mwendesha Biashara
             </div>

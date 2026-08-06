@@ -307,7 +307,7 @@
 
     {{-- DUAL SIGNATURE AREAS --}}
     <div class="mt-5 pt-5 row">
-        <div class="col-md-6 border-top pt-2">
+        <div class="col-6 border-top pt-2">
             <small class="font-weight-bold text-uppercase" style="letter-spacing:1px;">
                 {{ $location == 'warehouse' ? 'Stock Keeper' : 'Counter Staff' }} Name & Signature
             </small>
@@ -316,7 +316,7 @@
             </div>
             <div class="mt-2 text-muted">_______________________________________</div>
         </div>
-        <div class="col-md-6 border-top pt-2 text-right">
+        <div class="col-6 border-top pt-2 text-right">
             <small class="font-weight-bold text-uppercase" style="letter-spacing:1px;">Accountant Name & Signature</small>
             <div class="mt-2 font-weight-bold" style="font-size:1.1rem; color: #d35400;">{{ $accountant }}</div>
             <div class="mt-2 text-muted">_______________________________________</div>
