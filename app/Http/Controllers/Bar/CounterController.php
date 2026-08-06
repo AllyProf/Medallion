@@ -1018,18 +1018,50 @@ class CounterController extends Controller
             ->groupBy('product_variant_id')
             ->pluck('total_sold', 'product_variant_id');
 
+        $futureMovementsIn = collect();
+        $futureMovementsOut = collect();
+        
+        if (!$isToday) {
+            $sheetDateEnd = $sheetDateCarbon->copy()->endOfDay();
+            
+            $inMovements = \App\Models\StockMovement::where('user_id', $ownerId)
+                ->where('created_at', '>', $sheetDateEnd)
+                ->selectRaw('to_location, product_variant_id, SUM(quantity) as total')
+                ->groupBy('to_location', 'product_variant_id')
+                ->get();
+            
+            $outMovements = \App\Models\StockMovement::where('user_id', $ownerId)
+                ->where('created_at', '>', $sheetDateEnd)
+                ->selectRaw('from_location, product_variant_id, SUM(quantity) as total')
+                ->groupBy('from_location', 'product_variant_id')
+                ->get();
+                
+            $futureMovementsIn = $inMovements->groupBy('to_location')->map(fn($group) => $group->pluck('total', 'product_variant_id'));
+            $futureMovementsOut = $outMovements->groupBy('from_location')->map(fn($group) => $group->pluck('total', 'product_variant_id'));
+        }
+
         // Qty / Closing always use current (today) stock — including any adjustments made today
         $stockData = ProductVariant::with(['product', 'stockLocations' => function ($q) use ($ownerId) {
             $q->where('user_id', $ownerId);
         }])
             ->whereHas('product', fn ($q) => $q->where('user_id', $ownerId))
             ->get()
-            ->map(function ($variant) use ($openBottles, $receivedOnDate, $soldOnDate) {
+            ->map(function ($variant) use ($openBottles, $receivedOnDate, $soldOnDate, $isToday, $futureMovementsIn, $futureMovementsOut) {
                 $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
 
                 $warehouseQty = $warehouseStock ? (float) $warehouseStock->quantity : 0;
                 $counterQty = $counterStock ? (float) $counterStock->quantity : 0;
+                
+                if (!$isToday) {
+                    $futureInW = (float) ($futureMovementsIn->get('warehouse')?->get($variant->id) ?? 0);
+                    $futureOutW = (float) ($futureMovementsOut->get('warehouse')?->get($variant->id) ?? 0);
+                    $warehouseQty = max(0, $warehouseQty - $futureInW + $futureOutW);
+
+                    $futureInC = (float) ($futureMovementsIn->get('counter')?->get($variant->id) ?? 0);
+                    $futureOutC = (float) ($futureMovementsOut->get('counter')?->get($variant->id) ?? 0);
+                    $counterQty = max(0, $counterQty - $futureInC + $futureOutC);
+                }
                 $openTots = $openBottles->has($variant->id)
                     ? $openBottles->get($variant->id)->sum('tots_remaining')
                     : 0;
@@ -1193,16 +1225,48 @@ class CounterController extends Controller
             ->get()
             ->groupBy('product_variant_id');
 
+        $futureMovementsIn = collect();
+        $futureMovementsOut = collect();
+        
+        if (!$isToday) {
+            $sheetDateEnd = $sheetDateCarbon->copy()->endOfDay();
+            
+            $inMovements = \App\Models\StockMovement::where('user_id', $ownerId)
+                ->where('created_at', '>', $sheetDateEnd)
+                ->selectRaw('to_location, product_variant_id, SUM(quantity) as total')
+                ->groupBy('to_location', 'product_variant_id')
+                ->get();
+            
+            $outMovements = \App\Models\StockMovement::where('user_id', $ownerId)
+                ->where('created_at', '>', $sheetDateEnd)
+                ->selectRaw('from_location, product_variant_id, SUM(quantity) as total')
+                ->groupBy('from_location', 'product_variant_id')
+                ->get();
+                
+            $futureMovementsIn = $inMovements->groupBy('to_location')->map(fn($group) => $group->pluck('total', 'product_variant_id'));
+            $futureMovementsOut = $outMovements->groupBy('from_location')->map(fn($group) => $group->pluck('total', 'product_variant_id'));
+        }
+
         $stockData = ProductVariant::with(['product', 'stockLocations' => function ($q) use ($ownerId) {
             $q->where('user_id', $ownerId);
         }])
             ->whereHas('product', fn ($q) => $q->where('user_id', $ownerId))
             ->get()
-            ->map(function ($variant) use ($openBottles) {
+            ->map(function ($variant) use ($openBottles, $isToday, $futureMovementsIn, $futureMovementsOut) {
                 $warehouseStock = $variant->stockLocations->where('location', 'warehouse')->first();
                 $counterStock = $variant->stockLocations->where('location', 'counter')->first();
                 $warehouseQty = $warehouseStock ? (float) $warehouseStock->quantity : 0;
                 $counterQty = $counterStock ? (float) $counterStock->quantity : 0;
+                
+                if (!$isToday) {
+                    $futureInW = (float) ($futureMovementsIn->get('warehouse')?->get($variant->id) ?? 0);
+                    $futureOutW = (float) ($futureMovementsOut->get('warehouse')?->get($variant->id) ?? 0);
+                    $warehouseQty = max(0, $warehouseQty - $futureInW + $futureOutW);
+
+                    $futureInC = (float) ($futureMovementsIn->get('counter')?->get($variant->id) ?? 0);
+                    $futureOutC = (float) ($futureMovementsOut->get('counter')?->get($variant->id) ?? 0);
+                    $counterQty = max(0, $counterQty - $futureInC + $futureOutC);
+                }
                 $openTots = $openBottles->has($variant->id) ? $openBottles->get($variant->id)->sum('tots_remaining') : 0;
 
                 $displayName = $variant->name ?? $variant->product->name;
