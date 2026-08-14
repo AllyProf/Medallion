@@ -344,10 +344,16 @@ class CounterReconciliationController extends Controller
             ->with([
                 'dailyReconciliations' => function ($q) use ($date, $targetShiftIds) {
                     $q->where('reconciliation_type', 'bar')
-                        ->when(!empty($targetShiftIds), function ($sq) use ($targetShiftIds) {
-                            $sq->whereIn('bar_shift_id', $targetShiftIds);
-                        }, function($sq) use ($date) {
-                            $sq->where('reconciliation_date', $date);
+                        ->when(! empty($targetShiftIds), function ($sq) use ($targetShiftIds, $date) {
+                            $sq->where(function ($inner) use ($targetShiftIds, $date) {
+                                $inner->whereIn('bar_shift_id', $targetShiftIds)
+                                    ->orWhere(function ($fallback) use ($date) {
+                                        $fallback->whereNull('bar_shift_id')
+                                            ->whereDate('reconciliation_date', $date);
+                                    });
+                            });
+                        }, function ($sq) use ($date) {
+                            $sq->whereDate('reconciliation_date', $date);
                         });
                 },
             ])
@@ -543,19 +549,37 @@ class CounterReconciliationController extends Controller
                 $isCounterStaff = in_array($roleSlug, ['counter', 'counter-staff', 'bar-manager', 'bar-counter', 'bar_counter']);
 
                 $reconciliation = $primaryShiftId
-                    ? $waiter->dailyReconciliations->firstWhere('bar_shift_id', $primaryShiftId)
+                    ? ($waiter->dailyReconciliations->firstWhere('bar_shift_id', $primaryShiftId)
+                        ?? $waiter->dailyReconciliations->firstWhere(fn ($r) => $r->reconciliation_date && $r->reconciliation_date->format('Y-m-d') === $date))
                     : $waiter->dailyReconciliations->first();
 
-                // Drop stale reconciliation rows on live shift (wrong shift, sales drift, or waiter-style shortage with no submit)
+                $isCompletedRecon = $reconciliation
+                    && in_array($reconciliation->status, ['reconciled', 'verified', 'paid', 'partial'], true)
+                    && (
+                        (float) $reconciliation->submitted_amount > 0
+                        || in_array($reconciliation->status, ['reconciled', 'verified'], true)
+                    );
+
+                // Drop only genuinely invalid rows on live shift — never hide a completed reconciliation
+                // because new orders arrived after last night's reconcile (sales drift).
                 if ($reconciliation && $isLiveOpenShiftView) {
-                    $shiftMismatch = $primaryShiftId && (int) $reconciliation->bar_shift_id !== $primaryShiftId;
-                    $salesMismatch = abs((float) $reconciliation->expected_amount - (float) $totalSales) >= 1.0;
-                    $bogusWaiterStyleRow = (float) $reconciliation->submitted_amount <= 0
+                    $shiftMismatch = $primaryShiftId
+                        && $reconciliation->bar_shift_id
+                        && (int) $reconciliation->bar_shift_id !== $primaryShiftId;
+                    $bogusWaiterStyleRow = ! $isCompletedRecon
+                        && (float) $reconciliation->submitted_amount <= 0
                         && (float) $reconciliation->difference < -0.01;
-                    if ($shiftMismatch || $salesMismatch || $bogusWaiterStyleRow) {
+                    $salesMismatch = ! $isCompletedRecon
+                        && abs((float) $reconciliation->expected_amount - (float) $totalSales) >= 1.0;
+
+                    if (($shiftMismatch && ! $isCompletedRecon) || $salesMismatch || $bogusWaiterStyleRow) {
                         $reconciliation = null;
+                        $isCompletedRecon = false;
                     }
                 }
+
+                $newOrdersSinceRecon = $isCompletedRecon
+                    && (float) $totalSales > (float) $reconciliation->expected_amount + 0.01;
 
                 if ($isCounterStaff) {
                     // Counter: drawer collections vs own sales; use saved shift recon when present (not waiter submit flow)
@@ -579,7 +603,7 @@ class CounterReconciliationController extends Controller
                         $status = $reconciliation->status ?: $status;
                     }
 
-                    if ($hasUnpaidOrders) {
+                    if ($hasUnpaidOrders && ! $isCompletedRecon) {
                         $status = 'pending';
                     } elseif (! $reconciliation) {
                         if ($totalRecordedAmount > 0 && abs($difference) < 0.01) {
@@ -590,19 +614,25 @@ class CounterReconciliationController extends Controller
                     }
                 } else {
                     $submittedAmount = $reconciliation ? $reconciliation->submitted_amount : 0;
-                    $difference = ($submittedAmount > 0 || $reconciliation)
-                        ? ($submittedAmount - $totalSales)
-                        : ($totalRecordedAmount - $totalSales);
 
-                    $status = 'pending';
-                    if ($reconciliation) {
+                    if ($isCompletedRecon) {
+                        $difference = (float) $reconciliation->difference;
                         $status = $reconciliation->status;
-                    } elseif ($hasUnpaidOrders) {
+                    } else {
+                        $difference = ($submittedAmount > 0 || $reconciliation)
+                            ? ($submittedAmount - $totalSales)
+                            : ($totalRecordedAmount - $totalSales);
+
                         $status = 'pending';
-                    } elseif ($totalPaidAmount > 0 && abs($difference) < 0.01) {
-                        $status = 'paid';
-                    } elseif ($totalPaidAmount > 0) {
-                        $status = 'partial';
+                        if ($reconciliation) {
+                            $status = $reconciliation->status;
+                        } elseif ($hasUnpaidOrders) {
+                            $status = 'pending';
+                        } elseif ($totalPaidAmount > 0 && abs($difference) < 0.01) {
+                            $status = 'paid';
+                        } elseif ($totalPaidAmount > 0) {
+                            $status = 'partial';
+                        }
                     }
 
                     $finalCash = $reconciliation ? $reconciliation->cash_collected : $cashCollected;
@@ -661,6 +691,7 @@ class CounterReconciliationController extends Controller
                     'reconciliation' => $reconciliation,
                     'platform_totals' => $waiterPlatformTotals,
                     'profit' => $waiterProfit,
+                    'new_orders_since_recon' => $newOrdersSinceRecon ?? false,
                 ];
             })
             ->filter(function ($data) use ($isLiveOpenShiftView) {
@@ -957,6 +988,10 @@ class CounterReconciliationController extends Controller
 
         $staff = $this->getCurrentStaff();
 
+        $hasSeparatePendingHandover = $pendingHandover
+            && $bar_shift
+            && (int) $pendingHandover->bar_shift_id !== (int) $bar_shift->id;
+
         return view('bar.counter.reconciliation', compact(
             'waiters',
             'date',
@@ -991,7 +1026,8 @@ class CounterReconciliationController extends Controller
             'waitingProfit',
             'shiftProfitMargin',
             'targetShiftIds',
-            'primaryShiftId'
+            'primaryShiftId',
+            'hasSeparatePendingHandover',
         ));
     }
 
@@ -1301,6 +1337,14 @@ class CounterReconciliationController extends Controller
                     $submittedAmount = $expectedAmount;
                     $difference = 0;
                 }
+            } elseif (abs($difference) < 0.01) {
+                $submittedAmount = $expectedAmount;
+                $finalCashCollected = max($finalCashCollected, $expectedAmount);
+                $difference = 0;
+            } elseif ($submittedCash > 0 && abs($submittedCash - $expectedAmount) < 0.01) {
+                $submittedAmount = $expectedAmount;
+                $finalCashCollected = max($finalCashCollected, $expectedAmount);
+                $difference = 0;
             }
 
             $matchArray = [

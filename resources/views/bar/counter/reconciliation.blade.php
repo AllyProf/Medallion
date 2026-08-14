@@ -46,22 +46,70 @@
   @endif
 </div>
 
+@php
+  $shiftLabel = fn ($s) => $s ? ('#' . ($s->formatted_id ?? $s->id)) : 'N/A';
+  $hasSeparatePendingHandover = $hasSeparatePendingHandover
+    ?? (isset($pendingHandover, $bar_shift) && $pendingHandover && $bar_shift
+        && (int) $pendingHandover->bar_shift_id !== (int) $bar_shift->id);
+@endphp
+
+@if(isset($bar_shift) && $bar_shift)
+<div class="alert {{ $bar_shift->status === 'open' ? 'alert-success' : 'alert-secondary' }} shadow-sm mb-3" style="border-radius: 10px; border-left: 5px solid {{ $bar_shift->status === 'open' ? '#28a745' : '#6c757d' }};">
+  <div class="d-flex flex-wrap align-items-center">
+    <div class="mr-3">
+      <i class="fa fa-{{ $bar_shift->status === 'open' ? 'play-circle' : 'history' }} fa-2x"></i>
+    </div>
+    <div class="flex-grow-1">
+      <h5 class="mb-1 font-weight-bold">
+        @if($bar_shift->status === 'open')
+          Live shift {{ $shiftLabel($bar_shift) }}
+        @else
+          Closed shift {{ $shiftLabel($bar_shift) }}
+        @endif
+      </h5>
+      <p class="mb-0 small text-muted">
+        Opened {{ $bar_shift->opened_at->format('d M Y, H:i') }}
+        @if($bar_shift->closed_at)
+          · Closed {{ $bar_shift->closed_at->format('d M Y, H:i') }}
+        @endif
+        · The table below is for <strong>this shift only</strong>. Reconcile each waiter here before submitting handover.
+      </p>
+      @if($hasSeparatePendingHandover && isset($pendingHandover))
+        <p class="mb-0 small mt-1 text-warning">
+          <i class="fa fa-exclamation-triangle"></i>
+          An older handover ({{ $shiftLabel($pendingHandover->barShift) }}) is still waiting for Accountant — that does not block reconciling today's waiters.
+        </p>
+      @endif
+    </div>
+  </div>
+</div>
+@endif
+
 {{-- [DUAL-CONTEXT NAVIGATION BANNERS] --}}
 @if(isset($pendingHandover) && $pendingHandover && (!isset($todayHandover) || !$todayHandover || (isset($todayHandover->id) && $todayHandover->id !== $pendingHandover->id)))
 <div class="alert alert-warning shadow-sm mb-4 border-warning blink-border" style="border-radius: 12px; border-left: 6px solid #ffc107; background-color: #fffaf0;">
-  <div class="d-flex align-items-center">
+  <div class="d-flex align-items-center flex-wrap">
     <div class="mr-3">
         <div class="bg-warning text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
             <i class="fa fa-clock-o fa-2x"></i>
         </div>
     </div>
-    <div>
-        <h5 class="mb-1 font-weight-bold text-dark">Awaiting Verification</h5>
-        <p class="mb-0 text-muted">Yesterday's Handover for Shift <strong>#{{ $pendingHandover->barShift->formatted_id ?? 'N/A' }}</strong> is still pending.</p>
+    <div class="flex-grow-1">
+        <h5 class="mb-1 font-weight-bold text-dark">Accountant verification pending</h5>
+        <p class="mb-0 text-muted">
+          Handover for shift <strong>{{ $shiftLabel($pendingHandover->barShift) }}</strong>
+          ({{ $pendingHandover->handover_date ? \Carbon\Carbon::parse($pendingHandover->handover_date)->format('d M Y') : '' }},
+          TSh {{ number_format((float) $pendingHandover->amount, 0) }})
+          was submitted but the Accountant has not verified it yet.
+        </p>
+        <p class="mb-0 small mt-1">
+          <i class="fa fa-info-circle"></i>
+          SMS “Reconciliation received” confirms one staff row was recorded — it does not mean the Accountant has approved the full shift handover.
+        </p>
     </div>
-    <div class="ml-auto">
+    <div class="ml-auto mt-2 mt-md-0">
         <a href="{{ Route::currentRouteName() === 'accountant.counter.reconciliation' ? route('accountant.counter.reconciliation', ['shift_id' => $pendingHandover->bar_shift_id]) : route('bar.counter.reconciliation', ['shift_id' => $pendingHandover->bar_shift_id]) }}" class="btn btn-warning font-weight-bold px-4 rounded-pill shadow-sm">
-            <i class="fa fa-check-circle mr-2"></i> Verify Shift #{{ $pendingHandover->barShift->formatted_id ?? 'N/A' }}
+            <i class="fa fa-history mr-2"></i> Review {{ $shiftLabel($pendingHandover->barShift) }}
         </a>
     </div>
   </div>
@@ -361,7 +409,9 @@
                   </td>
                   <td class="text-center">
                     @if($isCounter)
-                      @if($data['submitted_amount'] > 0)
+                      @if(!empty($data['reconciliation']) && in_array($data['status'], ['reconciled', 'verified']))
+                        <span class="badge badge-success"><i class="fa fa-check-circle"></i> Reconciled</span>
+                      @elseif($data['submitted_amount'] > 0)
                         <span class="badge badge-warning"><i class="fa fa-exclamation-triangle"></i> Check drawer</span>
                       @elseif(isset($todayHandover) && $todayHandover)
                         <span class="badge badge-success"><i class="fa fa-check"></i> Balanced</span>
@@ -370,6 +420,9 @@
                       @endif
                     @elseif($data['status'] === 'reconciled')
                       <span class="badge badge-success"><i class="fa fa-check-circle"></i> Reconciled</span>
+                      @if(!empty($data['new_orders_since_recon']))
+                        <br><small class="text-info">New sales since reconcile</small>
+                      @endif
                     @elseif($data['status'] === 'verified')
                       <span class="badge badge-success">Verified</span>
                     @elseif($data['status'] === 'submitted')
@@ -469,10 +522,23 @@
             $totalDigitalRecordedArr = 0;
             
             foreach($waiters as $data) {
-                // Use submitted amounts if reconciliation exists, else fallback to recorded
-                $submittedTotal = ($data['reconciliation']) ? $data['reconciliation']->submitted_amount : $data['recorded_amount'];
-                $cashSub = ($data['reconciliation']) ? $data['reconciliation']->cash_collected : $data['recorded_cash'];
-                $digiSub = ($data['reconciliation']) ? $data['reconciliation']->mobile_money_collected : $data['recorded_digital'];
+                // Use reconciled submitted amounts; add any new sales recorded after last reconcile
+                if ($data['reconciliation']) {
+                    $staffHandoverTotal = (float) $data['reconciliation']->submitted_amount;
+                    if (!empty($data['new_orders_since_recon'])) {
+                        $staffHandoverTotal += (float) $data['expected_amount'] - (float) $data['reconciliation']->expected_amount;
+                    }
+                    $cashSub = (float) $data['reconciliation']->cash_collected;
+                    $digiSub = (float) $data['reconciliation']->mobile_money_collected;
+                    if (!empty($data['new_orders_since_recon'])) {
+                        $delta = (float) $data['expected_amount'] - (float) $data['reconciliation']->expected_amount;
+                        $cashSub += $delta;
+                    }
+                } else {
+                    $staffHandoverTotal = (float) $data['recorded_amount'];
+                    $cashSub = (float) $data['recorded_cash'];
+                    $digiSub = (float) $data['recorded_digital'];
+                }
 
                 $totalCashHandover += $cashSub;
                 $totalDigitalHandover += $digiSub;
@@ -521,6 +587,8 @@
                 }
             }
             $overallTotalHandover = $totalCashHandover + $totalDigitalHandover;
+            $totalBarSalesShift = $waiters->sum('expected_amount');
+            $handoverShortfall = max(0, $totalBarSalesShift - $overallTotalHandover);
             
             $keyMap = [
                 'M-PESA' => 'mpesa_amount',
@@ -583,7 +651,11 @@
                   <i class="fa fa-lock fa-2x mr-3 text-danger"></i>
                   <div>
                     <h5 class="alert-heading font-weight-bold mb-1">Submission Locked</h5>
-                    <p class="mb-0">You cannot submit the handover yet. The follow staff still need to be reconciled:</p>
+                    <p class="mb-0">
+                      You cannot submit handover for
+                      <strong>{{ isset($bar_shift) ? $shiftLabel($bar_shift) : 'this shift' }}</strong> yet.
+                      Reconcile these staff in the table above first:
+                    </p>
                     <ul class="mb-0 mt-1">
                       @foreach($pendingWaiters as $pw)
                         <li><strong>{{ $pw['waiter']->full_name }}</strong></li>
@@ -636,6 +708,13 @@
               <div class="col-md-12">
                 <div class="p-3 bg-light rounded text-right mb-3">
                   <h4 class="mb-0">Total Declaration: <span id="handover-total" class="text-primary font-weight-bold">TSh {{ number_format($overallTotalHandover, 0) }}</span></h4>
+                  <p class="small text-muted mb-0 mt-1">Shift bar sales: TSh {{ number_format($totalBarSalesShift, 0) }}</p>
+                  @if($handoverShortfall > 0)
+                    <p class="small text-warning mb-0 mt-1">
+                      <i class="fa fa-exclamation-triangle"></i>
+                      TSh {{ number_format($handoverShortfall, 0) }} from new orders since reconcile — use <strong>Reconcile</strong> again on those staff to confirm.
+                    </p>
+                  @endif
                 </div>
               </div>
             </div>
