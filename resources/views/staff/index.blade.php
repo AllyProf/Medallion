@@ -134,7 +134,7 @@
                 <th width="110" class="text-center">Kiosk PIN</th>
                 <th>Location</th>
                 <th width="100">Status</th>
-                <th width="120" class="text-center">Actions</th>
+                <th width="160" class="text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -192,6 +192,10 @@
                       <a href="{{ route('staff.edit', $member->id) }}" class="btn btn-sm btn-outline-primary" title="Edit">
                         <i class="fa fa-edit"></i>
                       </a>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" title="Generate password &amp; send to phone"
+                              onclick="generateStaffPassword({{ $member->id }}, '{{ addslashes($member->full_name) }}', '{{ addslashes($member->phone_number) }}')">
+                        <i class="fa fa-key"></i>
+                      </button>
                       <form action="{{ route('staff.toggle-status', $member->id) }}" method="POST" id="toggle-status-{{ $member->id }}" class="d-inline">
                         @csrf
                         <button type="button" class="btn btn-sm {{ $member->is_active ? 'btn-outline-warning' : 'btn-outline-success' }}" 
@@ -290,6 +294,34 @@ function toggleStaffStatus(staffId, staffName, isActive) {
   }).then((result) => {
     if (result.isConfirmed) {
       document.getElementById(`toggle-status-${staffId}`).submit();
+    }
+  });
+}
+
+function generateStaffPassword(staffId, staffName, phoneNumber) {
+  Swal.fire({
+    title: 'Generate new password?',
+    html: `A new password will be created for <strong>${staffName}</strong> and sent with their username to <strong>${phoneNumber || 'their phone'}</strong>.`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#940000',
+    cancelButtonColor: '#6c757d',
+    confirmButtonText: 'Yes, generate &amp; send',
+    cancelButtonText: 'Cancel'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = `/staff/${staffId}/generate-password`;
+
+      const csrfInput = document.createElement('input');
+      csrfInput.type = 'hidden';
+      csrfInput.name = '_token';
+      csrfInput.value = '{{ csrf_token() }}';
+      form.appendChild(csrfInput);
+
+      document.body.appendChild(form);
+      form.submit();
     }
   });
 }

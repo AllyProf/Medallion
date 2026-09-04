@@ -294,7 +294,7 @@
         </div>
 
         <div class="alert alert-info mt-3">
-          <i class="fa fa-info-circle"></i> <strong>Note:</strong> Password will be automatically generated from the staff's last name (in uppercase). SMS with credentials will be sent to the staff's phone number.
+          <i class="fa fa-info-circle"></i> <strong>Note:</strong> A secure password is generated automatically. Username and password are sent to the staff member's phone number.
         </div>
 
         <div class="mt-4">

@@ -87,6 +87,11 @@ Route::middleware('allow.staff')->group(function () {
     });
 });
 
+// Kiosk Shortcut Route
+Route::get('/kiosk', function() {
+    return redirect()->route('bar.kiosk.index');
+});
+
 // Unified Bar Kiosk Group (Public Access)
 Route::group(['prefix' => 'bar/kiosk', 'as' => 'bar.kiosk.'], function () {
     Route::get('/', [\App\Http\Controllers\Bar\WaiterController::class, 'kiosk'])->name('index');
@@ -178,6 +183,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::put('/staff/{staff}', [\App\Http\Controllers\StaffController::class, 'update'])->name('staff.update');
         Route::delete('/staff/{staff}', [\App\Http\Controllers\StaffController::class, 'destroy'])->name('staff.destroy');
         Route::post('/staff/{staff}/toggle-status', [\App\Http\Controllers\StaffController::class, 'toggleStatus'])->name('staff.toggle-status');
+        Route::post('/staff/{staff}/generate-password', [\App\Http\Controllers\StaffController::class, 'generatePassword'])->name('staff.generate-password');
         Route::post('/staff/bulk/generate-pins', [\App\Http\Controllers\StaffController::class, 'generateMissingPins'])->name('staff.generate-missing-pins');
     });
 
@@ -421,6 +427,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::post('daily-master-sheet/undo-close', [\App\Http\Controllers\Accountant\DailyMasterSheetController::class, 'undoCloseDay'])->name('daily-master-sheet.undo-close');
         Route::post('daily-master-sheet/expense', [\App\Http\Controllers\Accountant\DailyMasterSheetController::class, 'storeExpense'])->name('daily-master-sheet.expense');
         Route::post('daily-master-sheet/expense/{id}/delete', [\App\Http\Controllers\Accountant\DailyMasterSheetController::class, 'deleteExpense'])->name('daily-master-sheet.delete-expense');
+        Route::post('daily-master-sheet/shifts/{shift}/transfer', [\App\Http\Controllers\Accountant\DailyMasterSheetController::class, 'transferShift'])->name('daily-master-sheet.shift.transfer');
 
         Route::post('stock-transfers/{stockTransfer}/verify', [\App\Http\Controllers\Accountant\AccountantController::class, 'verifyStockTransfer'])->name('verify-stock-transfer');
         Route::get('reports', [\App\Http\Controllers\Accountant\AccountantController::class, 'reports'])->name('reports');

@@ -68,6 +68,57 @@
   </form>
 </div>
 
+@if(!empty($canManageShifts) && isset($openCounterShifts) && $openCounterShifts->count() > 0)
+<div class="tile d-print-none mb-3">
+  <h5 class="mb-3"><i class="fa fa-exchange text-primary"></i> Open counter shifts</h5>
+  <p class="small text-muted mb-3">
+    Transfer this live session to another counter. The shift number stays the same and all orders remain attached.
+  </p>
+  <div class="table-responsive">
+    <table class="table table-sm table-bordered mb-0">
+      <thead class="thead-light">
+        <tr>
+          <th>Shift</th>
+          <th>Opened by</th>
+          <th>Opened at</th>
+          <th class="text-right">Orders</th>
+          <th class="text-right">Bar sales</th>
+          <th class="text-center">Transfer to</th>
+        </tr>
+      </thead>
+      <tbody>
+        @foreach($openCounterShifts as $openShift)
+        <tr>
+          <td><strong>{{ $openShift->formatted_id }}</strong></td>
+          <td>{{ $openShift->staff->full_name ?? 'Staff' }}</td>
+          <td>{{ optional($openShift->opened_at)->format('d M Y, H:i') }}</td>
+          <td class="text-right">{{ $openShift->orders_count }}</td>
+          <td class="text-right">TSh {{ number_format($openShift->orders_total, 0) }}</td>
+          <td>
+            <form method="POST" action="{{ route('accountant.daily-master-sheet.shift.transfer', $openShift) }}" class="form-inline justify-content-center transfer-shift-form" data-shift="{{ $openShift->formatted_id }}" data-from="{{ $openShift->staff->full_name ?? 'Counter' }}">
+              @csrf
+              <select name="to_staff_id" class="form-control form-control-sm mr-2 mb-1 transfer-to-staff" required>
+                <option value="">Select counter…</option>
+                @foreach($counterStaffOptions as $counter)
+                  @if((int) $counter->id !== (int) $openShift->staff_id)
+                    <option value="{{ $counter->id }}">{{ $counter->full_name }}</option>
+                  @endif
+                @endforeach
+              </select>
+              <input type="text" name="reason" class="form-control form-control-sm mr-2 mb-1" placeholder="Reason (optional)" maxlength="500">
+              <button type="submit" class="btn btn-sm btn-primary mb-1">
+                <i class="fa fa-exchange"></i> Transfer
+              </button>
+            </form>
+          </td>
+        </tr>
+        @endforeach
+      </tbody>
+    </table>
+  </div>
+</div>
+@endif
+
 <div class="row">
   <div class="col-md-12">
     <div class="tile p-0" style="overflow:hidden;">
@@ -461,6 +512,43 @@
 
 @section('scripts')
 <script>
+$(document).on('submit', '.transfer-shift-form', function(e) {
+    e.preventDefault();
+    const form = this;
+    const toSelect = $(form).find('.transfer-to-staff');
+    const toName = toSelect.find('option:selected').text().trim();
+
+    if (!toSelect.val()) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Select a counter',
+            text: 'Please choose the staff member who will take over this shift.',
+            confirmButtonColor: '#940000'
+        });
+        return;
+    }
+
+    const shiftId = $(form).data('shift');
+    const fromName = $(form).data('from');
+
+    Swal.fire({
+        icon: 'question',
+        title: 'Transfer this shift?',
+        html: '<p class="mb-2">You are transferring <strong>' + shiftId + '</strong>.</p>'
+            + '<p class="mb-2">From <strong>' + fromName + '</strong> to <strong>' + toName + '</strong>.</p>'
+            + '<p class="text-muted mb-0 small">The shift number remains the same. All existing orders stay on this shift. The selected counter will continue the live session.</p>',
+        showCancelButton: true,
+        confirmButtonColor: '#940000',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Yes, transfer',
+        cancelButtonText: 'Cancel'
+    }).then(function(result) {
+        if (result.isConfirmed) {
+            form.submit();
+        }
+    });
+});
+
 $(document).on('click', '.submit-to-boss-btn', function() {
     const btn = $(this);
     const ledgerId = btn.data('id');

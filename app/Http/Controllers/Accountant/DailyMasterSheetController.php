@@ -591,7 +591,127 @@ class DailyMasterSheetController extends Controller
             return $ledger;
         });
 
-        return view('accountant.daily_master_sheet_history', compact('ledgers'));
+        $openCounterShifts = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('status', 'open')
+            ->with('staff.role')
+            ->orderByDesc('opened_at')
+            ->get()
+            ->map(function ($shift) {
+                $shift->orders_count = \App\Models\BarOrder::where('bar_shift_id', $shift->id)
+                    ->where('status', '!=', 'cancelled')
+                    ->count();
+                $shift->orders_total = \App\Models\BarOrder::where('bar_shift_id', $shift->id)
+                    ->whereIn('status', ['served', 'delivered'])
+                    ->sum('total_amount');
+
+                return $shift;
+            });
+
+        $counterStaffOptions = \App\Models\Staff::where('user_id', $ownerId)
+            ->where('is_active', true)
+            ->whereHas('role', function ($q) {
+                $q->whereIn('slug', ['counter', 'bar-counter', 'bar_counter', 'bar-manager'])
+                    ->orWhereIn('name', ['Counter', 'Bar Counter', 'Bar Manager']);
+            })
+            ->orderBy('full_name')
+            ->get();
+
+        $canManageShifts = $this->isBusinessPowerUser();
+
+        return view('accountant.daily_master_sheet_history', compact(
+            'ledgers',
+            'openCounterShifts',
+            'counterStaffOptions',
+            'canManageShifts'
+        ));
+    }
+
+    /**
+     * Transfer an open counter shift to another counter staff.
+     * Orders stay on the same shift; ownership of the live session changes.
+     */
+    public function transferShift(Request $request, \App\Models\BarShift $shift)
+    {
+        if (! $this->isBusinessPowerUser()) {
+            abort(403, 'Only a manager or accountant can transfer a counter shift.');
+        }
+
+        $ownerId = $this->getOwnerId();
+        if ((int) $shift->user_id !== (int) $ownerId) {
+            abort(403);
+        }
+
+        if ($shift->status !== 'open') {
+            return redirect()
+                ->route('accountant.daily-master-sheet.history')
+                ->with('error', 'Only an open shift can be transferred.');
+        }
+
+        $validated = $request->validate([
+            'to_staff_id' => 'required|integer|exists:staff,id',
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        $toStaff = \App\Models\Staff::with('role')->findOrFail($validated['to_staff_id']);
+        if ((int) $toStaff->user_id !== (int) $ownerId || ! $toStaff->is_active) {
+            return back()->with('error', 'Choose an active counter staff from this business.');
+        }
+
+        $roleName = strtolower(trim($toStaff->role->name ?? ''));
+        $roleSlug = strtolower(trim($toStaff->role->slug ?? ''));
+        $isCounter = in_array($roleSlug, ['counter', 'bar-counter', 'bar_counter', 'bar-manager'], true)
+            || in_array($roleName, ['counter', 'bar counter', 'bar manager'], true);
+
+        if (! $isCounter) {
+            return back()->with('error', 'The receiving staff must be a Counter.');
+        }
+
+        if ((int) $toStaff->id === (int) $shift->staff_id) {
+            return back()->with('error', 'That staff already owns this shift.');
+        }
+
+        $alreadyOpen = \App\Models\BarShift::where('user_id', $ownerId)
+            ->where('staff_id', $toStaff->id)
+            ->where('status', 'open')
+            ->where('id', '!=', $shift->id)
+            ->exists();
+
+        if ($alreadyOpen) {
+            return back()->with('error', $toStaff->full_name . ' already has an open shift. Close or transfer that one first.');
+        }
+
+        $fromStaff = $shift->staff;
+        if (! $fromStaff) {
+            return back()->with('error', 'This shift has no counter staff assigned.');
+        }
+
+        $actor = $this->getCurrentStaff();
+        $reason = trim((string) ($validated['reason'] ?? ''));
+        $note = 'Transferred from ' . ($fromStaff->full_name ?? 'Counter')
+            . ' to ' . $toStaff->full_name
+            . ' by ' . ($actor->full_name ?? (auth()->user()->name ?? 'Manager'))
+            . ' at ' . now()->format('d M Y H:i');
+        if ($reason !== '') {
+            $note .= ' | Reason: ' . $reason;
+        }
+
+        $shift->update([
+            'staff_id' => $toStaff->id,
+            'location_branch' => $toStaff->location_branch ?: ($shift->location_branch ?? 'Counter'),
+            'notes' => trim(($shift->notes ? $shift->notes . ' | ' : '') . $note),
+        ]);
+
+        try {
+            $shiftSms = new \App\Services\ShiftSmsService();
+            $shiftSms->sendShiftTransferredSms($shift->fresh('staff'), $fromStaff, $toStaff, $actor);
+        } catch (\Exception $e) {
+            \Log::error('Shift transfer SMS failed: ' . $e->getMessage());
+        }
+
+        return redirect()
+            ->route('accountant.daily-master-sheet.history')
+            ->with('success', 'Shift ' . $shift->formatted_id . ' has been transferred from '
+                . ($fromStaff->full_name ?? 'Counter') . ' to ' . $toStaff->full_name . '.');
     }
 
 

@@ -52,12 +52,36 @@
     <h1><i class="fa fa-check-square-o text-primary"></i> Stock Verification</h1>
     <p>Verify counter inventory before starting your shift</p>
   </div>
+  @if(empty($anyOpenShift))
   <div class="btn-group" role="group">
     <button type="button" class="btn btn-outline-info view-toggle-btn active" id="btn-table-view"><i class="fa fa-list"></i> Table</button>
     <button type="button" class="btn btn-outline-info view-toggle-btn" id="btn-card-view"><i class="fa fa-th-large"></i> Cards</button>
   </div>
+  @endif
 </div>
 
+@if(!empty($anyOpenShift))
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="tile shadow-sm border-0 rounded-lg text-center p-5">
+            <i class="fa fa-lock fa-3x text-warning mb-3"></i>
+            <h3 class="mb-2">Another shift is already open</h3>
+            <p class="lead mb-3">
+                You cannot start a new counter session until the current shift is closed.
+            </p>
+            <p class="mb-1">
+                <strong>Opened by:</strong> {{ $anyOpenShift->staff->full_name ?? 'Staff' }}
+            </p>
+            <p class="text-muted mb-4">
+                <strong>Opened at:</strong> {{ optional($anyOpenShift->opened_at)->format('d M Y, H:i') }}
+            </p>
+            <p class="small text-muted mb-0">
+                Ask that counter staff to close their shift, then refresh this page to start yours.
+            </p>
+        </div>
+    </div>
+</div>
+@else
 <div class="row">
     <div class="col-md-12">
         <div class="tile shadow-sm border-0 rounded-lg">
@@ -169,6 +193,7 @@
         </div>
     </div>
 </div>
+@endif
 
 <!-- Report Stock Shortage Modal -->
 <div class="modal fade shadow" id="shortageModal" tabindex="-1" role="dialog" aria-labelledby="stockShortageTitle" aria-hidden="true">

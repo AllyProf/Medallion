@@ -116,6 +116,21 @@ class Staff extends Model
     }
 
     /**
+     * Generate a random login password (letters + digits).
+     */
+    public static function generatePassword(int $length = 8): string
+    {
+        $length = max(6, min(16, $length));
+        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+        $password = '';
+        $max = strlen($alphabet) - 1;
+        for ($i = 0; $i < $length; $i++) {
+            $password .= $alphabet[random_int(0, $max)];
+        }
+        return $password;
+    }
+
+    /**
      * Generate unique 4-digit PIN for Kiosk
      */
     public static function generatePin()

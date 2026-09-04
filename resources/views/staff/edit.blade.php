@@ -227,6 +227,21 @@
           </div>
         </div>
 
+        <div class="row">
+          <div class="col-md-12">
+            <div class="form-group">
+              <label class="font-weight-bold">Login password</label>
+              <div>
+                <button type="button" class="btn btn-outline-secondary"
+                        onclick="generateStaffPassword({{ $staff->id }}, '{{ addslashes($staff->full_name) }}', '{{ addslashes($staff->phone_number) }}')">
+                  <i class="fa fa-key"></i> Generate password &amp; send to phone
+                </button>
+              </div>
+              <small class="text-muted">Creates a new password and sends username + password to {{ $staff->phone_number }}.</small>
+            </div>
+          </div>
+        </div>
+
         <!-- Section 4: Attachments -->
         <h5 class="section-title mt-4"><i class="fa fa-paperclip mr-2"></i> Documents & Attachments</h5>
         <div class="row">
@@ -284,3 +299,35 @@
   </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+function generateStaffPassword(staffId, staffName, phoneNumber) {
+  Swal.fire({
+    title: 'Generate new password?',
+    html: `A new password will be created for <strong>${staffName}</strong> and sent with their username to <strong>${phoneNumber || 'their phone'}</strong>.`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#940000',
+    cancelButtonColor: '#6c757d',
+    confirmButtonText: 'Yes, generate &amp; send',
+    cancelButtonText: 'Cancel'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = `/staff/${staffId}/generate-password`;
+
+      const csrfInput = document.createElement('input');
+      csrfInput.type = 'hidden';
+      csrfInput.name = '_token';
+      csrfInput.value = '{{ csrf_token() }}';
+      form.appendChild(csrfInput);
+
+      document.body.appendChild(form);
+      form.submit();
+    }
+  });
+}
+</script>
+@endpush

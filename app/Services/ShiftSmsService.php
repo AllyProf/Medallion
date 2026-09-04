@@ -70,4 +70,71 @@ class ShiftSmsService
 
         return $sentCount > 0;
     }
+
+    /**
+     * Notify owner, managers, accountants, previous counter, and new counter
+     * when an open shift is transferred.
+     */
+    public function sendShiftTransferredSms(BarShift $shift, Staff $fromStaff, Staff $toStaff, ?Staff $transferredBy = null)
+    {
+        $ownerId = $shift->user_id;
+
+        $enableNotifications = SystemSetting::get('enable_shift_notifications_' . $ownerId, true);
+        if (!$enableNotifications) {
+            return false;
+        }
+
+        $shift->loadMissing('staff');
+        $branch = $shift->location_branch ?? 'Counter';
+        $shiftLabel = $shift->formatted_id;
+        $time = now()->format('H:i');
+        $businessName = SystemSetting::get('company_name', 'MEDALLION');
+        $fromName = $fromStaff->full_name ?? 'Counter';
+        $toName = $toStaff->full_name ?? 'Counter';
+        $byName = $transferredBy->full_name ?? (auth()->user()->name ?? 'Manager');
+
+        $message = "SHIFT TRANSFERRED\n\n";
+        $message .= "Shift {$shiftLabel} at {$branch} was transferred at {$time}.\n";
+        $message .= "From: {$fromName}\n";
+        $message .= "To: {$toName}\n";
+        $message .= "By: {$byName}\n";
+        $message .= "Orders stay on this shift. {$toName} now owns the live session.\n";
+        $message .= "- {$businessName}";
+
+        $sentCount = 0;
+        $phonesSent = [];
+
+        $sendTo = function (?string $phone) use ($message, &$sentCount, &$phonesSent) {
+            $phone = trim((string) $phone);
+            if ($phone === '' || in_array($phone, $phonesSent, true)) {
+                return;
+            }
+            $result = $this->smsService->sendSms($phone, $message);
+            if ($result['success'] ?? false) {
+                $sentCount++;
+                $phonesSent[] = $phone;
+            }
+        };
+
+        $owner = \App\Models\User::find($ownerId);
+        if ($owner) {
+            $sendTo($owner->phone ?? null);
+        }
+
+        $staffToNotify = Staff::where('user_id', $ownerId)
+            ->where('is_active', true)
+            ->whereHas('role', function ($query) {
+                $query->whereIn('slug', ['manager', 'accountant']);
+            })
+            ->get();
+
+        foreach ($staffToNotify as $recipient) {
+            $sendTo($recipient->phone_number);
+        }
+
+        $sendTo($fromStaff->phone_number);
+        $sendTo($toStaff->phone_number);
+
+        return $sentCount > 0;
+    }
 }

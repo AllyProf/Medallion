@@ -164,8 +164,8 @@ class StaffController extends Controller
         // Generate staff ID
         $staffId = Staff::generateStaffId($ownerId);
 
-        // Generate password from last name
-        $password = Staff::generatePasswordFromLastName($validated['full_name']);
+        // Auto-generate login password and send it with the username (email) by SMS
+        $password = Staff::generatePassword();
         $hashedPassword = Hash::make($password);
         
         // Process Kiosk PIN
@@ -219,7 +219,7 @@ class StaffController extends Controller
         $this->sendStaffCredentialsSms($staff, $password, $pin);
 
         return redirect()->route('staff.index')
-            ->with('success', 'Staff member registered successfully! SMS with credentials has been sent to ' . $staff->phone_number);
+            ->with('success', 'Staff member registered successfully. Login credentials have been sent to ' . $staff->phone_number . '.');
     }
 
     /**
@@ -645,37 +645,81 @@ class StaffController extends Controller
     }
 
     /**
+     * Auto-generate a new password and send username + password to the staff phone.
+     * For staff who sign in with username (email) and password.
+     */
+    public function generatePassword($id)
+    {
+        $user = $this->getCurrentUser();
+        if (!$user || !$this->hasPermission('staff', 'edit')) {
+            return redirect()->back()->with('error', 'You do not have permission to perform this action.');
+        }
+
+        $ownerId = $this->getOwnerId();
+        $staffQuery = Staff::where('user_id', $ownerId);
+        if ($this->isSuperAdminRole()) {
+            $staffQuery = Staff::query();
+        }
+        $staff = $staffQuery->with('role')->findOrFail($id);
+
+        if (empty($staff->phone_number)) {
+            return redirect()->back()->with('error', 'This staff member has no phone number on file.');
+        }
+
+        if (empty($staff->email)) {
+            return redirect()->back()->with('error', 'This staff member has no username (email) on file.');
+        }
+
+        $password = Staff::generatePassword();
+        $staff->update(['password' => Hash::make($password)]);
+
+        $message = "MEDALLION RESTAURANT\n"
+            . "Hi " . $staff->full_name . ",\n"
+            . "Your new credentials are:\n"
+            . "Username: " . $staff->email . "\n"
+            . "Password: " . $password . "\n"
+            . "Do not share.\n"
+            . "Thank you.";
+
+        try {
+            $result = $this->smsService->sendSms($staff->phone_number, $message);
+            $sent = !empty($result['success']);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send password SMS for staff ' . $staff->id . ': ' . $e->getMessage());
+            $sent = false;
+        }
+
+        if (!$sent) {
+            return redirect()->back()->with('error', 'Password was updated, but delivery to ' . $staff->phone_number . ' failed. New password: ' . $password);
+        }
+
+        return redirect()->back()->with('success', 'New password generated and sent with username to ' . $staff->phone_number . '.');
+    }
+
+    /**
      * Send SMS with staff credentials
      */
     private function sendStaffCredentialsSms($staff, $password, $pin)
     {
-        $roleName = $staff->role ? $staff->role->name : 'Staff';
+        $roleName = $staff->role ? $staff->role->name : '';
         $isWaiter = stripos($roleName, 'waiter') !== false;
 
         if ($isWaiter) {
-            // Waiters: PIN only — no dashboard access needed
-            $message  = "Welcome to MEDALLION RESTAURANT!\n\n";
-            $message .= "Your staff account has been created.\n\n";
-            $message .= "YOUR ACCOUNT DETAILS:\n";
-            $message .= "Name: " . $staff->full_name . "\n";
-            $message .= "Staff ID: " . $staff->staff_id . "\n";
-            $message .= "Role: " . $roleName . "\n";
-            $message .= "Kiosk PIN: " . $pin . "\n\n";
-            $message .= "Use your PIN to log in at the POS Kiosk to take orders.\n\n";
-            $message .= "Thank you!";
+            $message = "MEDALLION RESTAURANT\n"
+                . "Hi " . $staff->full_name . ",\n"
+                . "Your new credentials are:\n"
+                . "Staff ID: " . $staff->staff_id . "\n"
+                . "PIN: " . $pin . "\n"
+                . "Do not share.\n"
+                . "Thank you.";
         } else {
-            // All other staff: Full credentials (email + password) — no PIN needed
-            $message  = "Welcome to MEDALLION RESTAURANT!\n\n";
-            $message .= "Your staff account has been created.\n\n";
-            $message .= "YOUR ACCOUNT DETAILS:\n";
-            $message .= "Name: " . $staff->full_name . "\n";
-            $message .= "Staff ID: " . $staff->staff_id . "\n";
-            $message .= "Role: " . $roleName . "\n";
-            $message .= "Email: " . $staff->email . "\n";
-            $message .= "Password: " . $password . "\n\n";
-            $message .= "Please log in using the credentials above.\n";
-            $message .= "For security, you will be required to change your password on first login.\n\n";
-            $message .= "Thank you!";
+            $message = "MEDALLION RESTAURANT\n"
+                . "Hi " . $staff->full_name . ",\n"
+                . "Your new credentials are:\n"
+                . "Username: " . $staff->email . "\n"
+                . "Password: " . $password . "\n"
+                . "Do not share.\n"
+                . "Thank you.";
         }
 
         $this->smsService->sendSms($staff->phone_number, $message);

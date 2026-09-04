@@ -15,6 +15,9 @@
     <a href="{{ route('staff.edit', $staff->id) }}" class="btn btn-primary">
       <i class="fa fa-edit"></i> Edit
     </a>
+    <button type="button" class="btn btn-secondary" onclick="generateStaffPassword({{ $staff->id }}, '{{ addslashes($staff->full_name) }}', '{{ addslashes($staff->phone_number) }}')">
+      <i class="fa fa-key"></i> Generate Password
+    </button>
   </div>
 </div>
 
@@ -171,9 +174,37 @@
 </div>
 @endsection
 
+@push('scripts')
+<script>
+function generateStaffPassword(staffId, staffName, phoneNumber) {
+  Swal.fire({
+    title: 'Generate new password?',
+    html: `A new password will be created for <strong>${staffName}</strong> and sent with their username to <strong>${phoneNumber || 'their phone'}</strong>.`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#940000',
+    cancelButtonColor: '#6c757d',
+    confirmButtonText: 'Yes, generate &amp; send',
+    cancelButtonText: 'Cancel'
+  }).then((result) => {
+    if (result.isConfirmed) {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = `/staff/${staffId}/generate-password`;
 
+      const csrfInput = document.createElement('input');
+      csrfInput.type = 'hidden';
+      csrfInput.name = '_token';
+      csrfInput.value = '{{ csrf_token() }}';
+      form.appendChild(csrfInput);
 
-
+      document.body.appendChild(form);
+      form.submit();
+    }
+  });
+}
+</script>
+@endpush
 
 
 
