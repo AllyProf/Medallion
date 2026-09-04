@@ -122,7 +122,41 @@ class DashboardController extends Controller
                     return $query;
                 };
 
-                // ── Today's revenue (Live Real-Time Orders)
+                // ── Today's revenue (same source as Live Sales monitor)
+                // Prefer the open counter shift; otherwise calendar-day orders.
+                // Use orders.total_amount so bar + food match Live Sales exactly.
+                $activeShift = \App\Models\BarShift::where('user_id', $ownerId)
+                    ->where('status', 'open')
+                    ->when($location && $location !== 'all' && !(auth()->check() && auth()->user()->role === 'admin'), function ($q) use ($location) {
+                        $q->where('location_branch', $location);
+                    })
+                    ->orderBy('opened_at', 'desc')
+                    ->first();
+
+                $todayOrdersRevenueQuery = \App\Models\BarOrder::where('orders.status', '!=', 'cancelled');
+                if (!auth()->check() || auth()->user()->role !== 'admin') {
+                    $todayOrdersRevenueQuery->where('orders.user_id', $ownerId);
+                }
+                if ($activeShift) {
+                    $todayOrdersRevenueQuery->where('orders.bar_shift_id', $activeShift->id);
+                } else {
+                    $todayOrdersRevenueQuery->whereDate('orders.created_at', today());
+                }
+                if ($location && $location !== 'all' && !(auth()->check() && auth()->user()->role === 'admin')) {
+                    $todayOrdersRevenueQuery->where(function ($q) use ($location) {
+                        $q->whereExists(function ($sq) use ($location) {
+                            $sq->select(\DB::raw(1))
+                               ->from('staff')
+                               ->whereColumn('staff.id', 'orders.waiter_id')
+                               ->where('staff.location_branch', $location);
+                        })->orWhereHas('table', function ($sq) use ($location) {
+                            $sq->where('location', $location);
+                        });
+                    });
+                }
+                $todayRevenue = (clone $todayOrdersRevenueQuery)->sum('orders.total_amount');
+
+                // Keep item splits for any charts that still need them (calendar day)
                 $todayBarSales = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $location) {
                     if (!auth()->check() || auth()->user()->role !== 'admin') {
                         $q->where('user_id', $ownerId);
@@ -164,8 +198,6 @@ class DashboardController extends Controller
                         });
                     }
                 })->where('status', '!=', 'cancelled')->sum('total_price');
-
-                $todayRevenue = $todayBarSales + $todayFoodSales;
 
                 // ── This month revenue (Live Real-Time Orders)
                 $monthBarSalesRaw = \App\Models\OrderItem::whereHas('order', function($q) use ($ownerId, $location) {
@@ -652,7 +684,7 @@ class DashboardController extends Controller
                     'warehouseStockItems', 'counterStockItems',
                     'lowStockList', 'categoryDistribution',
                     'barMonthlyTarget', 'foodMonthlyTarget', 'barTargetProgress', 'foodTargetProgress', 'foodMonthRevenue',
-                    'monthProfit', 'masterSheetTrend'
+                    'monthProfit', 'masterSheetTrend', 'activeShift'
                 ));
             }
 

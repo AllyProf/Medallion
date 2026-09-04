@@ -79,7 +79,7 @@
   <div class="col-md-3">
     <div class="widget-small primary coloured-icon"><i class="icon fa fa-money fa-3x"></i>
       <div class="info">
-        <h4>Today Revenue</h4>
+        <h4>{{ !empty($activeShift) ? 'Shift Revenue' : 'Today Revenue' }}</h4>
         <p><b>TSh {{ number_format($todayRevenue) }}</b></p>
       </div>
     </div>
