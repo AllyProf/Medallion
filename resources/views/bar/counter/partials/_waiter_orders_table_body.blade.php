@@ -195,13 +195,14 @@
                         <i class="fa fa-check"></i>
                     </button>
 
-                    {{-- Temporary: counter can cancel waiter tickets too. --}}
+                    @if($order->order_source === 'counter')
                     <button class="btn btn-sm btn-danger update-status-btn mr-1 mb-1"
                             data-order-id="{{ $order->id }}"
                             data-status="cancelled"
-                            title="Cancel this order">
+                            title="Cancel this counter order">
                         <i class="fa fa-ban"></i>
                     </button>
+                    @endif
 
                 @elseif($orderStatus === 'served' && $order->payment_status !== 'paid')
                     <button class="btn btn-sm btn-success font-weight-bold pay-order-btn mr-1 mb-1"
@@ -211,13 +212,14 @@
                         <i class="fa fa-money"></i>
                     </button>
 
-                    {{-- Temporary: counter can cancel waiter tickets too. --}}
+                    @if($order->order_source === 'counter')
                     <button class="btn btn-sm btn-danger update-status-btn mr-1 mb-1"
                             data-order-id="{{ $order->id }}"
                             data-status="cancelled"
-                            title="Cancel this order">
+                            title="Cancel this counter order">
                         <i class="fa fa-ban"></i>
                     </button>
+                    @endif
 
                 @elseif($order->payment_status === 'paid')
                     <button class="btn btn-sm btn-success mr-1 mb-1" disabled style="opacity: 1;" title="Fully Paid">
