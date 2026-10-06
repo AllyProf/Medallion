@@ -58,15 +58,16 @@ class CounterController extends Controller
             })
             ->with(['waiter', 'items.productVariant.product', 'kitchenOrderItems', 'table', 'paidByWaiter', 'orderPayments']);
 
-        // [SORTING FIX] Prioritize orders from currently active open shifts
-        if (!empty($allOpenShiftIds)) {
+        // New pending tickets (including kiosk) stay above older served rows
+        // so the counter sees a waiter order as soon as it is placed.
+        if (! empty($allOpenShiftIds)) {
             $idsString = implode(',', array_map('intval', $allOpenShiftIds));
-            // In MySQL, FIELD(bar_shift_id, ...) returns the index; 
-            // if not in list, it returns 0. So we order DESC.
-            $ordersQuery->orderByRaw("FIELD(bar_shift_id, $idsString) DESC");
+            $ordersQuery->orderByRaw("CASE WHEN status = 'pending' AND (bar_shift_id IN ($idsString) OR bar_shift_id IS NULL) THEN 0 WHEN bar_shift_id IN ($idsString) THEN 1 ELSE 2 END");
+        } else {
+            $ordersQuery->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END");
         }
 
-        $ordersQuery->orderBy('updated_at', 'desc');
+        $ordersQuery->orderBy('created_at', 'desc');
 
         if ($search) {
             $ordersQuery->where(function ($q) use ($search) {

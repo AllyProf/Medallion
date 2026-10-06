@@ -288,7 +288,33 @@ $(document).ready(function() {
     // Background Refresh (Real-time Waiter Order Visibility)
     let isTyping = false;
     let typingTimer;
-    
+    let knownOrderIds = new Set();
+
+    function collectOrderIds() {
+        const ids = new Set();
+        $('#orders-table-body .order-data-row').each(function() {
+            ids.add(String($(this).data('order-id')));
+        });
+        return ids;
+    }
+
+    function playNewOrderTone() {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = 880;
+            gain.gain.value = 0.05;
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.18);
+        } catch (e) {}
+    }
+
+    knownOrderIds = collectOrderIds();
+
     function refreshOrdersTable() {
         // Don't refresh if user is typing or if any modal is open
         if (isTyping || $('.modal.show').length > 0) return;
@@ -307,7 +333,23 @@ $(document).ready(function() {
             headers: {'X-Requested-With': 'XMLHttpRequest'},
             success: function(html) {
                 if (html && html.trim().length > 0) {
+                    const previous = knownOrderIds;
                     $('#orders-table-body').html(html);
+                    const fresh = [];
+                    $('#orders-table-body .order-data-row').each(function() {
+                        const id = String($(this).data('order-id'));
+                        if (!previous.has(id) && $(this).data('status') === 'pending') {
+                            fresh.push(this);
+                            $(this).css('background', '#fff3cd');
+                        }
+                    });
+                    knownOrderIds = collectOrderIds();
+                    if (fresh.length) {
+                        playNewOrderTone();
+                        if (typeof showToast === 'function') {
+                            showToast('info', fresh.length === 1 ? 'A waiter just placed an order.' : fresh.length + ' new waiter orders just came in.', 'New order');
+                        }
+                    }
                     // Re-apply client-side filter if search/dropdowns have values
                     filterOrders();
                 }
@@ -318,8 +360,8 @@ $(document).ready(function() {
         });
     }
 
-    // Determine refresh frequency (30 seconds)
-    setInterval(refreshOrdersTable, 30000);
+    // Check often so a new kiosk ticket shows without a manual reload
+    setInterval(refreshOrdersTable, 8000);
 
     // Track typing to pause refresh
     $('#order-search').on('keydown', function() {
