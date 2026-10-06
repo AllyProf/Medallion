@@ -106,8 +106,10 @@ Route::group(['prefix' => 'bar/kiosk', 'as' => 'bar.kiosk.'], function () {
     Route::get('/print-combined-receipt', [\App\Http\Controllers\Bar\WaiterController::class, 'printCombinedReceipt'])->name('print-combined');
     Route::get('/print-docket/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'printFoodDocket'])->name('print-docket');
     Route::post('/add-items/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'addItemsToOrder'])->name('add-items');
+    Route::post('/sync-order/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'syncEditedOrder'])->name('sync-order');
     Route::post('/cancel-order/{order}', [\App\Http\Controllers\Bar\WaiterController::class, 'cancelOrder'])->name('cancel-order');
     Route::post('/cancel-food-item/{item}', [\App\Http\Controllers\Bar\WaiterController::class, 'cancelFoodItem'])->name('cancel-food-item');
+    Route::post('/cancel-drink-item/{item}', [\App\Http\Controllers\Bar\WaiterController::class, 'cancelDrinkItem'])->name('cancel-drink-item');
     
     // Staff Attendance Toggle
     Route::post('/attendance/toggle', [\App\Http\Controllers\StaffAttendanceController::class, 'toggle'])->name('attendance.toggle');

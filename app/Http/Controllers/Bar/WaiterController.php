@@ -615,17 +615,12 @@ class WaiterController extends Controller
                 return response()->json(['error' => 'You can only cancel your own orders'], 403);
             }
         } elseif ($kioskWaiterId) {
-            // Kiosk waiter: must be their own order
             if ($order->waiter_id != $kioskWaiterId) {
                 return response()->json(['error' => 'You can only cancel your own orders'], 403);
             }
 
-            // Kiosk: waiters may not void tickets that include drinks — counter handles bar items
-            $order->loadCount('items');
-            if ($order->items_count > 0) {
-                return response()->json([
-                    'error' => 'Tickets with drinks cannot be voided from the kiosk. Remove food with the food controls, or ask the counter to void or adjust drinks.',
-                ], 403);
+            if ($order->order_source === 'counter') {
+                return response()->json(['error' => 'Counter orders can only be cancelled at the counter.'], 403);
             }
         }
 
@@ -634,8 +629,12 @@ class WaiterController extends Controller
             return response()->json(['error' => 'Cannot cancel an order that is already '.$order->status.' or '.$order->payment_status], 400);
         }
 
+        if ($order->status === 'served') {
+            return response()->json(['error' => 'A served order cannot be cancelled or edited.'], 400);
+        }
+
         $validated = $request->validate([
-            'reason' => 'nullable|string|max:500',
+            'reason' => 'required|string|max:500',
         ]);
 
         DB::beginTransaction();
@@ -1371,15 +1370,32 @@ class WaiterController extends Controller
             return response()->json(['success' => false, 'error' => 'Not authenticated in Kiosk session'], 401);
         }
 
-        $period = $request->input('period', 'today'); // 'today' or 'week'
+        $period = $request->input('period', 'today'); // 'today', 'week', or 'date'
+        $selectedDate = null;
+        $requestedDate = $request->input('date');
+        if (is_string($requestedDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $requestedDate)) {
+            try {
+                $parsed = \Carbon\Carbon::createFromFormat('Y-m-d', $requestedDate)->startOfDay();
+                if ($parsed->format('Y-m-d') === $requestedDate && $parsed->lte(now()->endOfDay())) {
+                    $selectedDate = $parsed->toDateString();
+                    $period = 'date';
+                }
+            } catch (\Exception $e) {
+                $selectedDate = null;
+            }
+        }
 
         $query = \App\Models\BarOrder::with(['items.productVariant.product', 'table', 'orderPayments', 'kitchenOrderItems'])
             ->where('waiter_id', $waiterId);
 
-        if ($period === 'week') {
+        if ($period === 'date' && $selectedDate) {
+            $query->whereDate('created_at', $selectedDate);
+            $limit = 200;
+        } elseif ($period === 'week') {
             $query->where('created_at', '>=', now()->subDays(7)->startOfDay());
             $limit = 100;
         } else {
+            $period = 'today';
             $query->whereDate('created_at', now()->toDateString());
             $limit = 50;
         }
@@ -1388,19 +1404,33 @@ class WaiterController extends Controller
             ->limit($limit)
             ->get();
 
-        // Calculate stats for period
-        $startOfPeriod = $period === 'week' ? now()->subDays(7)->startOfDay() : now()->startOfDay();
-        
+        $orders->each(function (\App\Models\BarOrder $order) {
+            $order->setAttribute('cancelled_item_labels', $order->cancelledItemLabels());
+        });
+
         $periodOrders = \App\Models\BarOrder::where('waiter_id', $waiterId)
-            ->where('created_at', '>=', $startOfPeriod)
             ->where('payment_status', 'paid')
-            ->where('status', '!=', 'cancelled')
-            ->get();
+            ->where('status', '!=', 'cancelled');
+
+        if ($period === 'date' && $selectedDate) {
+            $periodOrders->whereDate('created_at', $selectedDate);
+            $periodLabel = \Carbon\Carbon::parse($selectedDate)->format('d M Y');
+        } elseif ($period === 'week') {
+            $periodOrders->where('created_at', '>=', now()->subDays(7)->startOfDay());
+            $periodLabel = 'Last 7 Days';
+        } else {
+            $periodOrders->whereDate('created_at', now()->toDateString());
+            $periodLabel = "Today's";
+        }
+
+        $periodOrders = $periodOrders->get();
 
         $stats = [
             'total_sales' => $periodOrders->sum('total_amount'),
             'total_tickets' => $periodOrders->count(),
-            'period_label' => $period === 'week' ? 'Last 7 Days' : "Today's",
+            'period_label' => $periodLabel,
+            'period' => $period,
+            'selected_date' => $selectedDate,
         ];
 
         return response()->json([
@@ -1465,6 +1495,10 @@ class WaiterController extends Controller
 
         if ($order->payment_status === 'paid' || $order->status === 'cancelled') {
             return response()->json(['error' => 'Cannot add items to a paid or cancelled order'], 400);
+        }
+
+        if ($order->status === 'served') {
+            return response()->json(['error' => 'A served order cannot be cancelled or edited.'], 400);
         }
 
         $validated = $request->validate([
@@ -1714,6 +1748,133 @@ class WaiterController extends Controller
     }
 
     /**
+     * Save an edited kiosk ticket: keep the lines still in the cart, update quantities,
+     * cancel lines the waiter removed, and add any new lines.
+     */
+    public function syncEditedOrder(Request $request, BarOrder $order)
+    {
+        $waiterId = session('kiosk_waiter_id');
+        $staff = $waiterId ? \App\Models\Staff::find($waiterId) : $this->getCurrentStaff();
+
+        if (! $staff) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        if ((int) $order->user_id !== (int) $staff->user_id) {
+            return response()->json(['error' => 'Order not found in this business'], 404);
+        }
+
+        $role = strtolower($staff->role->name ?? '');
+        $isManager = in_array($role, ['manager', 'accountant', 'admin']);
+        if (! $isManager && (int) $order->waiter_id !== (int) $staff->id) {
+            return response()->json(['error' => 'You can only edit your own orders.'], 403);
+        }
+
+        if ($order->order_source === 'counter') {
+            return response()->json(['error' => 'Counter orders can only be changed at the counter.'], 403);
+        }
+
+        if ($order->payment_status === 'paid' || $order->status === 'cancelled') {
+            return response()->json(['error' => 'Cannot edit a paid or cancelled order'], 400);
+        }
+
+        if ($order->status === 'served') {
+            return response()->json(['error' => 'A served order cannot be cancelled or edited.'], 400);
+        }
+
+        $items = $request->input('items', []);
+        if (! is_array($items)) {
+            return response()->json(['error' => 'Items are required'], 422);
+        }
+
+        $keptDrinkIds = [];
+        $keptKitchenIds = [];
+        $newItems = [];
+
+        foreach ($items as $item) {
+            if (! empty($item['order_item_id'])) {
+                $keptDrinkIds[] = (int) $item['order_item_id'];
+            } elseif (! empty($item['kitchen_order_item_id'])) {
+                $keptKitchenIds[] = (int) $item['kitchen_order_item_id'];
+            } else {
+                $newItems[] = $item;
+            }
+        }
+
+        DB::beginTransaction();
+        try {
+            $order->load(['items', 'kitchenOrderItems']);
+
+            foreach ($order->items as $line) {
+                if (! in_array((int) $line->id, $keptDrinkIds, true)) {
+                    $line->load('productVariant');
+                    $label = ((int) $line->quantity).'x '.($line->productVariant->display_name ?? 'Item');
+                    $this->restoreDrinkStock($order, $line);
+                    TransferSale::where('order_item_id', $line->id)->delete();
+                    $order->total_amount = max(0, (float) $order->total_amount - (float) $line->total_price);
+                    $order->notes = trim(($order->notes ? $order->notes.' | ' : '').'CANCELLED ITEMS: '.$label.' | CANCELLED - Reason: Removed while editing the ticket');
+                    $line->delete();
+                }
+            }
+
+            foreach ($order->kitchenOrderItems as $line) {
+                if (in_array($line->status, ['cancelled', 'completed'], true)) {
+                    continue;
+                }
+                if (! in_array((int) $line->id, $keptKitchenIds, true)) {
+                    $order->total_amount = max(0, (float) $order->total_amount - (float) $line->total_price);
+                    $order->notes = trim(($order->notes ? $order->notes.' | ' : '')."FOOD CANCELLED: {$line->quantity}x {$line->food_item_name} (Reason: Removed while editing the ticket)");
+                    $line->update(['status' => 'cancelled']);
+                }
+            }
+
+            foreach ($items as $item) {
+                $qty = max(1, (int) ($item['quantity'] ?? 1));
+                if (! empty($item['order_item_id'])) {
+                    $line = OrderItem::where('order_id', $order->id)->find((int) $item['order_item_id']);
+                    if (! $line || (int) $line->quantity === $qty) {
+                        continue;
+                    }
+                    $delta = $qty - (int) $line->quantity;
+                    $order->total_amount = max(0, (float) $order->total_amount + ($delta * (float) $line->unit_price));
+                    $line->quantity = $qty;
+                    $line->total_price = (float) $line->unit_price * $qty;
+                    $line->save();
+                } elseif (! empty($item['kitchen_order_item_id'])) {
+                    $line = KitchenOrderItem::where('order_id', $order->id)->find((int) $item['kitchen_order_item_id']);
+                    if (! $line || in_array($line->status, ['cancelled', 'completed'], true) || (int) $line->quantity === $qty) {
+                        continue;
+                    }
+                    $delta = $qty - (int) $line->quantity;
+                    $order->total_amount = max(0, (float) $order->total_amount + ($delta * (float) $line->unit_price));
+                    $line->quantity = $qty;
+                    $line->total_price = (float) $line->unit_price * $qty;
+                    $line->save();
+                }
+            }
+
+            $order->save();
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 400);
+        }
+
+        if (count($newItems) > 0) {
+            $request->merge(['items' => $newItems]);
+
+            return $this->addItemsToOrder($request, $order->fresh());
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Ticket updated',
+            'order' => $order->fresh()->load(['items.productVariant.product', 'kitchenOrderItems', 'table']),
+        ]);
+    }
+
+    /**
      * Print Kitchen Docket (Food only)
      */
     public function printFoodDocket(BarOrder $order)
@@ -1763,23 +1924,30 @@ class WaiterController extends Controller
             if ($order->waiter_id != $kioskWaiterId) {
                 return response()->json(['error' => 'You can only cancel items from your own orders'], 403);
             }
+            if ($order->order_source === 'counter') {
+                return response()->json(['error' => 'Counter orders can only be cancelled at the counter.'], 403);
+            }
         }
 
         if ($order->payment_status === 'paid' || $order->status === 'cancelled') {
             return response()->json(['error' => 'Cannot cancel item from a paid or cancelled order'], 400);
         }
 
+        if ($order->status === 'served') {
+            return response()->json(['error' => 'A served order cannot be cancelled or edited.'], 400);
+        }
+
         if ($item->status === 'cancelled') {
             return response()->json(['error' => 'Item is already cancelled'], 400);
         }
 
-        // Only allow cancel if not already completed/being prepared (optional, but safer)
-        // User wants waiter to be able to cancel food.
+        $validated = $request->validate([
+            'reason' => 'required|string|max:500',
+        ]);
 
         DB::beginTransaction();
         try {
-            // Log cancellation reason
-            $reason = $request->input('reason', 'Waiter cancellation');
+            $reason = $validated['reason'];
 
             // Subtract item price from order total (keep non-negative)
             $order->total_amount = max(0, (float) $order->total_amount - (float) $item->total_price);
@@ -1808,6 +1976,112 @@ class WaiterController extends Controller
 
             return response()->json(['error' => 'Cancellation failed: '.$e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Cancel one drink line the signed-in kiosk waiter placed.
+     */
+    public function cancelDrinkItem(Request $request, OrderItem $item)
+    {
+        $kioskWaiterId = session('kiosk_waiter_id');
+        if (! $kioskWaiterId) {
+            return response()->json(['error' => 'Sign in on the kiosk to cancel your own items.'], 403);
+        }
+
+        $order = $item->order;
+        if (! $order || (int) $order->waiter_id !== (int) $kioskWaiterId) {
+            return response()->json(['error' => 'You can only cancel items from your own orders'], 403);
+        }
+
+        if ($order->order_source === 'counter') {
+            return response()->json(['error' => 'Counter orders can only be cancelled at the counter.'], 403);
+        }
+
+        if ($order->payment_status === 'paid' || $order->status === 'cancelled') {
+            return response()->json(['error' => 'Cannot cancel an item from a paid or cancelled order'], 400);
+        }
+
+        if ($order->status === 'served') {
+            return response()->json(['error' => 'A served order cannot be cancelled or edited.'], 400);
+        }
+
+        $validated = $request->validate([
+            'reason' => 'required|string|max:500',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $item->load('productVariant.product');
+            $name = $item->productVariant->display_name ?? 'Item';
+            $label = ((int) $item->quantity).'x '.$name;
+            $reason = $validated['reason'];
+
+            $this->restoreDrinkStock($order, $item);
+
+            TransferSale::where('order_item_id', $item->id)->delete();
+
+            $order->total_amount = max(0, (float) $order->total_amount - (float) $item->total_price);
+            if ((float) $order->paid_amount > (float) $order->total_amount) {
+                $order->paid_amount = $order->total_amount;
+            }
+
+            $note = 'CANCELLED ITEMS: '.$label.' | CANCELLED - Reason: '.$reason;
+            $order->notes = $order->notes ? $order->notes.' | '.$note : $note;
+            $item->delete();
+
+            $order->load(['items', 'kitchenOrderItems']);
+            $hasDrinks = $order->items->isNotEmpty();
+            $hasActiveFood = $order->kitchenOrderItems->contains(function (KitchenOrderItem $kitchenItem) {
+                return ! in_array($kitchenItem->status, ['cancelled', 'completed'], true);
+            });
+            if (! $hasDrinks && ! $hasActiveFood) {
+                $order->status = 'cancelled';
+            }
+            $order->save();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => $label.' cancelled.',
+                'order_total' => $order->total_amount,
+                'order_status' => $order->status,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json(['error' => 'Cancellation failed: '.$e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Put a served drink back on the counter when the waiter cancels that line.
+     */
+    protected function restoreDrinkStock(BarOrder $order, OrderItem $item): void
+    {
+        if (! $item->product_variant_id || ($item->sell_type ?? 'unit') !== 'unit') {
+            return;
+        }
+
+        $movement = StockMovement::where('reference_type', BarOrder::class)
+            ->where('reference_id', $order->id)
+            ->where('product_variant_id', $item->product_variant_id)
+            ->first();
+
+        if (! $movement) {
+            return;
+        }
+
+        $counterStock = StockLocation::where('user_id', $order->user_id)
+            ->where('product_variant_id', $item->product_variant_id)
+            ->where('location', 'counter')
+            ->first();
+
+        if ($counterStock) {
+            $counterStock->increment('quantity', $item->quantity);
+        }
+
+        $movement->delete();
     }
 
     /**

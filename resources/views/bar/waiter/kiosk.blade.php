@@ -1618,7 +1618,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         itemsSummary += `</div><div style="text-align:right; font-size:1.2rem; font-weight:bold; margin-top:12px; color:#ffd666;">Total: TSh ${total.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>`;
 
         Swal.fire({
-            title: 'Confirm Order Placement',
+            title: editingOrderId ? 'Confirm ticket update' : 'Confirm Order Placement',
             html: `
                 <div style="text-align:center; margin-bottom:15px;">
                     <span class="badge badge-info" style="font-size:1rem; padding:8px 15px;">Waiter: ${waiterName}</span>
@@ -1628,7 +1628,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             `,
             icon: 'question',
             showCancelButton: true,
-            confirmButtonText: '<i class="fa fa-check"></i> PLACE ORDER',
+            confirmButtonText: editingOrderId ? '<i class="fa fa-check"></i> UPDATE TICKET' : '<i class="fa fa-check"></i> PLACE ORDER',
             cancelButtonText: 'Review Changes',
             confirmButtonColor: 'var(--accent-green)',
             cancelButtonColor: '#444',
@@ -1657,7 +1657,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             },
             success: function(res) {
                 // Determine URL and Method based on mode
-                let url = editingOrderId ? '{{ url("/bar/kiosk/add-items") }}/' + editingOrderId : '{{ route("bar.kiosk.create-order") }}';
+                let url = editingOrderId ? '{{ url("/bar/kiosk/sync-order") }}/' + editingOrderId : '{{ route("bar.kiosk.create-order") }}';
                 
                 $.ajax({
                     url: url,
@@ -1679,7 +1679,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                             
                             KioskToast.fire({
                                 icon: 'success',
-                                title: editingOrderId ? 'Items added to Ticket ' + orderRes.order.order_number : 'Ticket ' + orderRes.order.order_number + ' Sent successfully!'
+                                title: editingOrderId ? 'Ticket ' + orderRes.order.order_number + ' updated' : 'Ticket ' + orderRes.order.order_number + ' Sent successfully!'
                             });
 
                             const isUpdating = !!editingOrderId;
@@ -1955,6 +1955,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     }
 
                     renderOrders(res.orders);
+                    window.currentKioskOrders = res.orders;
 
                     // Update kitchen badge with ALL active food items (pending+preparing+ready)
                     let activeCount = 0;
@@ -1996,14 +1997,18 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             if(order.status === 'pending') brColor = '#007bff';
             if(order.status === 'preparing') brColor = 'var(--accent-yellow)';
             if(order.status === 'ready') brColor = 'var(--accent-green)';
+            const canChange = order.status !== 'served' && order.status !== 'cancelled';
             
             let itemHtml = '';
             // Drinks
             if(order.items && order.items.length > 0) {
                 order.items.forEach(item => {
                     let itemName = item.product_variant ? (item.product_variant.display_name || item.product_variant.product?.name) : 'Drink';
+                    const removeDrinkBtn = canChange
+                        ? `<button type="button" class="btn btn-link btn-sm p-0 ml-1 align-baseline text-danger" style="font-size:0.72rem;vertical-align:middle;" onclick="event.preventDefault();event.stopPropagation();cancelKioskDrinkItem(${item.id})" title="Cancel this drink"><i class="fa fa-times-circle"></i></button>`
+                        : '';
                     itemHtml += `<div style="display:flex; justify-content:space-between; font-size:0.85rem; border-bottom:1px solid var(--bg-main); padding:4px 0; color:var(--text-muted);">
-                        <span>${item.quantity}x ${itemName}</span>
+                        <span>${item.quantity}x ${itemName} ${removeDrinkBtn}</span>
                         <span>TSh ${parseFloat(item.total_price).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
                     </div>`;
                 });
@@ -2015,7 +2020,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     const statusLabel = foodOff
                         ? `<span class="badge badge-secondary" style="font-size:0.65rem;">FOOD OFF</span>`
                         : `<span class="badge ${item.status === 'ready' ? 'badge-success' : 'badge-warning'}" style="font-size:0.65rem;">${item.status.toUpperCase()}</span>`;
-                    const canRemoveFood = order.status !== 'cancelled' && !foodOff && item.status !== 'completed';
+                    const canRemoveFood = canChange && !foodOff && item.status !== 'completed';
                     const removeFoodBtn = canRemoveFood
                         ? `<button type="button" class="btn btn-link btn-sm p-0 ml-1 align-baseline text-danger" style="font-size:0.72rem;vertical-align:middle;" onclick="event.preventDefault();event.stopPropagation();cancelKioskFoodItem(${item.id})" title="Remove this food only (drinks stay on the ticket)"><i class="fa fa-times-circle"></i></button>`
                         : '';
@@ -2049,16 +2054,13 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                             ${itemHtml}
                         </div>
                         <div class="mt-3" style="display:flex; flex-wrap: wrap; gap:10px; align-items:center;">
-                            <button class="btn btn-sm btn-outline-primary" style="flex:1; min-width: 100px;" onclick="prepareAddItem(${order.id}, '${order.order_number}')"><i class="fa fa-plus"></i> Add</button>
+                            ${canChange ? `<button class="btn btn-sm btn-outline-primary" style="flex:1; min-width: 100px;" onclick="prepareAddItem(${order.id}, '${order.order_number}')"><i class="fa fa-pencil"></i> Edit</button>` : ''}
                             <button class="btn btn-sm btn-info" style="flex:1; min-width: 100px;" onclick="printKioskOrder(${order.id})"><i class="fa fa-print"></i> Receipt</button>
                             ${(order.kitchen_docket_item_count && order.kitchen_docket_item_count > 0) ? 
                                 `<button class="btn btn-sm btn-warning" style="flex:1; min-width: 100px;" onclick="printKioskDocket(${order.id})"><i class="fa fa-fire"></i> Docket</button>` : ''
                             }
-                            ${order.status !== 'cancelled' && !(order.items && order.items.length) ? 
+                            ${canChange && !(order.items && order.items.length) ? 
                                 `<button class="btn btn-sm btn-danger" style="flex:1; min-width: 100px;" onclick="cancelKioskOrder(${order.id})"><i class="fa fa-ban"></i> Void ticket (food only)</button>` : ''
-                            }
-                            ${order.status !== 'cancelled' && order.items && order.items.length ? 
-                                `<div class="small text-muted" style="flex-basis:100%; line-height:1.35;"><i class="fa fa-info-circle"></i> Drinks are voided or adjusted at the <strong>counter</strong> only. Use <i class="fa fa-times-circle text-danger"></i> on a line to remove <strong>food</strong> only.</div>` : ''
                             }
                         </div>
                     </div>
@@ -2077,35 +2079,97 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
     }
 
     window.prepareAddItem = function(orderId, orderNumber) {
+        const order = (window.currentKioskOrders || []).find(o => String(o.id) === String(orderId));
+        if (order && order.status === 'served') {
+            KioskToast.fire({ icon: 'warning', title: 'A served ticket cannot be edited or cancelled.' });
+            return;
+        }
+        if (order && order.status === 'cancelled') {
+            KioskToast.fire({ icon: 'warning', title: 'This ticket is already cancelled.' });
+            return;
+        }
         editingOrderId = orderId;
+        cart = [];
+
+        if (order) {
+            (order.items || []).forEach(item => {
+                const variant = item.product_variant || {};
+                cart.push({
+                    existing: true,
+                    order_item_id: item.id,
+                    name: variant.display_name || variant.product?.name || 'Drink',
+                    variant: variant.measurement || variant.name || '',
+                    price: parseFloat(item.unit_price) || 0,
+                    quantity: parseInt(item.quantity) || 1,
+                    sell_type: item.sell_type || 'unit',
+                    portion_label: 'Tot',
+                    notes: item.notes || '',
+                    available: 9999,
+                    type: 'drink',
+                    variant_id: item.product_variant_id || variant.id
+                });
+            });
+            (order.kitchen_order_items || []).forEach(item => {
+                if (item.status === 'cancelled' || item.status === 'completed') return;
+                cart.push({
+                    existing: true,
+                    kitchen_order_item_id: item.id,
+                    name: item.food_item_name || 'Food',
+                    variant: item.variant_name || '',
+                    price: parseFloat(item.unit_price) || 0,
+                    quantity: parseInt(item.quantity) || 1,
+                    sell_type: 'unit',
+                    notes: item.special_instructions || '',
+                    available: 9999,
+                    type: 'food',
+                    food_item_id: item.food_item_id,
+                    food_category: ''
+                });
+            });
+            if (order.table_id) {
+                $('#form-order-table').val(order.table_id);
+            }
+        }
+
+        updateCart();
         $('#kioskOrdersModal').modal('hide');
-        
+
         KioskToast.fire({
             icon: 'info',
-            title: 'Adding Items to #' + orderNumber,
+            title: 'Editing ticket #' + orderNumber + ' with its current items.',
             timer: 5000
         });
 
         $('#btn-finish-order').text('Update Ticket #' + orderNumber).css('background', '#17a2b8').css('color', '#fff');
-        
-        // Scroll cart into view on mobile
+
         if(window.innerWidth < 768) {
             $('.pos-cart')[0].scrollIntoView({ behavior: 'smooth' });
         }
     };
 
-    window.fetchOrderHistory = function(period = 'today') {
+    window.fetchOrderHistory = function(period = 'today', date = null) {
         Swal.fire({ title: 'Loading History...', background: 'var(--bg-surface)', color: 'var(--text-main)', allowOutsideClick: false });
         Swal.showLoading();
+
+        const payload = { _token: '{{ csrf_token() }}', period: period };
+        if (date) payload.date = date;
 
         $.ajax({
             url: '{{ route("bar.kiosk.history") }}',
             type: 'POST',
-            data: { _token: '{{ csrf_token() }}', period: period },
+            data: payload,
             success: function(res) {
                 Swal.close();
                 if (res.success) {
-                    renderHistory(res.orders, res.stats, period);
+                    const chosen = res.stats && res.stats.period === 'date' ? res.stats.selected_date : null;
+                    if (chosen) {
+                        $('#kiosk-orders-modal-title').text('My Orders · ' + (res.stats.period_label || chosen));
+                    } else if (period === 'week') {
+                        $('#kiosk-orders-modal-title').text('My Orders · Last 7 Days');
+                    } else {
+                        $('#kiosk-orders-modal-title').text('My Orders');
+                    }
+                    renderHistory(res.orders, res.stats, res.stats ? res.stats.period : period);
                     $('#kioskOrdersModal').modal('show');
                 }
             },
@@ -2121,6 +2185,13 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 
         const todayBtnClass = currentPeriod === 'today' ? 'btn-info' : 'btn-outline-info';
         const weekBtnClass = currentPeriod === 'week' ? 'btn-info' : 'btn-outline-info';
+        const selectedDate = (stats && stats.selected_date) ? stats.selected_date : '';
+        const todayIso = (function() {
+            const now = new Date();
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const d = String(now.getDate()).padStart(2, '0');
+            return now.getFullYear() + '-' + m + '-' + d;
+        })();
 
         if (stats) {
             container.append(`
@@ -2139,9 +2210,14 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 
         container.append(`
             <div class="mb-3">
-                <div class="btn-group w-100 mb-3" role="group">
-                    <button type="button" class="btn ${todayBtnClass} py-2 font-weight-bold" onclick="fetchOrderHistory('today')">Today</button>
-                    <button type="button" class="btn ${weekBtnClass} py-2 font-weight-bold" onclick="fetchOrderHistory('week')">Last 7 Days</button>
+                <div class="d-flex flex-wrap align-items-center mb-3" style="gap:8px;">
+                    <div class="btn-group flex-grow-1" role="group" style="min-width: 220px;">
+                        <button type="button" class="btn ${todayBtnClass} py-2 font-weight-bold" onclick="fetchOrderHistory('today')">Today</button>
+                        <button type="button" class="btn ${weekBtnClass} py-2 font-weight-bold" onclick="fetchOrderHistory('week')">Last 7 Days</button>
+                    </div>
+                    <input type="date" id="history-date-picker" class="form-control" value="${selectedDate}" max="${todayIso}"
+                        style="max-width: 180px; background:var(--bg-input); border:1px solid var(--border-color); color:var(--text-main); height: 42px;"
+                        onchange="if (this.value) fetchOrderHistory('date', this.value)">
                 </div>
                 <div class="history-search">
                     <div class="input-group">
@@ -2193,6 +2269,9 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                 order.kitchen_order_items.forEach(it => {
                     itemSummary.push(`${it.quantity}x ${it.food_item_name}`);
                 });
+            }
+            if (itemSummary.length === 0 && order.cancelled_item_labels && order.cancelled_item_labels.length) {
+                order.cancelled_item_labels.forEach(label => itemSummary.push(label));
             }
 
             // Payment method display
@@ -2290,67 +2369,102 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         }
     };
 
-    window.cancelKioskFoodItem = function(kitchenItemId) {
-        Swal.fire({
-            title: 'Remove this food?',
-            html: '<p class="text-left mb-0">This only cancels the <strong>kitchen line</strong>. Drinks on the same ticket stay — the order stays open for the counter.</p>',
-            icon: 'question',
+    function askCancelReason(title, helpText) {
+        // My Orders is a Bootstrap modal. Its focus trap steals the keyboard
+        // from the SweetAlert textarea, so the reason cannot be typed.
+        $(document).off('focusin.bs.modal');
+        return Swal.fire({
+            title: title,
+            html: '<p class="text-left mb-2">' + helpText + '</p>',
+            input: 'textarea',
+            inputPlaceholder: 'Type the reason...',
+            icon: 'warning',
             showCancelButton: true,
+            focusConfirm: false,
+            returnFocus: false,
             confirmButtonColor: 'var(--accent-red)',
-            confirmButtonText: 'Yes, remove food',
+            confirmButtonText: 'Cancel item',
             cancelButtonText: 'Back',
             background: 'var(--bg-surface)',
-            color: 'var(--text-main)'
-        }).then((result) => {
+            color: 'var(--text-main)',
+            didOpen: function() {
+                const input = Swal.getInput();
+                if (input) input.focus();
+            },
+            didClose: function() {
+                const modal = $('#kioskOrdersModal').data('bs.modal');
+                if (modal && typeof modal._enforceFocus === 'function' && $('#kioskOrdersModal').hasClass('show')) {
+                    modal._enforceFocus();
+                }
+            },
+            inputValidator: function(value) {
+                if (!value || !value.trim()) {
+                    return 'A reason is required.';
+                }
+            }
+        });
+    }
+
+    window.cancelKioskFoodItem = function(kitchenItemId) {
+        askCancelReason('Cancel this food?', 'Only a food item you placed on your own order can be cancelled.').then((result) => {
             if (!result.isConfirmed) return;
             $.ajax({
                 url: '{{ url("bar/kiosk/cancel-food-item") }}/' + kitchenItemId,
                 type: 'POST',
-                data: { _token: '{{ csrf_token() }}', reason: 'Waiter removed from kiosk' },
+                data: { _token: '{{ csrf_token() }}', reason: result.value },
                 success: function(res) {
                     if (res.success) {
-                        KioskToast.fire({ icon: 'success', title: 'Food removed from ticket' });
+                        KioskToast.fire({ icon: 'success', title: 'Food cancelled' });
                         fetchOngoingOrders(null, true);
                     }
                 },
                 error: function(xhr) {
-                    KioskToast.fire({ icon: 'error', title: xhr.responseJSON?.error || 'Could not remove food' });
+                    KioskToast.fire({ icon: 'error', title: xhr.responseJSON?.error || 'Could not cancel food' });
+                }
+            });
+        });
+    };
+
+    window.cancelKioskDrinkItem = function(orderItemId) {
+        askCancelReason('Cancel this drink?', 'Only a drink you placed on your own order can be cancelled.').then((result) => {
+            if (!result.isConfirmed) return;
+            $.ajax({
+                url: '{{ url("bar/kiosk/cancel-drink-item") }}/' + orderItemId,
+                type: 'POST',
+                data: { _token: '{{ csrf_token() }}', reason: result.value },
+                success: function(res) {
+                    if (res.success) {
+                        KioskToast.fire({ icon: 'success', title: res.message || 'Drink cancelled' });
+                        fetchOngoingOrders(null, true);
+                        if (typeof refreshKioskData === 'function') refreshKioskData();
+                    }
+                },
+                error: function(xhr) {
+                    KioskToast.fire({ icon: 'error', title: xhr.responseJSON?.error || 'Could not cancel drink' });
                 }
             });
         });
     };
 
     window.cancelKioskOrder = function(orderId) {
-        Swal.fire({
-            title: 'Void this food-only ticket?',
-            html: '<p class="text-left mb-0">This ticket has <strong>no drinks</strong>. Voiding will cancel all remaining kitchen (food) lines and close the ticket. Tickets that include drinks must be voided at the <strong>counter</strong>.</p>',
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: 'var(--accent-red)',
-            confirmButtonText: 'Yes, void ticket',
-            cancelButtonText: 'Back',
-            background: 'var(--bg-surface)',
-            color: 'var(--text-main)'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                // Submit cancel
-                $.ajax({
-                    url: '{{ url("bar/kiosk/cancel-order") }}/' + orderId,
-                    type: 'POST',
-                    data: { _token: '{{ csrf_token() }}' },
-                    success: function(res) {
-                        if (res.success) {
-                            KioskToast.fire({ icon: 'success', title: 'Order Cancelled' });
-                            fetchOngoingOrders(null, true); // refresh list silently
-                            refreshKioskData(); // refresh stock
-                        }
-                    },
-                    error: function(xhr) {
-                        const errorMsg = xhr.responseJSON?.error || 'Failed to cancel';
-                        KioskToast.fire({ icon: 'error', title: errorMsg });
+        askCancelReason('Void this ticket?', 'This cancels the remaining food on your own ticket. A reason is required.').then((result) => {
+            if (!result.isConfirmed) return;
+            $.ajax({
+                url: '{{ url("bar/kiosk/cancel-order") }}/' + orderId,
+                type: 'POST',
+                data: { _token: '{{ csrf_token() }}', reason: result.value },
+                success: function(res) {
+                    if (res.success) {
+                        KioskToast.fire({ icon: 'success', title: 'Order Cancelled' });
+                        fetchOngoingOrders(null, true);
+                        refreshKioskData();
                     }
-                });
-            }
+                },
+                error: function(xhr) {
+                    const errorMsg = xhr.responseJSON?.error || 'Failed to cancel';
+                    KioskToast.fire({ icon: 'error', title: errorMsg });
+                }
+            });
         });
     }
 
@@ -2453,7 +2567,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                         $('#kiosk-orders-modal-title').text('Kitchen Food Orders');
                         fetchOngoingOrders('food');
                     } else if (window.pendingAuthAction === 'my_order') {
-                        $('#kiosk-orders-modal-title').text("Today's Full Order History");
+                        $('#kiosk-orders-modal-title').text('My Orders');
                         fetchOrderHistory();
                     }
                 }

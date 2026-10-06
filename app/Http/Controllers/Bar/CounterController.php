@@ -66,7 +66,7 @@ class CounterController extends Controller
             $ordersQuery->orderByRaw("FIELD(bar_shift_id, $idsString) DESC");
         }
 
-        $ordersQuery->orderBy('created_at', 'desc');
+        $ordersQuery->orderBy('updated_at', 'desc');
 
         if ($search) {
             $ordersQuery->where(function ($q) use ($search) {
@@ -147,6 +147,14 @@ class CounterController extends Controller
         DB::beginTransaction();
         try {
             if ($validated['status'] === 'cancelled') {
+                if ($order->order_source !== 'counter') {
+                    DB::rollBack();
+
+                    return response()->json([
+                        'error' => 'You can only cancel orders placed at the counter. Waiter items are cancelled from the kiosk.',
+                    ], 403);
+                }
+
                 $message = $this->handleCounterCancellation($order, $ownerId, $validated['reason'] ?? null);
                 DB::commit();
 
@@ -2392,6 +2400,12 @@ class CounterController extends Controller
 
         if ($order->status !== 'pending') {
             return response()->json(['error' => 'Only pending orders can be cancelled'], 400);
+        }
+
+        if ($order->order_source !== 'counter') {
+            return response()->json([
+                'error' => 'You can only cancel orders placed at the counter. Waiter items are cancelled from the kiosk.',
+            ], 403);
         }
 
         $validated = $request->validate([

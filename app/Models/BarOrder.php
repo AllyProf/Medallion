@@ -349,35 +349,46 @@ class BarOrder extends Model
     }
 
     /**
-     * Notes to show as "Reason" on counter screens when order is cancelled (excludes FOOD ITEMS: order snapshot).
+     * The words the waiter or counter typed. Item names are shown separately.
      */
     public function counterCancellationSummary(): ?string
     {
-        if ($this->status !== 'cancelled' || empty($this->notes)) {
+        if (empty($this->notes)) {
             return null;
         }
 
-        $parts = array_map('trim', explode('|', $this->notes));
-        $keep = [];
-        foreach ($parts as $part) {
+        $reasons = [];
+        foreach (explode('|', $this->notes) as $part) {
+            $part = trim($part);
             if ($part === '') {
                 continue;
             }
-            if (preg_match('/^FOOD ITEMS:/i', $part)) {
+            if (preg_match('/CANCELLED\s*-\s*Reason:\s*(.+)$/i', $part, $match)) {
+                $reasons[] = trim($match[1]);
+
                 continue;
             }
-            if (preg_match('/^ORDER NOTES:/i', $part)) {
+            if (preg_match('/\(Reason:\s*(.+)\)$/i', $part, $match)) {
+                $reasons[] = trim($match[1]);
+
                 continue;
             }
-            if (preg_match('/^ADDED ITEMS:/i', $part)) {
-                continue;
-            }
-            if (preg_match('/^(CANCELLED|BAR LINES VOIDED|FOOD CANCELLED)/i', $part)) {
-                $keep[] = $part;
+            if (preg_match('/BAR LINES VOIDED AT COUNTER\s*[—\-]\s*(.+)$/u', $part, $match)) {
+                $reasons[] = trim($match[1]);
             }
         }
 
-        return empty($keep) ? null : implode(' · ', $keep);
+        $reasons = array_values(array_unique(array_filter($reasons, fn ($reason) => $reason !== '')));
+        if ($reasons === []) {
+            return null;
+        }
+
+        // Older tickets stored only this text, and it is already used as the item name.
+        if ($this->cancelledItemSnapshots() === []) {
+            return null;
+        }
+
+        return implode(' · ', $reasons);
     }
 
     /**
@@ -400,19 +411,20 @@ class BarOrder extends Model
     }
 
     /**
-     * Item names recorded when the counter removed drink lines.
+     * Drink names recorded when lines were removed.
      * Older cancellations only kept the reason typed at the counter.
      *
      * @return array<int, string>
      */
     public function cancelledItemLabels(): array
     {
-        if (empty($this->notes)) {
-            return [];
+        $labels = $this->cancelledItemSnapshots();
+        if ($labels !== []) {
+            return $labels;
         }
 
-        if (preg_match('/(?:CANCELLED ITEMS|BAR ITEMS):\s*([^|]+)/i', $this->notes, $match)) {
-            return array_values(array_filter(array_map('trim', explode('·', $match[1]))));
+        if (empty($this->notes)) {
+            return [];
         }
 
         if (preg_match('/CANCELLED\s*-\s*Reason:\s*([^|]+)/i', $this->notes, $match)) {
@@ -423,6 +435,32 @@ class BarOrder extends Model
         }
 
         return [];
+    }
+
+    /**
+     * Every saved drink snapshot, including when several lines were cancelled one after another.
+     *
+     * @return array<int, string>
+     */
+    public function cancelledItemSnapshots(): array
+    {
+        if (empty($this->notes)) {
+            return [];
+        }
+
+        $labels = [];
+        if (preg_match_all('/(?:CANCELLED ITEMS|BAR ITEMS):\s*([^|]+)/i', $this->notes, $matches)) {
+            foreach ($matches[1] as $chunk) {
+                foreach (preg_split('/\s*·\s*/u', $chunk) ?: [] as $label) {
+                    $label = trim($label);
+                    if ($label !== '') {
+                        $labels[] = $label;
+                    }
+                }
+            }
+        }
+
+        return array_values(array_unique($labels));
     }
 
     /**

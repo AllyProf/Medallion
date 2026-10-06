@@ -109,23 +109,22 @@
                     ->values();
             @endphp
             <ul class="list-unstyled mb-0">
-                @forelse($groupedBarLines->take(3) as $line)
+                @foreach($groupedBarLines->take(3) as $line)
                 <li>
                     <small>{{ $line['qty'] }}x {{ $line['name'] }}</small>
                 </li>
-                @empty
-                    @php $voidedLabels = $order->cancelledItemLabels(); @endphp
-                    @forelse(array_slice($voidedLabels, 0, 3) as $label)
-                    <li><small class="text-danger">{{ $label }}</small></li>
-                    @empty
-                    <li><small class="text-muted">—</small></li>
-                    @endforelse
-                    @if(count($voidedLabels) > 3)
-                    <li><small class="text-muted">+{{ count($voidedLabels) - 3 }} more</small></li>
-                    @endif
-                @endforelse
+                @endforeach
                 @if($groupedBarLines->count() > 3)
                 <li><small class="text-muted">+{{ $groupedBarLines->count() - 3 }} more</small></li>
+                @endif
+                @foreach($order->kitchenOrderItems->where('status', 'cancelled')->take(3) as $food)
+                <li><small class="text-danger">{{ (int) $food->quantity }}x {{ $food->food_item_name }}@if($orderStatus !== 'cancelled') <span class="badge badge-danger">Cancelled by waiter</span>@endif</small></li>
+                @endforeach
+                @foreach(array_slice($order->cancelledItemLabels(), 0, 6) as $label)
+                <li><small class="text-danger">{{ $label }}@if($orderStatus !== 'cancelled') <span class="badge badge-danger">Cancelled</span>@endif</small></li>
+                @endforeach
+                @if($groupedBarLines->isEmpty() && $order->kitchenOrderItems->where('status', 'cancelled')->isEmpty() && count($order->cancelledItemLabels()) === 0)
+                <li><small class="text-muted">—</small></li>
                 @endif
             </ul>
         </td>
@@ -134,13 +133,18 @@
             <span class="badge badge-{{ $orderStatus === 'pending' ? 'warning' : ($orderStatus === 'served' ? 'success' : 'secondary') }}">
                 {{ ucfirst($orderStatus) }}
             </span>
+            @php $cancelSummary = $order->counterCancellationSummary(); @endphp
             @if($orderStatus === 'cancelled')
-                @php $cancelSummary = $order->counterCancellationSummary(); @endphp
+                @if($order->order_source !== 'counter')
+                    <br><small class="text-danger">Cancelled by waiter</small>
+                @endif
                 @if($cancelSummary)
                     <br><small class="text-danger">Reason: {{ $cancelSummary }}</small>
-                @else
+                @elseif($order->order_source === 'counter')
                     <br><small class="text-muted">Cancelled</small>
                 @endif
+            @elseif($cancelSummary)
+                <br><small class="text-danger">Reason: {{ $cancelSummary }}</small>
             @elseif($order->barLinesVoidAtCounterSummary())
                 <br><small class="text-info">{{ $order->barLinesVoidAtCounterSummary() }}</small>
             @endif
@@ -191,12 +195,14 @@
                         <i class="fa fa-check"></i>
                     </button>
 
+                    @if($order->order_source === 'counter')
                     <button class="btn btn-sm btn-danger update-status-btn mr-1 mb-1"
                             data-order-id="{{ $order->id }}"
                             data-status="cancelled"
-                            title="Cancel Order">
+                            title="Cancel this counter order">
                         <i class="fa fa-ban"></i>
                     </button>
+                    @endif
 
                 @elseif($orderStatus === 'served' && $order->payment_status !== 'paid')
                     <button class="btn btn-sm btn-success font-weight-bold pay-order-btn mr-1 mb-1"
@@ -206,12 +212,14 @@
                         <i class="fa fa-money"></i>
                     </button>
 
+                    @if($order->order_source === 'counter')
                     <button class="btn btn-sm btn-danger update-status-btn mr-1 mb-1"
                             data-order-id="{{ $order->id }}"
                             data-status="cancelled"
-                            title="Cancel Order">
+                            title="Cancel this counter order">
                         <i class="fa fa-ban"></i>
                     </button>
+                    @endif
 
                 @elseif($order->payment_status === 'paid')
                     <button class="btn btn-sm btn-success mr-1 mb-1" disabled style="opacity: 1;" title="Fully Paid">
