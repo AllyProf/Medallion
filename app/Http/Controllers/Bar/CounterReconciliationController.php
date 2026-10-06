@@ -1602,6 +1602,7 @@ class CounterReconciliationController extends Controller
 
                 $order->setAttribute('display_bar_amount', $liveBar > 0 ? $liveBar : $voidedBar);
                 $order->setAttribute('cancellation_summary', $order->status === 'cancelled' ? $order->counterCancellationSummary() : null);
+                $order->setAttribute('voided_item_labels', $order->cancelledItemLabels());
             });
 
         return response()->json([

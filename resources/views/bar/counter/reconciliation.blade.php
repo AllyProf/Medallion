@@ -1650,12 +1650,28 @@ $(document).ready(function() {
               html += timeString + '</td>';
               html += '<td>' + escapeHtml(order.order_source || '-') + '</td>';
               html += '<td>';
+              const itemLabels = [];
               if (order.items && order.items.length > 0) {
                 order.items.forEach(function(item) {
-                  html += '<span class="badge badge-primary">' + escapeHtml(item.quantity + 'x ' + (item.product_variant?.display_name || 'Item')) + '</span> ';
+                  itemLabels.push(item.quantity + 'x ' + (item.product_variant?.display_name || 'Item'));
+                });
+              }
+              if (order.voided_item_labels && order.voided_item_labels.length > 0) {
+                order.voided_item_labels.forEach(function(label) {
+                  itemLabels.push(label);
+                });
+              }
+              if (cancelled && order.kitchen_order_items && order.kitchen_order_items.length > 0) {
+                order.kitchen_order_items.forEach(function(item) {
+                  itemLabels.push((item.quantity || 1) + 'x ' + (item.food_item_name || 'Food'));
+                });
+              }
+              if (itemLabels.length > 0) {
+                itemLabels.forEach(function(label) {
+                  html += '<span class="badge ' + (cancelled ? 'badge-danger' : 'badge-primary') + '">' + escapeHtml(label) + '</span> ';
                 });
               } else if (cancelled) {
-                html += '<span class="text-muted">Cancelled at counter</span>';
+                html += '<span class="text-muted">Item name was not recorded</span>';
               } else { html += '<span class="text-muted">-</span>'; }
               html += '</td>';
               html += '<td><strong>TSh ' + barAmount.toLocaleString() + '</strong>' + (cancelled ? ' <small class="text-danger">voided</small>' : '') + '</td>';

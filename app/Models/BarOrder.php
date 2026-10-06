@@ -400,6 +400,32 @@ class BarOrder extends Model
     }
 
     /**
+     * Item names recorded when the counter removed drink lines.
+     * Older cancellations only kept the reason typed at the counter.
+     *
+     * @return array<int, string>
+     */
+    public function cancelledItemLabels(): array
+    {
+        if (empty($this->notes)) {
+            return [];
+        }
+
+        if (preg_match('/(?:CANCELLED ITEMS|BAR ITEMS):\s*([^|]+)/i', $this->notes, $match)) {
+            return array_values(array_filter(array_map('trim', explode('·', $match[1]))));
+        }
+
+        if (preg_match('/CANCELLED\s*-\s*Reason:\s*([^|]+)/i', $this->notes, $match)) {
+            $reason = trim($match[1]);
+            if ($reason !== '') {
+                return [$reason];
+            }
+        }
+
+        return [];
+    }
+
+    /**
      * Boot the model and register event listeners.
      */
     protected static function boot()

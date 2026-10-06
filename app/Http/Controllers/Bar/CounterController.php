@@ -2564,8 +2564,15 @@ class CounterController extends Controller
         });
 
         if ($hadDrinks && $hasActiveFood) {
+            $barItemsLabel = $this->describeBarItems($order);
             $removedBarAmount = $this->stripBarItemsFromOrder($order, $ownerId);
-            $suffix = 'BAR LINES VOIDED AT COUNTER'.($reason ? ' — '.$reason : '').' | BAR VOID VALUE: '.number_format($removedBarAmount, 2, '.', '');
+            $parts = [];
+            if ($barItemsLabel !== '') {
+                $parts[] = 'BAR ITEMS: '.$barItemsLabel;
+            }
+            $parts[] = 'BAR LINES VOIDED AT COUNTER'.($reason ? ' — '.$reason : '');
+            $parts[] = 'BAR VOID VALUE: '.number_format($removedBarAmount, 2, '.', '');
+            $suffix = implode(' | ', $parts);
             $order->notes = $order->notes ? $order->notes.' | '.$suffix : $suffix;
             $order->save();
 
@@ -2573,8 +2580,14 @@ class CounterController extends Controller
         }
 
         if ($hadDrinks) {
+            $barItemsLabel = $this->describeBarItems($order);
             $removedBarAmount = $this->stripBarItemsFromOrder($order, $ownerId);
-            $barValueSuffix = 'BAR VOID VALUE: '.number_format($removedBarAmount, 2, '.', '');
+            $parts = [];
+            if ($barItemsLabel !== '') {
+                $parts[] = 'CANCELLED ITEMS: '.$barItemsLabel;
+            }
+            $parts[] = 'BAR VOID VALUE: '.number_format($removedBarAmount, 2, '.', '');
+            $barValueSuffix = implode(' | ', $parts);
             $order->notes = $order->notes ? $order->notes.' | '.$barValueSuffix : $barValueSuffix;
         }
 
@@ -2657,6 +2670,23 @@ class CounterController extends Controller
         $order->refresh();
 
         return $removedTotal;
+    }
+
+    /**
+     * Quantity and product name for each drink line, captured before those lines are deleted.
+     */
+    protected function describeBarItems(BarOrder $order): string
+    {
+        $order->loadMissing('items.productVariant.product');
+
+        return $order->items
+            ->map(function (OrderItem $item) {
+                $name = $item->productVariant->display_name ?? 'Item';
+
+                return ((int) $item->quantity).'x '.$name;
+            })
+            ->filter()
+            ->implode(' · ');
     }
 
     /**

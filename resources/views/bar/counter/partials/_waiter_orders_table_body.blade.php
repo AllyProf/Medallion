@@ -114,7 +114,15 @@
                     <small>{{ $line['qty'] }}x {{ $line['name'] }}</small>
                 </li>
                 @empty
-                <li><small class="text-muted">—</small></li>
+                    @php $voidedLabels = $order->cancelledItemLabels(); @endphp
+                    @forelse(array_slice($voidedLabels, 0, 3) as $label)
+                    <li><small class="text-danger">{{ $label }}</small></li>
+                    @empty
+                    <li><small class="text-muted">—</small></li>
+                    @endforelse
+                    @if(count($voidedLabels) > 3)
+                    <li><small class="text-muted">+{{ count($voidedLabels) - 3 }} more</small></li>
+                    @endif
                 @endforelse
                 @if($groupedBarLines->count() > 3)
                 <li><small class="text-muted">+{{ $groupedBarLines->count() - 3 }} more</small></li>

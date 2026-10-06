@@ -14,7 +14,16 @@
         $amount = (float) $voidMatch[1];
     }
     $summary = $cancelled ? $order->counterCancellationSummary() : null;
-    $itemNames = $order->items->pluck('productVariant.display_name')->concat($order->kitchenOrderItems->pluck('food_item_name'))->filter()->take(3);
+    $itemNames = collect($order->cancelledItemLabels())
+        ->merge($order->items->map(function ($item) {
+            return ((int) $item->quantity).'x '.($item->productVariant->display_name ?? 'Item');
+        }))
+        ->merge($order->kitchenOrderItems->map(function ($item) {
+            return ((int) $item->quantity).'x '.($item->food_item_name ?: 'Food');
+        }))
+        ->filter()
+        ->unique()
+        ->values();
 @endphp
 <div class="list-group-item list-group-item-action border-0 mb-2 py-3 shadow-sm" style="border-radius: 12px; transition: transform 0.2s; {{ $cancelled ? 'border-left: 4px solid #dc3545 !important; background: #fff5f5;' : '' }}">
     <div class="d-flex w-100 justify-content-between align-items-center">
@@ -33,9 +42,9 @@
     <div class="mt-2 text-muted small">
         <i class="fa fa-shopping-basket mr-1"></i>
         @if($itemNames->isNotEmpty())
-            {{ $itemNames->implode(', ') }}{{ ($order->items->count() + $order->kitchenOrderItems->count()) > 3 ? ' ...' : '' }}
+            {{ $itemNames->take(4)->implode(', ') }}{{ $itemNames->count() > 4 ? ' ...' : '' }}
         @elseif($cancelled)
-            Cancelled at counter
+            Item name was not recorded
         @else
             —
         @endif
