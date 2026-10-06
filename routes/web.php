@@ -537,8 +537,12 @@ Route::middleware('allow.staff')->group(function () {
             Route::post('/accounts/users/{user}/reset-password', [\App\Http\Controllers\Admin\SecurityController::class, 'resetUserPassword'])->name('accounts.users.reset-password');
             Route::post('/accounts/staff/{staff}/reset-password', [\App\Http\Controllers\Admin\SecurityController::class, 'resetStaffPassword'])->name('accounts.staff.reset-password');
             Route::post('/accounts/users/{user}/force-logout', [\App\Http\Controllers\Admin\SecurityController::class, 'forceLogoutUser'])->name('accounts.users.force-logout');
+            Route::post('/accounts/users/{user}/impersonate', [\App\Http\Controllers\Admin\SecurityController::class, 'impersonateUser'])->name('accounts.users.impersonate');
+            Route::post('/accounts/staff/{staff}/impersonate', [\App\Http\Controllers\Admin\SecurityController::class, 'impersonateStaff'])->name('accounts.staff.impersonate');
         });
     });
+
+    Route::post('/impersonation/stop', [\App\Http\Controllers\Admin\SecurityController::class, 'stopImpersonating'])->name('impersonation.stop');
 
 
     // Purchase Requests Workflow

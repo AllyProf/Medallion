@@ -1613,47 +1613,65 @@ $(document).ready(function() {
             let html = '<div class="table-responsive"><table class="table table-sm">';
             html += '<thead><tr><th>Order #</th><th>Time</th><th>Platform</th><th>Bar Items (Drinks)</th><th>Bar Amount</th><th>Total</th><th>Payment</th><th>Status</th></tr></thead><tbody>';
             
+            const escapeHtml = function(value) {
+              return $('<div>').text(value == null ? '' : String(value)).html();
+            };
+
             response.orders.forEach(function(order) {
-              // Calculate bar amount (from items - drinks)
-              let barAmount = 0;
-              if (order.items && order.items.length > 0) {
-                barAmount = order.items.reduce(function(sum, item) {
-                  return sum + (parseFloat(item.total_price) || 0);
-                }, 0);
+              const cancelled = order.status === 'cancelled';
+              let barAmount = parseFloat(order.display_bar_amount);
+              if (isNaN(barAmount)) {
+                barAmount = 0;
+                if (order.items && order.items.length > 0) {
+                  barAmount = order.items.reduce(function(sum, item) {
+                    return sum + (parseFloat(item.total_price) || 0);
+                  }, 0);
+                }
               }
               
-              html += '<tr>';
+              html += '<tr' + (cancelled ? ' class="table-danger"' : '') + '>';
               const orderDate = new Date(order.created_at);
               const dateString = orderDate.toLocaleDateString();
               const timeString = orderDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
               const isDifferentDate = dateString !== new Date(date).toLocaleDateString();
               
-              html += '<td><strong>' + order.order_number + '</strong></td>';
+              html += '<td><strong>' + escapeHtml(order.order_number) + '</strong>';
+              if (cancelled) {
+                html += ' <span class="badge badge-danger">CANCELLED</span>';
+                if (order.cancellation_summary) {
+                  html += '<br><small class="text-danger">' + escapeHtml(order.cancellation_summary) + '</small>';
+                }
+              }
+              html += '</td>';
               html += '<td>';
               if (isDifferentDate) {
                 html += '<span class="badge badge-warning mb-1" style="font-size: 0.6rem;">' + dateString + '</span><br>';
               }
               html += timeString + '</td>';
-              html += '<td>' + (order.order_source || '-') + '</td>';
+              html += '<td>' + escapeHtml(order.order_source || '-') + '</td>';
               html += '<td>';
               if (order.items && order.items.length > 0) {
                 order.items.forEach(function(item) {
-                  html += '<span class="badge badge-primary">' + item.quantity + 'x ' + (item.product_variant?.display_name || 'Item') + '</span> ';
+                  html += '<span class="badge badge-primary">' + escapeHtml(item.quantity + 'x ' + (item.product_variant?.display_name || 'Item')) + '</span> ';
                 });
+              } else if (cancelled) {
+                html += '<span class="text-muted">Cancelled at counter</span>';
               } else { html += '<span class="text-muted">-</span>'; }
               html += '</td>';
-              html += '<td><strong>TSh ' + barAmount.toLocaleString() + '</strong></td>';
-              html += '<td><strong>TSh ' + barAmount.toLocaleString() + '</strong></td>';
+              html += '<td><strong>TSh ' + barAmount.toLocaleString() + '</strong>' + (cancelled ? ' <small class="text-danger">voided</small>' : '') + '</td>';
+              html += '<td><strong>TSh ' + barAmount.toLocaleString() + '</strong>' + (cancelled ? ' <small class="text-danger">voided</small>' : '') + '</td>';
               html += '<td>';
-              if (order.order_payments && order.order_payments.length > 0) {
+              if (cancelled) {
+                html += '<span class="badge badge-danger">CANCELLED</span>';
+              } else if (order.order_payments && order.order_payments.length > 0) {
                 order.order_payments.forEach(function(p) {
-                   html += '<span class="badge badge-success">' + p.payment_method.toUpperCase() + '</span><br>TSh ' + parseFloat(p.amount).toLocaleString() + '<br>';
+                   html += '<span class="badge badge-success">' + escapeHtml(p.payment_method.toUpperCase()) + '</span><br>TSh ' + parseFloat(p.amount).toLocaleString() + '<br>';
                 });
               } else {
-                 html += '<span class="badge badge-secondary">' + (order.payment_method || 'NOT SET').toUpperCase() + '</span>';
+                 html += '<span class="badge badge-secondary">' + escapeHtml((order.payment_method || 'NOT SET').toUpperCase()) + '</span>';
               }
               html += '</td>';
-              html += '<td>' + (order.payment_status || 'Unpaid') + '</td>';
+              html += '<td><span class="badge badge-' + (cancelled ? 'danger' : (order.status === 'served' ? 'success' : 'warning')) + '">' + escapeHtml((order.status || 'pending').toUpperCase()) + '</span></td>';
               html += '</tr>';
             });
             html += '</tbody></table></div>';

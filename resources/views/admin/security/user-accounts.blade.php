@@ -39,7 +39,7 @@
                 <th>Business</th>
                 <th>Status</th>
                 <th>Reset Password</th>
-                <th>Actions</th>
+                <th>Impersonate</th>
               </tr>
             </thead>
             <tbody>
@@ -93,8 +93,13 @@
                   </div>
                 </td>
                 <td>
-                  {{-- Future: toggle active --}}
-                  <a href="#" class="btn btn-sm btn-outline-secondary disabled"><i class="fa fa-lock"></i></a>
+                  <form method="POST" action="{{ route('admin.security.accounts.staff.impersonate', $s->id) }}" class="d-inline impersonate-form" data-name="{{ $s->full_name }}">
+                    @csrf
+                    <button type="submit" class="btn btn-sm btn-outline-dark" {{ $s->is_active ? '' : 'disabled' }}
+                            title="{{ $s->is_active ? 'Sign in as this staff member' : 'Inactive accounts cannot be impersonated' }}">
+                      <i class="fa fa-user-secret"></i> Impersonate
+                    </button>
+                  </form>
                 </td>
               </tr>
               @empty
@@ -124,6 +129,7 @@
                 <th>Registered</th>
                 <th>Reset Password</th>
                 <th>Force Logout</th>
+                <th>Impersonate</th>
               </tr>
             </thead>
             <tbody>
@@ -168,9 +174,17 @@
                     <button type="submit" class="btn btn-sm btn-danger"><i class="fa fa-sign-out"></i> Force Out</button>
                   </form>
                 </td>
+                <td>
+                  <form method="POST" action="{{ route('admin.security.accounts.users.impersonate', $u->id) }}" class="d-inline impersonate-form" data-name="{{ $u->name }}">
+                    @csrf
+                    <button type="submit" class="btn btn-sm btn-outline-dark" title="Sign in as this business owner">
+                      <i class="fa fa-user-secret"></i> Impersonate
+                    </button>
+                  </form>
+                </td>
               </tr>
               @empty
-              <tr><td colspan="6" class="text-center text-muted py-3">No user accounts found.</td></tr>
+              <tr><td colspan="7" class="text-center text-muted py-3">No user accounts found.</td></tr>
               @endforelse
             </tbody>
           </table>
@@ -180,3 +194,29 @@
   </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+$(document).on('submit', '.impersonate-form', function (e) {
+  e.preventDefault();
+  const form = this;
+  const name = $('<div>').text($(form).data('name')).html();
+
+  Swal.fire({
+    icon: 'question',
+    title: 'Sign in as this account?',
+    html: 'You will view the system as <strong>' + name + '</strong>.<br>'
+        + '<span class="text-muted small">Use <strong>Return to Admin</strong> at the top of the page to switch back.</span>',
+    showCancelButton: true,
+    confirmButtonColor: '#940000',
+    cancelButtonColor: '#6c757d',
+    confirmButtonText: 'Yes, continue',
+    cancelButtonText: 'Cancel'
+  }).then(function (result) {
+    if (result.isConfirmed) {
+      form.submit();
+    }
+  });
+});
+</script>
+@endpush

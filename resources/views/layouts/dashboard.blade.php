@@ -772,6 +772,21 @@
       </ul>
     </aside>
     <main class="app-content">
+      @if(session('impersonator_id'))
+        <div class="alert alert-warning d-flex justify-content-between align-items-center d-print-none" style="border-left: 5px solid #940000;">
+          <div>
+            <i class="fa fa-user-secret"></i>
+            You are viewing the system as <strong>{{ session('impersonating_name') }}</strong>.
+            Actions you take are recorded under this account.
+          </div>
+          <form method="POST" action="{{ route('impersonation.stop') }}" class="mb-0 ml-3">
+            @csrf
+            <button type="submit" class="btn btn-sm btn-dark">
+              <i class="fa fa-sign-out"></i> Return to Admin
+            </button>
+          </form>
+        </div>
+      @endif
       @yield('content')
     </main>
     <!-- Essential javascripts for application to work-->

@@ -78,8 +78,7 @@ class LiveSalesController extends Controller
 
         // 2. Order Volume & Pulse
         // 2. Order Volume & Pulse
-        $ordersTodayQuery = BarOrder::where('orders.user_id', $ownerId)
-            ->where('orders.status', '!=', 'cancelled');
+        $ordersTodayQuery = BarOrder::where('orders.user_id', $ownerId);
         $applyContext($ordersTodayQuery, 'orders');
 
         if ($location) {
@@ -95,10 +94,12 @@ class LiveSalesController extends Controller
             });
         }
 
-        $totalRevenue = (clone $ordersTodayQuery)->sum('total_amount');
-        $totalOrders = (clone $ordersTodayQuery)->count();
-        $activeOrders = (clone $ordersTodayQuery)->whereIn('status', ['pending', 'preparing', 'ready'])->count();
-        $servedOrders = (clone $ordersTodayQuery)->where('status', 'served')->count();
+        $sellingOrders = (clone $ordersTodayQuery)->where('orders.status', '!=', 'cancelled');
+
+        $totalRevenue = (clone $sellingOrders)->sum('total_amount');
+        $totalOrders = (clone $sellingOrders)->count();
+        $activeOrders = (clone $sellingOrders)->whereIn('status', ['pending', 'preparing', 'ready'])->count();
+        $servedOrders = (clone $sellingOrders)->where('status', 'served')->count();
 
         // 3. Hourly Velocity (Contextual)
         $hourlySalesQuery = BarOrder::where('user_id', $ownerId)
@@ -126,7 +127,7 @@ class LiveSalesController extends Controller
             ->get();
 
         // 5. Staff Pulse (Top 10 Waiters Today)
-        $staffPulse = (clone $ordersTodayQuery)
+        $staffPulse = (clone $sellingOrders)
             ->join('staff', 'orders.waiter_id', '=', 'staff.id')
             ->select('staff.full_name', DB::raw('COUNT(orders.id) as orders_count'), DB::raw('SUM(orders.total_amount) as total_sales'))
             ->groupBy('staff.id', 'staff.full_name')
@@ -171,7 +172,7 @@ class LiveSalesController extends Controller
             ->get();
 
         // 7. REAL-TIME PROFIT & CIRCULATION (New Metrics)
-        $ordersForProfit = (clone $ordersTodayQuery)->with(['items.productVariant', 'kitchenOrderItems'])->get();
+        $ordersForProfit = (clone $sellingOrders)->with(['items.productVariant', 'kitchenOrderItems'])->get();
         $shiftProfit = $ordersForProfit->sum(function($order) {
             $barProfit = $order->items->sum(function($item) {
                 $cost = (float)($item->productVariant->buying_price_per_unit ?? 0);

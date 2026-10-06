@@ -1588,10 +1588,21 @@ class CounterReconciliationController extends Controller
                 $finalDate = $reconciliation ? $reconciliation->reconciliation_date->format('Y-m-d') : $date;
                 return $q->whereDate('created_at', $finalDate);
             })
-            ->where('status', '!=', 'cancelled')
             ->with(['items.productVariant.product', 'kitchenOrderItems', 'table', 'orderPayments', 'paidByWaiter'])
+            ->orderByRaw("CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END")
             ->orderBy('created_at', 'desc')
-            ->get();
+            ->get()
+            ->each(function (BarOrder $order) {
+                $liveBar = (float) $order->items->sum('total_price');
+                $voidedBar = 0.0;
+                if ($order->status === 'cancelled' && $liveBar <= 0 && ! empty($order->notes)
+                    && preg_match('/BAR VOID VALUE:\s*([0-9]+(?:\.[0-9]+)?)/i', $order->notes, $match)) {
+                    $voidedBar = (float) $match[1];
+                }
+
+                $order->setAttribute('display_bar_amount', $liveBar > 0 ? $liveBar : $voidedBar);
+                $order->setAttribute('cancellation_summary', $order->status === 'cancelled' ? $order->counterCancellationSummary() : null);
+            });
 
         return response()->json([
             'success' => true,

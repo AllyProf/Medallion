@@ -202,6 +202,8 @@ class SecurityController extends Controller
             'Session mismatch'                     => "⚠️ Session mismatch detected — user was logged out",
             'Admin reset password'                 => "🔑 Admin reset a user password",
             'Admin force-logged-out'               => "🚪 Admin force-logged out a user",
+            'Admin impersonation started'          => "🎭 " . $raw,
+            'Admin impersonation ended'            => "🎭 " . $raw,
             'User found in BusinessConfigurationController' => "🏢 Business configuration page accessed",
             'BusinessConfigurationController'      => null, // suppress
         ];
@@ -297,6 +299,101 @@ class SecurityController extends Controller
         }
         
         return back()->with('success', $msg);
+    }
+
+    /**
+     * Sign in as a staff member while remembering the admin, so they can return.
+     */
+    public function impersonateStaff(Request $request, Staff $staff)
+    {
+        if (!$staff->is_active) {
+            return back()->with('error', "{$staff->full_name}'s account is inactive. Activate it before impersonating.");
+        }
+
+        $admin = auth()->user();
+
+        // logoutCurrentDevice keeps the admin's remember-me token valid on other devices.
+        auth()->logoutCurrentDevice();
+        $request->session()->regenerate();
+
+        $request->session()->put([
+            'impersonator_id'    => $admin->id,
+            'impersonator_name'  => $admin->name,
+            'impersonating_name' => $staff->full_name,
+            'staff_id'           => $staff->id,
+            'staff_name'         => $staff->full_name,
+            'staff_email'        => $staff->email,
+            'staff_role_id'      => $staff->role_id,
+            'staff_user_id'      => $staff->user_id,
+            'staff_role_slug'    => strtolower($staff->role->slug ?? ''),
+            'is_staff'           => true,
+        ]);
+
+        Log::info("Admin impersonation started: admin #{$admin->id} ({$admin->email}) as staff #{$staff->id} ({$staff->email})");
+
+        $roleSlug = $staff->role ? Str::slug($staff->role->name) : 'staff';
+
+        return redirect()->route('dashboard.role', ['role' => $roleSlug]);
+    }
+
+    /**
+     * Sign in as a business owner (customer user) while remembering the admin.
+     */
+    public function impersonateUser(Request $request, User $user)
+    {
+        if ($user->isAdmin()) {
+            return back()->with('error', 'Admin accounts cannot be impersonated.');
+        }
+
+        $admin = auth()->user();
+
+        auth()->logoutCurrentDevice();
+        $request->session()->forget(['is_staff', 'staff_id', 'staff_name', 'staff_email', 'staff_role_id', 'staff_user_id', 'staff_role_slug']);
+        auth()->login($user);
+        $request->session()->regenerate();
+
+        $request->session()->put([
+            'impersonator_id'    => $admin->id,
+            'impersonator_name'  => $admin->name,
+            'impersonating_name' => $user->name,
+        ]);
+
+        Log::info("Admin impersonation started: admin #{$admin->id} ({$admin->email}) as user #{$user->id} ({$user->email})");
+
+        return redirect('/dashboard');
+    }
+
+    /**
+     * End impersonation and restore the original admin login.
+     * Not behind the admin middleware, because the admin is not signed in while impersonating.
+     */
+    public function stopImpersonating(Request $request)
+    {
+        $adminId = $request->session()->get('impersonator_id');
+        $admin = $adminId ? User::find($adminId) : null;
+
+        if (!$admin || !$admin->isAdmin()) {
+            $request->session()->forget(['impersonator_id', 'impersonator_name', 'impersonating_name']);
+            return redirect()->route('login');
+        }
+
+        $impersonated = $request->session()->get('impersonating_name');
+
+        if (auth()->check()) {
+            auth()->logoutCurrentDevice();
+        }
+        $request->session()->forget([
+            'is_staff', 'staff_id', 'staff_name', 'staff_email', 'staff_role_id', 'staff_user_id', 'staff_role_slug',
+            'impersonator_id', 'impersonator_name', 'impersonating_name',
+        ]);
+
+        auth()->login($admin);
+        $request->session()->regenerate();
+
+        Log::info("Admin impersonation ended: admin #{$admin->id} ({$admin->email}) left {$impersonated}");
+
+        return redirect()->route('admin.security.accounts')
+            ->with('success', "You are back in your admin account. Impersonation of {$impersonated} has ended.");
     }
 
     /**
