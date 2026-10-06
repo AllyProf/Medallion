@@ -1342,8 +1342,9 @@ class WaiterController extends Controller
 
         $orders = \App\Models\BarOrder::with(['items.productVariant.product', 'table', 'orderPayments', 'kitchenOrderItems.foodItem'])
             ->where('waiter_id', $waiterId)
-            ->whereIn('status', ['pending', 'preparing', 'ready', 'served'])
-            ->where('payment_status', 'pending')
+            ->whereIn('status', ['pending', 'preparing', 'prepared', 'ready', 'served'])
+            ->where('payment_status', '!=', 'paid')
+            ->orderByRaw("CASE WHEN status = 'served' THEN 1 ELSE 0 END")
             ->orderBy('created_at', 'desc')
             ->get();
 

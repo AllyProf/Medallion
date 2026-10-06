@@ -1992,9 +1992,22 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             return;
         }
 
+        orders = orders.slice().sort((a, b) => {
+            const rank = (status) => status === 'served' ? 1 : 0;
+            const byStatus = rank(a.status) - rank(b.status);
+            if (byStatus !== 0) return byStatus;
+            return new Date(b.created_at) - new Date(a.created_at);
+        });
+
+        let lastGroup = null;
         orders.forEach(order => {
+            const group = order.status === 'served' ? 'Served' : 'Pending';
+            if (group !== lastGroup) {
+                container.append(`<div class="mb-2 mt-1 font-weight-bold" style="color:var(--text-main); letter-spacing:0.04em;">${group}</div>`);
+                lastGroup = group;
+            }
             let brColor = 'var(--border-color)';
-            if(order.status === 'pending') brColor = '#007bff';
+            if(order.status === 'pending' || order.status === 'prepared') brColor = '#007bff';
             if(order.status === 'preparing') brColor = 'var(--accent-yellow)';
             if(order.status === 'ready') brColor = 'var(--accent-green)';
             const canChange = order.status !== 'served' && order.status !== 'cancelled';
