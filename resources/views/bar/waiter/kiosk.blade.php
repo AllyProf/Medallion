@@ -1993,15 +1993,17 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         }
 
         orders = orders.slice().sort((a, b) => {
-            const rank = (status) => status === 'served' ? 1 : 0;
+            const rank = (status) => status === 'cancelled' ? 2 : (status === 'served' ? 1 : 0);
             const byStatus = rank(a.status) - rank(b.status);
             if (byStatus !== 0) return byStatus;
             return new Date(b.created_at) - new Date(a.created_at);
         });
 
+        const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+
         let lastGroup = null;
         orders.forEach(order => {
-            const group = order.status === 'served' ? 'Served' : 'Pending';
+            const group = order.status === 'cancelled' ? 'Cancelled' : (order.status === 'served' ? 'Served' : 'Pending');
             if (group !== lastGroup) {
                 container.append(`<div class="mb-2 mt-1 font-weight-bold" style="color:var(--text-main); letter-spacing:0.04em;">${group}</div>`);
                 lastGroup = group;
@@ -2010,6 +2012,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             if(order.status === 'pending' || order.status === 'prepared') brColor = '#007bff';
             if(order.status === 'preparing') brColor = 'var(--accent-yellow)';
             if(order.status === 'ready') brColor = 'var(--accent-green)';
+            if(order.status === 'cancelled') brColor = '#dc3545';
             const canChange = order.status !== 'served' && order.status !== 'cancelled';
             
             let itemHtml = '';
@@ -2043,6 +2046,14 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                         <span>TSh ${parseFloat(item.total_price).toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
                     </div>`;
                 });
+            }
+            if ((!order.items || order.items.length === 0) && order.cancelled_item_labels && order.cancelled_item_labels.length) {
+                order.cancelled_item_labels.forEach(label => {
+                    itemHtml += `<div style="font-size:0.85rem; border-bottom:1px solid var(--bg-main); padding:4px 0; color:#dc3545; text-decoration:line-through;">${esc(label)}</div>`;
+                });
+            }
+            if (order.status === 'cancelled' && order.cancel_reason) {
+                itemHtml += `<div style="font-size:0.8rem; padding-top:6px; color:#dc3545;">Reason: ${esc(order.cancel_reason)}</div>`;
             }
 
             container.append(`

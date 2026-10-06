@@ -136,7 +136,7 @@
             @php $cancelSummary = $order->counterCancellationSummary(); @endphp
             @if($orderStatus === 'cancelled')
                 @if($order->order_source !== 'counter')
-                    <br><small class="text-danger">Cancelled by waiter</small>
+                    <br><small class="text-danger">{{ str_contains((string) $order->notes, 'CANCELLED AT COUNTER') ? 'Cancelled at counter' : 'Cancelled by waiter' }}</small>
                 @endif
                 @if($cancelSummary)
                     <br><small class="text-danger">Reason: {{ $cancelSummary }}</small>
@@ -195,14 +195,13 @@
                         <i class="fa fa-check"></i>
                     </button>
 
-                    @if($order->order_source === 'counter')
+                    {{-- Temporary: counter can cancel waiter tickets too. --}}
                     <button class="btn btn-sm btn-danger update-status-btn mr-1 mb-1"
                             data-order-id="{{ $order->id }}"
                             data-status="cancelled"
-                            title="Cancel this counter order">
+                            title="Cancel this order">
                         <i class="fa fa-ban"></i>
                     </button>
-                    @endif
 
                 @elseif($orderStatus === 'served' && $order->payment_status !== 'paid')
                     <button class="btn btn-sm btn-success font-weight-bold pay-order-btn mr-1 mb-1"
@@ -212,14 +211,13 @@
                         <i class="fa fa-money"></i>
                     </button>
 
-                    @if($order->order_source === 'counter')
+                    {{-- Temporary: counter can cancel waiter tickets too. --}}
                     <button class="btn btn-sm btn-danger update-status-btn mr-1 mb-1"
                             data-order-id="{{ $order->id }}"
                             data-status="cancelled"
-                            title="Cancel this counter order">
+                            title="Cancel this order">
                         <i class="fa fa-ban"></i>
                     </button>
-                    @endif
 
                 @elseif($order->payment_status === 'paid')
                     <button class="btn btn-sm btn-success mr-1 mb-1" disabled style="opacity: 1;" title="Fully Paid">

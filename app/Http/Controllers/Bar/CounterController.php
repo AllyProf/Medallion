@@ -147,14 +147,7 @@ class CounterController extends Controller
         DB::beginTransaction();
         try {
             if ($validated['status'] === 'cancelled') {
-                if ($order->order_source !== 'counter') {
-                    DB::rollBack();
-
-                    return response()->json([
-                        'error' => 'You can only cancel orders placed at the counter. Waiter items are cancelled from the kiosk.',
-                    ], 403);
-                }
-
+                // Temporary: the counter may cancel waiter and kiosk tickets as well as its own.
                 $message = $this->handleCounterCancellation($order, $ownerId, $validated['reason'] ?? null);
                 DB::commit();
 
@@ -2402,11 +2395,7 @@ class CounterController extends Controller
             return response()->json(['error' => 'Only pending orders can be cancelled'], 400);
         }
 
-        if ($order->order_source !== 'counter') {
-            return response()->json([
-                'error' => 'You can only cancel orders placed at the counter. Waiter items are cancelled from the kiosk.',
-            ], 403);
-        }
+        // Temporary: the counter may cancel waiter and kiosk tickets as well as its own.
 
         $validated = $request->validate([
             'reason' => 'nullable|string|max:500',
@@ -2607,6 +2596,9 @@ class CounterController extends Controller
 
         $order->status = 'cancelled';
         $suffix = $reason ? 'CANCELLED - Reason: '.$reason : 'CANCELLED';
+        if ($order->order_source !== 'counter') {
+            $suffix = 'CANCELLED AT COUNTER | '.$suffix;
+        }
         $order->notes = $order->notes ? $order->notes.' | '.$suffix : $suffix;
         $order->save();
 

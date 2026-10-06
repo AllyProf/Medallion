@@ -1342,9 +1342,13 @@ class WaiterController extends Controller
 
         $orders = \App\Models\BarOrder::with(['items.productVariant.product', 'table', 'orderPayments', 'kitchenOrderItems.foodItem'])
             ->where('waiter_id', $waiterId)
-            ->whereIn('status', ['pending', 'preparing', 'prepared', 'ready', 'served'])
-            ->where('payment_status', '!=', 'paid')
-            ->orderByRaw("CASE WHEN status = 'served' THEN 1 ELSE 0 END")
+            ->where(function ($query) {
+                $query->where(function ($open) {
+                    $open->whereIn('status', ['pending', 'preparing', 'prepared', 'ready', 'served'])
+                        ->where('payment_status', '!=', 'paid');
+                })->orWhere('status', 'cancelled');
+            })
+            ->orderByRaw("CASE WHEN status = 'cancelled' THEN 2 WHEN status = 'served' THEN 1 ELSE 0 END")
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -1353,6 +1357,8 @@ class WaiterController extends Controller
                 'kitchen_docket_item_count',
                 $order->kitchenOrderItems->filter(fn (\App\Models\KitchenOrderItem $i) => $i->appearsOnKitchenDocket())->count()
             );
+            $order->setAttribute('cancelled_item_labels', $order->cancelledItemLabels());
+            $order->setAttribute('cancel_reason', $order->counterCancellationSummary());
         });
 
         return response()->json([
