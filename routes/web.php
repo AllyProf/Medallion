@@ -185,6 +185,7 @@ Route::middleware('allow.staff')->group(function () {
         Route::put('/staff/{staff}', [\App\Http\Controllers\StaffController::class, 'update'])->name('staff.update');
         Route::delete('/staff/{staff}', [\App\Http\Controllers\StaffController::class, 'destroy'])->name('staff.destroy');
         Route::post('/staff/{staff}/toggle-status', [\App\Http\Controllers\StaffController::class, 'toggleStatus'])->name('staff.toggle-status');
+        Route::post('/staff/{staff}/impersonate', [\App\Http\Controllers\Admin\SecurityController::class, 'impersonateStaff'])->name('staff.impersonate');
         Route::post('/staff/{staff}/generate-password', [\App\Http\Controllers\StaffController::class, 'generatePassword'])->name('staff.generate-password');
         Route::post('/staff/bulk/generate-pins', [\App\Http\Controllers\StaffController::class, 'generateMissingPins'])->name('staff.generate-missing-pins');
     });

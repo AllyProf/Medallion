@@ -17,8 +17,9 @@
   .badge-closed { border: 1px solid #dc3545; color: #dc3545; }
 
   .detail-row { background-color: #fcfcfc !important; }
-  .detail-container { padding: 20px 40px; border-left: 5px solid #0056b3; box-shadow: inset 0 3px 6px rgba(0,0,0,0.08); background: #fdfdfd; }
+  .detail-container { padding: 16px 20px; border-left: 5px solid #940000; background: #fff; }
   .nested-table { font-size: 0.85rem; background: white; border: 1px solid #dee2e6; }
+  .summary-table td { padding: 8px 12px !important; vertical-align: middle; }
   .nested-table th { background: #6c757d !important; color: white !important; text-transform: uppercase; font-size: 0.7rem; border: none !important; }
   
   @media print {
@@ -131,22 +132,17 @@
               <th rowspan="2" class="text-center">STATUS</th>
               <th rowspan="2" class="text-right">OPENING CASH</th>
               <th colspan="3" class="text-center">SUBMITTED COLLECTIONS</th>
-
-              <th class="text-right text-success">PROFIT CONTENT</th>
-              <th class="text-right text-info">CIRCULATION REFILL</th>
-              <th class="text-right text-info">ROLLOVER CYCLE</th>
-              <th rowspan="2" class="text-center d-print-none">PRINT</th>
+              <th rowspan="2" class="text-right">ASSETS</th>
+              <th rowspan="2" class="text-right">EXPENSES</th>
+              <th rowspan="2" class="text-right">PROFIT</th>
+              <th rowspan="2" class="text-right">CIRCULATION</th>
+              <th rowspan="2" class="text-right">ROLLOVER</th>
+              <th rowspan="2" class="text-center d-print-none">ACTIONS</th>
             </tr>
             <tr>
               <th class="text-right">CASH</th>
               <th class="text-right">DIGITAL</th>
               <th class="text-right">TOTAL</th>
-              <th class="text-right bg-secondary text-white">ASSETS</th>
-              <th class="text-right">EXPENSES</th>
-
-              <th class="text-right text-success">PROFIT CONTENT</th>
-              <th class="text-right text-info">CIRCULATION</th>
-              <th class="text-right text-info">ROLLOVER CYCLE</th>
             </tr>
           </thead>
           <tbody>
@@ -288,7 +284,7 @@
                 </tr>
                 {{-- COLLAPSIBLE DETAIL ROW --}}
                 <tr id="details-{{ $ledger->id }}" class="collapse detail-row">
-                  <td colspan="12">
+                  <td colspan="13">
                     <div class="detail-container">
                       <div class="row">
                          {{-- EXPENSE BREAKDOWN --}}
@@ -369,126 +365,76 @@
                            @endif
                          </div>
 
-                         {{-- FINAL SUMMARY --}}
                          <div class="col-md-6">
-                            <h6 class="text-success"><i class="fa fa-info-circle"></i> RECONCILIATION SUMMARY</h6>
-                            <div class="mt-3">
-                               <p class="mb-1 d-flex justify-content-between">
-                                  <span>Gross Revenue (Total Assets):</span>
-                                  <span class="font-weight-bold">TSh {{ number_format($totalAssets) }}</span>
-                               </p>
-                               @if($shortageCollected > 0)
-                               <div class="mb-2 p-2 rounded" style="background: #f2fff5; border-left: 3px solid #28a745;">
-                                  <div class="d-flex justify-content-between text-success font-weight-bold" style="font-size: 0.85em;">
-                                     <span><i class="fa fa-level-up fa-rotate-90"></i> Staff Debt Payments Collected:</span>
-                                     <span>TSh {{ number_format($shortageCollected) }}</span>
-                                  </div>
-                                  <div class="mt-1">
-                                     @foreach($ledger->shortageBreakdown as $sb)
-                                        <div class="d-flex justify-content-between text-muted" style="font-size: 0.75em; border-top: 1px dashed rgba(40,167,69,0.2);">
-                                           <span>• {{ $sb['name'] }}</span>
-                                           <span>TSh {{ number_format($sb['amount']) }}</span>
-                                        </div>
-                                     @endforeach
-                                  </div>
-                               </div>
-                               @endif
-                               @if(($ledger->totalDayShortage ?? 0) > 0)
-                               <p class="mb-1 d-flex justify-content-between" style="font-size:0.85em; color:#dc3545;">
-                                  <span><i class="fa fa-exclamation-circle"></i> Unrecovered Shortage (reduces profit):</span>
-                                  <span class="font-weight-bold">- TSh {{ number_format($ledger->totalDayShortage) }}</span>
-                               </p>
-                               <p class="mb-1 d-flex justify-content-between" style="font-size:0.85em;">
-                                  <span>Gross Profit (from orders sold):</span>
-                                  <span><s class="text-muted">TSh {{ number_format($ledger->grossProfit) }}</s></span>
-                               </p>
-                               <p class="mb-1 d-flex justify-content-between font-weight-bold border-top pt-1" style="font-size:0.9em; color: {{ ($ledger->adjustedProfit ?? 0) > 0 ? '#28a745' : '#dc3545' }};">
-                                  <span>Adjusted Profit (after shortage):</span>
-                                  <span>TSh {{ number_format($ledger->adjustedProfit) }}</span>
-                               </p>
-                               @if(($ledger->circulationDebt ?? 0) > 0)
-                               <p class="mb-1 d-flex justify-content-between" style="font-size:0.8em; color:#dc3545;">
-                                  <span>
-                                      @if(($ledger->adjustedProfit ?? 0) < 0)
-                                          <i class="fa fa-warning"></i> Shortage exceeds profit — eating float:
-                                      @else
-                                          <i class="fa fa-info-circle"></i> Drink capital deficit from shortage:
-                                      @endif
-                                  </span>
-                                  <span>- TSh {{ number_format($ledger->circulationDebt) }}</span>
-                                </p>
-                               @endif
-                               @endif
-                               <p class="mb-1 d-flex justify-content-between border-bottom pb-1">
-                                  <span>Total Expenses Paid:</span>
-                                  <span class="text-danger">(-) TSh {{ number_format($ledger->combined_expenses ?? $ledger->total_expenses) }}</span>
-                               <p class="mb-3 d-flex justify-content-between h6">
-                                  <span>Total Cash in Box Today:</span>
-                                  <span class="font-weight-bold">{{ number_format($ledger->money_in_circulation + $ledger->profit_generated) }}</span>
-                               </p>
-                               <div class="alert alert-info py-2" style="font-size:0.85rem; border-left: 5px solid #17a2b8;">
-                                  <strong>💼 Financial Breakdown (Uwazi):</strong>
-                                  <div class="mt-2 pl-2">
-                                     <div class="d-flex justify-content-between mb-1">
-                                        <span>Today's Sales Performance:</span>
-                                        <span class="font-weight-bold">TSh {{ number_format($ledger->profit_generated - ($ledger->shortageBreakdown->sum('amount') > 0 ? ($ledger->shortageBreakdown->sum('amount') * $margin) : 0)) }}</span>
-                                     </div>
-                                     @if($shortageCollected > 0)
-                                     <div class="d-flex justify-content-between text-success mb-1">
-                                        <span>Profit from Recovered Debts:</span>
-                                        <span class="font-weight-bold">+ TSh {{ number_format($recoveryProfitPart) }}</span>
-                                     </div>
-                                     @endif
-                                     <div class="d-flex justify-content-between border-top pt-1 font-weight-bold">
-                                        <span>Total Net Profit Generated:</span>
-                                        <span class="text-success">TSh {{ number_format($ledger->profit_generated) }}</span>
-                                     </div>
-                                  </div>
-                                  
-                                  <hr class="my-2">
-                                  
-                                   @if($ledger->netAvailableProfit > 0)
-                                      <p class="mb-2">The currently available net profit to be handed over is <strong>TSh {{ number_format($ledger->netAvailableProfit) }}</strong>.</p>
-                                      
-                                      @if($ledger->isManagerReceived)
-                                         @if(abs($payoutDiff) > 0)
-                                            <span class="text-danger small font-weight-bold"><i class="fa fa-warning"></i> NOTE: Handover variance detected (TSh {{ number_format(abs($payoutDiff)) }}).</span>
-                                         @else
-                                            <span class="text-success small font-weight-bold"><i class="fa fa-check"></i> Handover confirmed: TSh {{ number_format($actualPayout) }}.</span>
-                                         @endif
-                                      @else
-                                         <div class="mt-2 p-3 bg-white rounded border border-light shadow-sm">
-                                            @if($ledger->managerReceiptStatus === 'pending')
-                                               <div class="d-flex justify-content-between align-items-center">
-                                                  <span class="text-warning font-weight-bold small"><i class="fa fa-hourglass-half"></i> PENDING TSh {{ number_format($actualPayout) }}</span>
+                            <h6 class="text-success mb-2"><i class="fa fa-info-circle"></i> Reconciliation</h6>
+                            <table class="table table-sm nested-table summary-table mb-3">
+                              <tbody>
+                                <tr>
+                                  <td>Gross revenue</td>
+                                  <td class="text-right font-weight-bold">TSh {{ number_format($totalAssets) }}</td>
+                                </tr>
+                                @if($shortageCollected > 0)
+                                <tr>
+                                  <td>Staff debt collected</td>
+                                  <td class="text-right text-success font-weight-bold">TSh {{ number_format($shortageCollected) }}</td>
+                                </tr>
+                                @foreach($ledger->shortageBreakdown as $sb)
+                                <tr>
+                                  <td class="pl-4 text-muted">{{ $sb['name'] }}</td>
+                                  <td class="text-right text-muted">TSh {{ number_format($sb['amount']) }}</td>
+                                </tr>
+                                @endforeach
+                                @endif
+                                @if(($ledger->totalDayShortage ?? 0) > 0)
+                                <tr>
+                                  <td>Unrecovered shortage</td>
+                                  <td class="text-right text-danger">- TSh {{ number_format($ledger->totalDayShortage) }}</td>
+                                </tr>
+                                <tr>
+                                  <td>Profit after shortage</td>
+                                  <td class="text-right font-weight-bold">TSh {{ number_format($ledger->adjustedProfit) }}</td>
+                                </tr>
+                                @endif
+                                <tr>
+                                  <td>Expenses paid</td>
+                                  <td class="text-right text-danger">- TSh {{ number_format($ledger->combined_expenses ?? $ledger->total_expenses) }}</td>
+                                </tr>
+                                <tr>
+                                  <td>Cash in box</td>
+                                  <td class="text-right font-weight-bold">TSh {{ number_format($ledger->money_in_circulation + $ledger->profit_generated) }}</td>
+                                </tr>
+                                <tr class="bg-light">
+                                  <td class="font-weight-bold">Net profit</td>
+                                  <td class="text-right font-weight-bold text-success">TSh {{ number_format($ledger->netAvailableProfit) }}</td>
+                                </tr>
+                                <tr>
+                                  <td>Opening cash for tomorrow</td>
+                                  <td class="text-right font-weight-bold">TSh {{ number_format(floatval($ledger->carried_forward)) }}</td>
+                                </tr>
+                              </tbody>
+                            </table>
 
-                                               </div>
-                                            @else
-                                               <button data-id="{{ $ledger->id }}" data-amount="{{ $ledger->netAvailableProfit }}" class="btn btn-sm btn-block btn-primary shadow-sm submit-to-boss-btn py-1 font-weight-bold">
-                                                  <i class="fa fa-handshake-o"></i> Submit Profit (TSh {{ number_format($ledger->netAvailableProfit) }})
-                                               </button>
-                                            @endif
-                                         </div>
-                                      @endif
-                                   @else
-                                      <p class="mb-2 text-danger font-weight-bold">No profit available today (Shortage exceeded margin).</p>
-                                   @endif
-                                   
-                                   <div class="mt-3 pt-2 border-top border-info text-dark">
-                                      <div class="d-flex justify-content-between font-weight-bold">
-                                         <span class="text-primary"><i class="fa fa-clock-o"></i> Opening Cash for Tomorrow:</span>
-                                         <span class="h6 mb-0 font-weight-bold text-primary">TSh {{ number_format(floatval($ledger->carried_forward)) }}</span>
-                                      </div>
-                                      <small class="text-muted d-block mt-1"><i>(This is your Capital/Circulation only. Profit has been isolated.)</i></small>
-                                   </div>
-                                </div>
-                               
-                               <div class="text-right">
-                                  <a href="{{ route('accountant.daily-master-sheet', ['date' => \Carbon\Carbon::parse($ledger->ledger_date)->format('Y-m-d')]) }}" class="btn btn-primary btn-sm">
-                                    <i class="fa fa-external-link"></i> Full Day View
-                                  </a>
-                               </div>
-                            </div>
+                            @if($ledger->isManagerReceived)
+                              @if(abs($payoutDiff) > 0)
+                                <p class="small text-danger font-weight-bold mb-2"><i class="fa fa-warning"></i> Handover difference: TSh {{ number_format(abs($payoutDiff)) }}</p>
+                              @else
+                                <p class="small text-success font-weight-bold mb-2"><i class="fa fa-check"></i> Handover confirmed: TSh {{ number_format($actualPayout) }}</p>
+                              @endif
+                            @elseif($ledger->netAvailableProfit > 0)
+                              @if($ledger->managerReceiptStatus === 'pending')
+                                <p class="small text-warning font-weight-bold mb-2"><i class="fa fa-hourglass-half"></i> Payout pending: TSh {{ number_format($actualPayout) }}</p>
+                              @else
+                                <button type="button" data-id="{{ $ledger->id }}" data-amount="{{ $ledger->netAvailableProfit }}" class="btn btn-sm btn-primary shadow-sm submit-to-boss-btn mb-2">
+                                  <i class="fa fa-handshake-o"></i> Submit profit (TSh {{ number_format($ledger->netAvailableProfit) }})
+                                </button>
+                              @endif
+                            @else
+                              <p class="small text-danger font-weight-bold mb-2">No profit available. Shortage exceeded the margin.</p>
+                            @endif
+
+                            <a href="{{ route('accountant.daily-master-sheet', ['date' => \Carbon\Carbon::parse($ledger->ledger_date)->format('Y-m-d')]) }}" class="btn btn-outline-primary btn-sm">
+                              <i class="fa fa-external-link"></i> Full day report
+                            </a>
                          </div>
                       </div>
                     </div>

@@ -48,42 +48,7 @@
 
 @php
   $shiftLabel = fn ($s) => $s ? ('#' . ($s->formatted_id ?? $s->id)) : 'N/A';
-  $hasSeparatePendingHandover = $hasSeparatePendingHandover
-    ?? (isset($pendingHandover, $bar_shift) && $pendingHandover && $bar_shift
-        && (int) $pendingHandover->bar_shift_id !== (int) $bar_shift->id);
 @endphp
-
-@if(isset($bar_shift) && $bar_shift)
-<div class="alert {{ $bar_shift->status === 'open' ? 'alert-success' : 'alert-secondary' }} shadow-sm mb-3" style="border-radius: 10px; border-left: 5px solid {{ $bar_shift->status === 'open' ? '#28a745' : '#6c757d' }};">
-  <div class="d-flex flex-wrap align-items-center">
-    <div class="mr-3">
-      <i class="fa fa-{{ $bar_shift->status === 'open' ? 'play-circle' : 'history' }} fa-2x"></i>
-    </div>
-    <div class="flex-grow-1">
-      <h5 class="mb-1 font-weight-bold">
-        @if($bar_shift->status === 'open')
-          Live shift {{ $shiftLabel($bar_shift) }}
-        @else
-          Closed shift {{ $shiftLabel($bar_shift) }}
-        @endif
-      </h5>
-      <p class="mb-0 small text-muted">
-        Opened {{ $bar_shift->opened_at->format('d M Y, H:i') }}
-        @if($bar_shift->closed_at)
-          · Closed {{ $bar_shift->closed_at->format('d M Y, H:i') }}
-        @endif
-        · The table below is for <strong>this shift only</strong>. Reconcile each waiter here before submitting handover.
-      </p>
-      @if($hasSeparatePendingHandover && isset($pendingHandover))
-        <p class="mb-0 small mt-1 text-warning">
-          <i class="fa fa-exclamation-triangle"></i>
-          An older handover ({{ $shiftLabel($pendingHandover->barShift) }}) is still waiting for Accountant — that does not block reconciling today's waiters.
-        </p>
-      @endif
-    </div>
-  </div>
-</div>
-@endif
 
 {{-- [DUAL-CONTEXT NAVIGATION BANNERS] --}}
 @if(isset($pendingHandover) && $pendingHandover && (!isset($todayHandover) || !$todayHandover || (isset($todayHandover->id) && $todayHandover->id !== $pendingHandover->id)))

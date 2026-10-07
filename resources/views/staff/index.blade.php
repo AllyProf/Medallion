@@ -14,6 +14,10 @@
     border-color: #940000;
     box-shadow: 0 0 0 0.2rem rgba(148, 0, 0, 0.25);
   }
+  .staff-table-wrap { overflow: visible; }
+  .staff-actions .dropdown-menu { min-width: 190px; }
+  .staff-actions .dropdown-item { font-size: 0.9rem; }
+  .staff-actions .dropdown-item i { width: 18px; }
 </style>
 @endpush
 
@@ -36,14 +40,6 @@
     </p>
   </div>
   <div>
-    @if($staff->whereNull('pin')->count() > 0 || $staff->where('pin', '')->count() > 0)
-      <form action="{{ route('staff.generate-missing-pins') }}" method="POST" class="d-inline">
-          @csrf
-          <button type="submit" class="btn btn-warning mr-2 shadow-sm">
-            <i class="fa fa-magic"></i> Fix Missing PINs
-          </button>
-      </form>
-    @endif
     @if(session('active_location'))
       <a href="javascript:void(0)" onclick="switchLocation('all')" class="btn btn-secondary mr-2">
         <i class="fa fa-globe"></i> Show All Branches
@@ -123,8 +119,19 @@
           </div>
         </div>
       </div>
+      @php
+        $managerSlugs = ['manager', 'super-admin', 'superadmin', 'super_admin'];
+        $managerNames = ['manager', 'super admin', 'super administrator', 'super_admin', 'superadmin'];
+        $canImpersonateStaff = (bool) (auth()->user()?->isAdmin());
+        if (!$canImpersonateStaff && session('is_staff') && session('staff_id')) {
+            $actingStaff = \App\Models\Staff::with('role')->find(session('staff_id'));
+            $actingName = strtolower(trim($actingStaff?->role?->name ?? ''));
+            $actingSlug = strtolower(trim($actingStaff?->role?->slug ?? session('staff_role_slug')));
+            $canImpersonateStaff = in_array($actingName, $managerNames, true) || in_array($actingSlug, $managerSlugs, true);
+        }
+      @endphp
       @if($staff->count() > 0)
-        <div class="table-responsive">
+        <div class="table-responsive staff-table-wrap">
           <table class="table table-hover table-bordered bg-white" id="staffTable">
             <thead class="bg-light">
               <tr>
@@ -134,7 +141,7 @@
                 <th width="110" class="text-center">Kiosk PIN</th>
                 <th>Location</th>
                 <th width="100">Status</th>
-                <th width="160" class="text-center">Actions</th>
+                <th width="70" class="text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -184,29 +191,47 @@
                       <span class="badge badge-danger badge-pill px-3 py-1">Inactive</span>
                     @endif
                   </td>
-                  <td class="text-center">
-                    <div class="btn-group" role="group">
-                      <a href="{{ route('staff.show', $member->id) }}" class="btn btn-sm btn-outline-info" title="View Details">
-                        <i class="fa fa-eye"></i>
-                      </a>
-                      <a href="{{ route('staff.edit', $member->id) }}" class="btn btn-sm btn-outline-primary" title="Edit">
-                        <i class="fa fa-edit"></i>
-                      </a>
-                      <button type="button" class="btn btn-sm btn-outline-secondary" title="Generate password &amp; send to phone"
-                              onclick="generateStaffPassword({{ $member->id }}, '{{ addslashes($member->full_name) }}', '{{ addslashes($member->phone_number) }}')">
-                        <i class="fa fa-key"></i>
+                  <td class="text-center staff-actions">
+                    <div class="dropdown">
+                      <button class="btn btn-sm btn-outline-secondary" type="button" data-toggle="dropdown" data-boundary="viewport" aria-haspopup="true" aria-expanded="false" title="Actions">
+                        <i class="fa fa-ellipsis-v"></i>
                       </button>
-                      <form action="{{ route('staff.toggle-status', $member->id) }}" method="POST" id="toggle-status-{{ $member->id }}" class="d-inline">
-                        @csrf
-                        <button type="button" class="btn btn-sm {{ $member->is_active ? 'btn-outline-warning' : 'btn-outline-success' }}" 
-                                title="{{ $member->is_active ? 'Deactivate' : 'Activate' }}"
-                                onclick="toggleStaffStatus({{ $member->id }}, '{{ $member->full_name }}', {{ $member->is_active ? 'true' : 'false' }})">
-                          <i class="fa {{ $member->is_active ? 'fa-ban' : 'fa-check' }}"></i>
+                      <div class="dropdown-menu dropdown-menu-right">
+                        <a class="dropdown-item" href="{{ route('staff.show', $member->id) }}">
+                          <i class="fa fa-eye"></i> View
+                        </a>
+                        <a class="dropdown-item" href="{{ route('staff.edit', $member->id) }}">
+                          <i class="fa fa-edit"></i> Edit
+                        </a>
+                        <button type="button" class="dropdown-item" onclick="generateStaffPassword({{ $member->id }}, '{{ addslashes($member->full_name) }}', '{{ addslashes($member->phone_number) }}')">
+                          <i class="fa fa-key"></i> Send password
                         </button>
-                      </form>
-                      <button type="button" class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteStaff({{ $member->id }}, '{{ $member->full_name }}')">
-                        <i class="fa fa-trash"></i>
-                      </button>
+                        <form action="{{ route('staff.toggle-status', $member->id) }}" method="POST" id="toggle-status-{{ $member->id }}" class="m-0">
+                          @csrf
+                          <button type="button" class="dropdown-item" onclick="toggleStaffStatus({{ $member->id }}, '{{ addslashes($member->full_name) }}', {{ $member->is_active ? 'true' : 'false' }})">
+                            <i class="fa {{ $member->is_active ? 'fa-ban' : 'fa-check' }}"></i> {{ $member->is_active ? 'Deactivate' : 'Activate' }}
+                          </button>
+                        </form>
+                        @if($canImpersonateStaff && (int) $member->id !== (int) session('staff_id'))
+                          <div class="dropdown-divider"></div>
+                          @if($member->is_active)
+                            <form method="POST" action="{{ route('staff.impersonate', $member->id) }}" class="m-0 impersonate-form" data-name="{{ $member->full_name }}">
+                              @csrf
+                              <button type="submit" class="dropdown-item">
+                                <i class="fa fa-user-secret"></i> Impersonate
+                              </button>
+                            </form>
+                          @else
+                            <button type="button" class="dropdown-item disabled" title="Inactive accounts cannot be impersonated">
+                              <i class="fa fa-user-secret"></i> Impersonate
+                            </button>
+                          @endif
+                        @endif
+                        <div class="dropdown-divider"></div>
+                        <button type="button" class="dropdown-item text-danger" onclick="deleteStaff({{ $member->id }}, '{{ addslashes($member->full_name) }}')">
+                          <i class="fa fa-trash"></i> Delete
+                        </button>
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -236,6 +261,27 @@ $(document).ready(function() {
         var value = $(this).val().toLowerCase();
         $("#staffTable tbody tr").filter(function() {
             $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1)
+        });
+    });
+
+    $(document).on('submit', '.impersonate-form', function (e) {
+        e.preventDefault();
+        const form = this;
+        const name = $('<div>').text($(form).data('name')).html();
+        Swal.fire({
+            icon: 'question',
+            title: 'Sign in as this account?',
+            html: 'You will view the system as <strong>' + name + '</strong>.<br>'
+                + '<span class="text-muted small">Use the banner at the top of the page to switch back.</span>',
+            showCancelButton: true,
+            confirmButtonColor: '#940000',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Yes, continue',
+            cancelButtonText: 'Cancel'
+        }).then(function (result) {
+            if (result.isConfirmed) {
+                form.submit();
+            }
         });
     });
 });

@@ -302,7 +302,7 @@ class SecurityController extends Controller
     }
 
     /**
-     * Sign in as a staff member while remembering the admin, so they can return.
+     * Sign in as a staff member while remembering the admin or manager, so they can return.
      */
     public function impersonateStaff(Request $request, Staff $staff)
     {
@@ -310,26 +310,40 @@ class SecurityController extends Controller
             return back()->with('error', "{$staff->full_name}'s account is inactive. Activate it before impersonating.");
         }
 
+        if ($request->session()->get('impersonator_id') || $request->session()->get('impersonator_staff_id')) {
+            return back()->with('error', 'End the current sign-in before impersonating someone else.');
+        }
+
+        $staff->loadMissing('role');
         $admin = auth()->user();
+        $manager = $this->managerActor($request);
 
-        // logoutCurrentDevice keeps the admin's remember-me token valid on other devices.
-        auth()->logoutCurrentDevice();
-        $request->session()->regenerate();
+        if ($admin && $admin->isAdmin() && !$request->session()->get('is_staff')) {
+            // logoutCurrentDevice keeps the admin's remember-me token valid on other devices.
+            auth()->logoutCurrentDevice();
+            $request->session()->regenerate();
+            $request->session()->put([
+                'impersonator_id'    => $admin->id,
+                'impersonator_name'  => $admin->name,
+                'impersonating_name' => $staff->full_name,
+            ]);
+            Log::info("Admin impersonation started: admin #{$admin->id} ({$admin->email}) as staff #{$staff->id} ({$staff->email})");
+        } elseif ($manager) {
+            if ((int) $manager->id === (int) $staff->id) {
+                return back()->with('error', 'You cannot impersonate your own account.');
+            }
+            $request->session()->regenerate();
+            $request->session()->put([
+                'impersonator_staff_id' => $manager->id,
+                'impersonator_name'     => $manager->full_name,
+                'impersonating_name'    => $staff->full_name,
+            ]);
+            Log::info("Manager impersonation started: staff #{$manager->id} ({$manager->email}) as staff #{$staff->id} ({$staff->email})");
+        } else {
+            abort(403, 'Only an admin or a manager can impersonate a staff account.');
+        }
 
-        $request->session()->put([
-            'impersonator_id'    => $admin->id,
-            'impersonator_name'  => $admin->name,
-            'impersonating_name' => $staff->full_name,
-            'staff_id'           => $staff->id,
-            'staff_name'         => $staff->full_name,
-            'staff_email'        => $staff->email,
-            'staff_role_id'      => $staff->role_id,
-            'staff_user_id'      => $staff->user_id,
-            'staff_role_slug'    => strtolower($staff->role->slug ?? ''),
-            'is_staff'           => true,
-        ]);
-
-        Log::info("Admin impersonation started: admin #{$admin->id} ({$admin->email}) as staff #{$staff->id} ({$staff->email})");
+        $this->rememberStaffSession($request, $staff);
 
         $roleSlug = $staff->role ? Str::slug($staff->role->name) : 'staff';
 
@@ -370,30 +384,87 @@ class SecurityController extends Controller
     public function stopImpersonating(Request $request)
     {
         $adminId = $request->session()->get('impersonator_id');
+        $managerStaffId = $request->session()->get('impersonator_staff_id');
+        $impersonated = $request->session()->get('impersonating_name');
         $admin = $adminId ? User::find($adminId) : null;
 
-        if (!$admin || !$admin->isAdmin()) {
-            $request->session()->forget(['impersonator_id', 'impersonator_name', 'impersonating_name']);
-            return redirect()->route('login');
+        if ($admin && $admin->isAdmin()) {
+            if (auth()->check()) {
+                auth()->logoutCurrentDevice();
+            }
+            $this->clearImpersonationSession($request);
+
+            auth()->login($admin);
+            $request->session()->regenerate();
+
+            Log::info("Admin impersonation ended: admin #{$admin->id} ({$admin->email}) left {$impersonated}");
+
+            return redirect()->route('admin.security.accounts')
+                ->with('success', "You are back in your admin account. Impersonation of {$impersonated} has ended.");
         }
 
-        $impersonated = $request->session()->get('impersonating_name');
+        $manager = $managerStaffId ? Staff::with('role')->find($managerStaffId) : null;
+        if ($manager && $manager->is_active) {
+            $this->clearImpersonationSession($request);
+            $this->rememberStaffSession($request, $manager);
+            $request->session()->regenerate();
 
-        if (auth()->check()) {
-            auth()->logoutCurrentDevice();
+            Log::info("Manager impersonation ended: staff #{$manager->id} ({$manager->email}) left {$impersonated}");
+
+            return redirect()->route('staff.index')
+                ->with('success', "You are back in your account. Impersonation of {$impersonated} has ended.");
         }
+
+        $this->clearImpersonationSession($request);
+        return redirect()->route('login');
+    }
+
+    /**
+     * The logged-in staff member, when their role is manager or super admin.
+     */
+    private function managerActor(Request $request): ?Staff
+    {
+        if (!$request->session()->get('is_staff') || !$request->session()->get('staff_id')) {
+            return null;
+        }
+
+        $actor = Staff::with('role')->find($request->session()->get('staff_id'));
+        if (!$actor || !$actor->is_active || !$actor->role) {
+            return null;
+        }
+
+        $name = strtolower(trim($actor->role->name ?? ''));
+        $slug = strtolower(trim($actor->role->slug ?? ''));
+        $names = ['manager', 'super admin', 'super administrator', 'super_admin', 'superadmin'];
+        $slugs = ['manager', 'super-admin', 'superadmin', 'super_admin'];
+
+        if (!in_array($name, $names, true) && !in_array($slug, $slugs, true)) {
+            return null;
+        }
+
+        return $actor;
+    }
+
+    private function rememberStaffSession(Request $request, Staff $staff): void
+    {
+        $staff->loadMissing('role');
+        $request->session()->put([
+            'staff_id'        => $staff->id,
+            'staff_name'      => $staff->full_name,
+            'staff_email'     => $staff->email,
+            'staff_role_id'   => $staff->role_id,
+            'staff_user_id'   => $staff->user_id,
+            'staff_role_slug' => strtolower($staff->role->slug ?? ''),
+            'is_staff'        => true,
+        ]);
+    }
+
+    private function clearImpersonationSession(Request $request): void
+    {
         $request->session()->forget([
             'is_staff', 'staff_id', 'staff_name', 'staff_email', 'staff_role_id', 'staff_user_id', 'staff_role_slug',
-            'impersonator_id', 'impersonator_name', 'impersonating_name',
+            'impersonator_id', 'impersonator_staff_id', 'impersonator_name', 'impersonating_name',
         ]);
-
-        auth()->login($admin);
-        $request->session()->regenerate();
-
-        Log::info("Admin impersonation ended: admin #{$admin->id} ({$admin->email}) left {$impersonated}");
-
-        return redirect()->route('admin.security.accounts')
-            ->with('success', "You are back in your admin account. Impersonation of {$impersonated} has ended.");
     }
 
     /**

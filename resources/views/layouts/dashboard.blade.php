@@ -91,7 +91,7 @@
         width: 16px;
         text-align: center;
       }
-      .btn-primary, .widget-small.primary.coloured-icon {
+      .btn-primary {
         background-color: #940000;
         border-color: #940000;
       }
@@ -772,7 +772,7 @@
       </ul>
     </aside>
     <main class="app-content">
-      @if(session('impersonator_id'))
+      @if(session('impersonator_id') || session('impersonator_staff_id'))
         <div class="alert alert-warning d-flex justify-content-between align-items-center d-print-none" style="border-left: 5px solid #940000;">
           <div>
             <i class="fa fa-user-secret"></i>
@@ -782,12 +782,79 @@
           <form method="POST" action="{{ route('impersonation.stop') }}" class="mb-0 ml-3">
             @csrf
             <button type="submit" class="btn btn-sm btn-dark">
-              <i class="fa fa-sign-out"></i> Return to Admin
+              <i class="fa fa-sign-out"></i> {{ session('impersonator_staff_id') ? 'Return to your account' : 'Return to Admin' }}
             </button>
           </form>
         </div>
       @endif
       @yield('content')
+      <style>
+        .widget-small,
+        .widget-small.primary,
+        .widget-small.info,
+        .widget-small.warning,
+        .widget-small.danger,
+        .widget-small.success,
+        .widget-small.secondary,
+        .widget-small.primary.coloured-icon,
+        .widget-small.info.coloured-icon,
+        .widget-small.warning.coloured-icon,
+        .widget-small.danger.coloured-icon,
+        .widget-small.success.coloured-icon {
+          display: flex !important;
+          align-items: stretch !important;
+          background: #fff !important;
+          color: #111 !important;
+          border: 0 !important;
+          border-top: 3px solid #940000 !important;
+          border-radius: 2px !important;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06) !important;
+          height: auto !important;
+          min-height: 108px;
+          margin-bottom: 20px;
+          padding: 16px 18px 14px !important;
+          overflow: visible !important;
+        }
+        .widget-small > .icon {
+          display: none !important;
+        }
+        .widget-small .info {
+          padding: 0 !important;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          width: 100%;
+        }
+        .widget-small .info h4 {
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          font-size: 0.72rem !important;
+          font-weight: 700 !important;
+          color: #111 !important;
+          opacity: 1 !important;
+          margin: 0 0 6px !important;
+          line-height: 1.3;
+        }
+        .widget-small .info p,
+        .widget-small .info p b {
+          margin: 0 !important;
+          font-size: 1.55rem !important;
+          font-weight: 800 !important;
+          color: #111 !important;
+          line-height: 1.15;
+        }
+        .widget-small .info small {
+          display: block;
+          margin-top: 6px;
+          font-size: 0.78rem !important;
+          font-weight: 500;
+          color: #6c757d !important;
+        }
+        a:hover .widget-small {
+          color: #111;
+          text-decoration: none;
+        }
+      </style>
     </main>
     <!-- Essential javascripts for application to work-->
     <script src="{{ asset('js/admin/jquery-3.2.1.min.js') }}"></script>
