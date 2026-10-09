@@ -1500,12 +1500,8 @@ class WaiterController extends Controller
             ], 403);
         }
 
-        if ($order->payment_status === 'paid' || $order->status === 'cancelled') {
+        if ($order->payment_status === 'paid' || (float) $order->paid_amount > 0 || $order->status === 'cancelled') {
             return response()->json(['error' => 'Cannot add items to a paid or cancelled order'], 400);
-        }
-
-        if ($order->status === 'served') {
-            return response()->json(['error' => 'A served order cannot be cancelled or edited.'], 400);
         }
 
         $validated = $request->validate([
@@ -1781,12 +1777,8 @@ class WaiterController extends Controller
             return response()->json(['error' => 'Counter orders can only be changed at the counter.'], 403);
         }
 
-        if ($order->payment_status === 'paid' || $order->status === 'cancelled') {
+        if ($order->payment_status === 'paid' || (float) $order->paid_amount > 0 || $order->status === 'cancelled') {
             return response()->json(['error' => 'Cannot edit a paid or cancelled order'], 400);
-        }
-
-        if ($order->status === 'served') {
-            return response()->json(['error' => 'A served order cannot be cancelled or edited.'], 400);
         }
 
         $items = $request->input('items', []);
@@ -1808,6 +1800,10 @@ class WaiterController extends Controller
             }
         }
 
+        $wasServed = $order->status === 'served';
+        $stock = app(\App\Services\ServedDrinkStock::class);
+        $qtyNotes = [];
+
         DB::beginTransaction();
         try {
             $order->load(['items', 'kitchenOrderItems']);
@@ -1816,7 +1812,11 @@ class WaiterController extends Controller
                 if (! in_array((int) $line->id, $keptDrinkIds, true)) {
                     $line->load('productVariant');
                     $label = ((int) $line->quantity).'x '.($line->productVariant->display_name ?? 'Item');
-                    $this->restoreDrinkStock($order, $line);
+                    if ($wasServed) {
+                        $stock->putBack($order, $line, (int) $line->quantity);
+                    } else {
+                        $this->restoreDrinkStock($order, $line);
+                    }
                     TransferSale::where('order_item_id', $line->id)->delete();
                     $order->total_amount = max(0, (float) $order->total_amount - (float) $line->total_price);
                     $order->notes = trim(($order->notes ? $order->notes.' | ' : '').'CANCELLED ITEMS: '.$label.' | CANCELLED - Reason: Removed while editing the ticket');
@@ -1842,22 +1842,40 @@ class WaiterController extends Controller
                     if (! $line || (int) $line->quantity === $qty) {
                         continue;
                     }
-                    $delta = $qty - (int) $line->quantity;
+                    $oldQty = (int) $line->quantity;
+                    $delta = $qty - $oldQty;
+                    if ($wasServed && $delta > 0) {
+                        $stock->take($order, $line, $delta, 'kiosk');
+                    } elseif ($wasServed && $delta < 0) {
+                        $stock->putBack($order, $line, abs($delta));
+                    }
                     $order->total_amount = max(0, (float) $order->total_amount + ($delta * (float) $line->unit_price));
                     $line->quantity = $qty;
                     $line->total_price = (float) $line->unit_price * $qty;
                     $line->save();
+                    if ($wasServed && $delta > 0) {
+                        (new \App\Services\TransferSaleService)->attributeSaleToTransfer($line->fresh(), (int) $order->user_id);
+                    }
+                    $name = $line->productVariant->display_name ?? 'Drink';
+                    $qtyNotes[] = $oldQty.'x '.$name.($delta > 0 ? ' increased to ' : ' reduced to ').$qty;
                 } elseif (! empty($item['kitchen_order_item_id'])) {
                     $line = KitchenOrderItem::where('order_id', $order->id)->find((int) $item['kitchen_order_item_id']);
                     if (! $line || in_array($line->status, ['cancelled', 'completed'], true) || (int) $line->quantity === $qty) {
                         continue;
                     }
-                    $delta = $qty - (int) $line->quantity;
+                    $oldQty = (int) $line->quantity;
+                    $delta = $qty - $oldQty;
                     $order->total_amount = max(0, (float) $order->total_amount + ($delta * (float) $line->unit_price));
                     $line->quantity = $qty;
                     $line->total_price = (float) $line->unit_price * $qty;
                     $line->save();
+                    $qtyNotes[] = $oldQty.'x '.$line->food_item_name.($delta > 0 ? ' increased to ' : ' reduced to ').$qty;
                 }
+            }
+
+            if ($wasServed && $qtyNotes !== []) {
+                $suffix = 'QTY CHANGED AT KIOSK: '.implode('; ', $qtyNotes);
+                $order->notes = $order->notes ? $order->notes.' | '.$suffix : $suffix;
             }
 
             $order->save();

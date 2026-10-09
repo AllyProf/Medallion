@@ -1144,6 +1144,29 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
     }, 300000); // Ping every 5 minutes
 
     let editingOrderId = null; // Track if we are adding to an existing order
+    let trackedKioskPin = sessionStorage.getItem('kiosk_tracked_pin') || '';
+    let trackedKioskWaiterId = sessionStorage.getItem('kiosk_tracked_waiter_id') || '';
+    let trackedKioskWaiterName = sessionStorage.getItem('kiosk_tracked_waiter_name') || '';
+
+    function rememberKioskPin(pin, waiterId, waiterName) {
+        if (!pin || String(pin).length < 4) return;
+        trackedKioskPin = String(pin);
+        if (waiterId) trackedKioskWaiterId = String(waiterId);
+        if (waiterName) trackedKioskWaiterName = String(waiterName);
+        sessionStorage.setItem('kiosk_tracked_pin', trackedKioskPin);
+        sessionStorage.setItem('kiosk_tracked_waiter_id', trackedKioskWaiterId);
+        sessionStorage.setItem('kiosk_tracked_waiter_name', trackedKioskWaiterName);
+    }
+
+    function applyTrackedPinToOrderForm() {
+        if (!trackedKioskPin || trackedKioskPin.length < 4) return false;
+        $('#form-waiter-pin').val(trackedKioskPin);
+        if (trackedKioskWaiterId) $('#form-waiter-id').val(trackedKioskWaiterId);
+        if (trackedKioskWaiterName) {
+            $('#form-waiter-name-display').html('<i class="fa fa-check-circle"></i> ' + $('<span>').text(trackedKioskWaiterName).html()).css('color', 'var(--accent-green)');
+        }
+        return true;
+    }
 
     // Search
     $('#product-search').on('keyup', function() {
@@ -1560,6 +1583,9 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                     if (res.success) {
                         nameDisplay.html('<i class="fa fa-check-circle"></i> ' + res.waiter.name).css('color', 'var(--accent-green)');
                         idInput.val(res.waiter.id);
+                        if (pin.length === 4) {
+                            rememberKioskPin(pin, res.waiter.id, res.waiter.name);
+                        }
                         
                         // Auto-highlight button if 4 digits AND cart has items (Optional: Visual cue instead of click)
                         if (pin.length === 4 && cart.length > 0) {
@@ -1586,6 +1612,9 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 
     // --- PLACE ORDER (Confirmation Flow) ---
     $('#btn-finish-order').on('click', () => {
+        if (editingOrderId && (!$('#form-waiter-pin').val() || $('#form-waiter-pin').val().length < 4)) {
+            applyTrackedPinToOrderForm();
+        }
         const waiterId = $('#form-waiter-id').val();
         const pin = $('#form-waiter-pin').val();
         
@@ -2013,7 +2042,9 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
             if(order.status === 'preparing') brColor = 'var(--accent-yellow)';
             if(order.status === 'ready') brColor = 'var(--accent-green)';
             if(order.status === 'cancelled') brColor = '#dc3545';
-            const canChange = order.status !== 'served' && order.status !== 'cancelled';
+            const unpaid = order.payment_status !== 'paid' && !(parseFloat(order.paid_amount) > 0);
+            const canChange = unpaid && order.status !== 'served' && order.status !== 'cancelled';
+            const canEditQty = unpaid && order.status !== 'cancelled';
             
             let itemHtml = '';
             // Drinks
@@ -2078,7 +2109,7 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                             ${itemHtml}
                         </div>
                         <div class="mt-3" style="display:flex; flex-wrap: wrap; gap:10px; align-items:center;">
-                            ${canChange ? `<button class="btn btn-sm btn-outline-primary" style="flex:1; min-width: 100px;" onclick="prepareAddItem(${order.id}, '${order.order_number}')"><i class="fa fa-pencil"></i> Edit</button>` : ''}
+                            ${canEditQty ? `<button class="btn btn-sm btn-outline-primary" style="flex:1; min-width: 100px;" onclick="prepareAddItem(${order.id}, '${order.order_number}')"><i class="fa fa-pencil"></i> Edit</button>` : ''}
                             <button class="btn btn-sm btn-info" style="flex:1; min-width: 100px;" onclick="printKioskOrder(${order.id})"><i class="fa fa-print"></i> Receipt</button>
                             ${(order.kitchen_docket_item_count && order.kitchen_docket_item_count > 0) ? 
                                 `<button class="btn btn-sm btn-warning" style="flex:1; min-width: 100px;" onclick="printKioskDocket(${order.id})"><i class="fa fa-fire"></i> Docket</button>` : ''
@@ -2104,8 +2135,8 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
 
     window.prepareAddItem = function(orderId, orderNumber) {
         const order = (window.currentKioskOrders || []).find(o => String(o.id) === String(orderId));
-        if (order && order.status === 'served') {
-            KioskToast.fire({ icon: 'warning', title: 'A served ticket cannot be edited or cancelled.' });
+        if (order && (order.payment_status === 'paid' || parseFloat(order.paid_amount) > 0)) {
+            KioskToast.fire({ icon: 'warning', title: 'A paid ticket cannot be changed.' });
             return;
         }
         if (order && order.status === 'cancelled') {
@@ -2114,6 +2145,10 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
         }
         editingOrderId = orderId;
         cart = [];
+        const sameWaiter = !order || !order.waiter_id || !trackedKioskWaiterId || String(order.waiter_id) === String(trackedKioskWaiterId);
+        if (sameWaiter) {
+            applyTrackedPinToOrderForm();
+        }
 
         if (order) {
             (order.items || []).forEach(item => {
@@ -2577,6 +2612,9 @@ body, html { background-color: var(--bg-main) !important; color: var(--text-main
                 _token: '{{ csrf_token() }}' 
             },
             success: function(res) {
+                if (res.success && res.waiter) {
+                    rememberKioskPin(pin, res.waiter.id, res.waiter.name);
+                }
                 // Clear PIN immediately for security
                 $('#action-pin').val('');
                 

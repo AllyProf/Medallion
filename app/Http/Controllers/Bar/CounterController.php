@@ -336,6 +336,202 @@ class CounterController extends Controller
     }
 
     /**
+     * Lines the counter can lower on a served, unpaid ticket.
+     */
+    public function servedAdjustLines(BarOrder $order)
+    {
+        if (! $this->hasPermission('bar_orders', 'edit')) {
+            return response()->json(['error' => 'You do not have permission to update orders.'], 403);
+        }
+
+        $ownerId = $this->getOwnerId();
+        if ((int) $order->user_id !== (int) $ownerId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $blocked = $this->servedAdjustBlockReason($order);
+        if ($blocked) {
+            return response()->json(['error' => $blocked], 400);
+        }
+
+        $order->load(['items.productVariant.product', 'kitchenOrderItems']);
+
+        $lines = [];
+        foreach ($order->items as $item) {
+            $lines[] = [
+                'type' => 'drink',
+                'id' => $item->id,
+                'name' => $item->productVariant->display_name ?? 'Drink',
+                'quantity' => (int) $item->quantity,
+                'unit_price' => (float) $item->unit_price,
+            ];
+        }
+        foreach ($order->kitchenOrderItems as $item) {
+            if ($item->status === 'cancelled') {
+                continue;
+            }
+            $name = $item->food_item_name;
+            if ($item->variant_name) {
+                $name .= ' ('.$item->variant_name.')';
+            }
+            $lines[] = [
+                'type' => 'food',
+                'id' => $item->id,
+                'name' => $name,
+                'quantity' => (int) $item->quantity,
+                'unit_price' => (float) $item->unit_price,
+            ];
+        }
+
+        return response()->json([
+            'order_number' => $order->order_number,
+            'lines' => $lines,
+        ]);
+    }
+
+    /**
+     * Lower quantities on a served, unpaid ticket and put the extra drinks back in stock.
+     */
+    public function adjustServedQuantity(Request $request, BarOrder $order)
+    {
+        if (! $this->hasPermission('bar_orders', 'edit')) {
+            return response()->json(['error' => 'You do not have permission to update orders.'], 403);
+        }
+
+        $ownerId = $this->getOwnerId();
+        if ((int) $order->user_id !== (int) $ownerId) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $blocked = $this->servedAdjustBlockReason($order);
+        if ($blocked) {
+            return response()->json(['error' => $blocked], 400);
+        }
+
+        $validated = $request->validate([
+            'lines' => 'required|array|min:1',
+            'lines.*.type' => 'required|in:drink,food',
+            'lines.*.id' => 'required|integer',
+            'lines.*.quantity' => 'required|integer|min:0',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $order->load(['items.productVariant', 'kitchenOrderItems']);
+            $notes = [];
+
+            foreach ($validated['lines'] as $line) {
+                $newQty = (int) $line['quantity'];
+                if ($line['type'] === 'drink') {
+                    $item = $order->items->firstWhere('id', (int) $line['id']);
+                    if (! $item) {
+                        throw new \InvalidArgumentException('A drink line on this ticket was not found.');
+                    }
+                    $oldQty = (int) $item->quantity;
+                    if ($newQty === $oldQty) {
+                        continue;
+                    }
+                    $name = $item->productVariant->display_name ?? 'Drink';
+                    if ($newQty > $oldQty) {
+                        $this->takeServedDrink($order, $item, $newQty - $oldQty);
+                    } else {
+                        $this->returnServedDrink($order, $item, $oldQty - $newQty);
+                    }
+                    if ($newQty === 0) {
+                        $item->delete();
+                        $notes[] = $oldQty.'x '.$name.' removed';
+                    } else {
+                        $item->quantity = $newQty;
+                        $item->total_price = (float) $item->unit_price * $newQty;
+                        $item->save();
+                        if ($newQty > $oldQty) {
+                            (new TransferSaleService)->attributeSaleToTransfer($item->fresh(), (int) $order->user_id);
+                        }
+                        $notes[] = $oldQty.'x '.$name.($newQty > $oldQty ? ' increased to ' : ' reduced to ').$newQty;
+                    }
+                } else {
+                    $item = $order->kitchenOrderItems->firstWhere('id', (int) $line['id']);
+                    if (! $item || $item->status === 'cancelled') {
+                        throw new \InvalidArgumentException('A food line on this ticket was not found.');
+                    }
+                    $oldQty = (int) $item->quantity;
+                    if ($newQty === $oldQty) {
+                        continue;
+                    }
+                    $name = $item->food_item_name;
+                    if ($newQty === 0) {
+                        $item->update(['status' => 'cancelled']);
+                        $notes[] = $oldQty.'x '.$name.' removed';
+                    } else {
+                        $item->quantity = $newQty;
+                        $item->total_price = (float) $item->unit_price * $newQty;
+                        $item->save();
+                        $notes[] = $oldQty.'x '.$name.($newQty > $oldQty ? ' increased to ' : ' reduced to ').$newQty;
+                    }
+                }
+            }
+
+            if ($notes === []) {
+                throw new \InvalidArgumentException('Change at least one quantity before saving.');
+            }
+
+            $order->load(['items', 'kitchenOrderItems']);
+            $foodTotal = (float) $order->kitchenOrderItems
+                ->where('status', '!=', 'cancelled')
+                ->sum('total_price');
+            $order->total_amount = (float) $order->items->sum('total_price') + $foodTotal;
+
+            $hasDrinks = $order->items->isNotEmpty();
+            $hasFood = $order->kitchenOrderItems->contains(fn ($item) => $item->status !== 'cancelled');
+            if (! $hasDrinks && ! $hasFood) {
+                $order->status = 'cancelled';
+            }
+
+            $suffix = 'QTY CHANGED AT COUNTER: '.implode('; ', $notes);
+            $order->notes = $order->notes ? $order->notes.' | '.$suffix : $suffix;
+            $order->save();
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Quantity updated.',
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            DB::rollBack();
+
+            return response()->json(['error' => $e->getMessage()], 422);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Failed to adjust served quantity: '.$e->getMessage());
+
+            return response()->json(['error' => 'Failed to update the quantity.'], 500);
+        }
+    }
+
+    private function servedAdjustBlockReason(BarOrder $order): ?string
+    {
+        if ($order->status !== 'served') {
+            return 'Only a served order can be corrected here.';
+        }
+        if ($order->payment_status === 'paid' || (float) $order->paid_amount > 0) {
+            return 'A paid order cannot be changed.';
+        }
+
+        return null;
+    }
+
+    private function takeServedDrink(BarOrder $order, OrderItem $item, int $extraQty): void
+    {
+        app(\App\Services\ServedDrinkStock::class)->take($order, $item, $extraQty, 'counter');
+    }
+
+    private function returnServedDrink(BarOrder $order, OrderItem $item, int $returnQty): void
+    {
+        app(\App\Services\ServedDrinkStock::class)->putBack($order, $item, $returnQty);
+    }
+
+    /**
      * Mark Order as Paid
      */
     public function markAsPaid(Request $request, BarOrder $order)

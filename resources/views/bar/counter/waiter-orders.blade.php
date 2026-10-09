@@ -143,6 +143,43 @@
   </div>
 </div>
 
+<!-- Correct served quantity -->
+<div class="modal fade" id="adjust-qty-modal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content border-0 shadow-lg" style="border-radius: 12px;">
+      <div class="modal-header text-white" style="background: #940000; border-radius: 12px 12px 0 0;">
+        <h5 class="modal-title font-weight-bold"><i class="fa fa-pencil"></i> Correct Served Quantity</h5>
+        <button type="button" class="close text-white" data-dismiss="modal">&times;</button>
+      </div>
+      <div class="modal-body p-4">
+        <div class="bg-light p-3 rounded mb-3 text-center border" id="adjust-bill-box">
+          <small class="text-muted d-block text-uppercase font-weight-bold">New bill</small>
+          <h2 class="mb-0 font-weight-bold" id="adjust-total-display" style="color: #940000;">TSh 0</h2>
+          <small class="text-muted" id="adjust-order-label"></small>
+        </div>
+        <input type="hidden" id="adjust-order-id" value="">
+        <div id="adjust-lines"></div>
+      </div>
+      <div class="modal-footer border-0 p-4 pt-0">
+        <button type="button" class="btn btn-primary btn-lg btn-block font-weight-bold py-3 shadow-sm" id="adjust-qty-save">
+          <i class="fa fa-check"></i> SAVE QUANTITY
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<template id="adjust-line-template">
+  <div class="adjust-line d-flex align-items-center justify-content-between border rounded p-3 mb-2 bg-white">
+    <div class="pr-3">
+      <div class="font-weight-bold adjust-line-name"></div>
+      <small class="text-muted adjust-line-served"></small>
+    </div>
+    <div style="width: 110px;">
+      <input type="number" class="form-control form-control-lg text-center font-weight-bold adjust-qty-input" min="0">
+    </div>
+  </div>
+</template>
+
 <!-- Order Details Modal -->
 <div class="modal fade" id="order-details-modal" tabindex="-1" role="dialog">
   <div class="modal-dialog modal-lg" role="document">
@@ -520,6 +557,111 @@ $(document).ready(function() {
                     </div>
                 `;
                 $('#order-details-content').html(content);
+            }
+        });
+    });
+
+    function refreshAdjustBill() {
+        let total = 0;
+        $('#adjust-lines .adjust-qty-input').each(function() {
+            const qty = parseInt($(this).val(), 10);
+            const price = parseFloat($(this).data('price')) || 0;
+            if (!isNaN(qty) && qty > 0) {
+                total += qty * price;
+            }
+        });
+        $('#adjust-total-display').text('TSh ' + Math.round(total).toLocaleString());
+    }
+
+    $(document).on('input', '.adjust-qty-input', refreshAdjustBill);
+
+    $(document).on('click', '.adjust-qty-btn', function() {
+        const orderId = $(this).data('order-id');
+        $('#adjust-order-id').val(orderId);
+        $('#adjust-order-label').text('');
+        $('#adjust-total-display').text('TSh 0');
+        $('#adjust-bill-box').show();
+        $('#adjust-lines').html('<div class="text-center p-4"><i class="fa fa-spinner fa-spin fa-2x" style="color:#940000;"></i></div>');
+        $('#adjust-qty-save').prop('disabled', true);
+        $('#adjust-qty-modal').modal('show');
+
+        $.ajax({
+            url: '{{ route("bar.counter.served-adjust-lines", ":id") }}'.replace(':id', orderId),
+            method: 'GET',
+            success: function(res) {
+                const template = document.getElementById('adjust-line-template');
+                const holder = document.getElementById('adjust-lines');
+                holder.innerHTML = '';
+                if (!res.lines || !res.lines.length) {
+                    $('#adjust-bill-box').hide();
+                    holder.innerHTML = '<p class="text-muted mb-0">This ticket has no lines to change.</p>';
+                    return;
+                }
+                $('#adjust-order-label').text('#' + res.order_number);
+                res.lines.forEach(function(line) {
+                    const node = template.content.cloneNode(true);
+                    node.querySelector('.adjust-line-name').textContent = line.name;
+                    node.querySelector('.adjust-line-served').textContent = 'Served ' + line.quantity;
+                    const input = node.querySelector('.adjust-qty-input');
+                    input.value = line.quantity;
+                    input.dataset.type = line.type;
+                    input.dataset.id = line.id;
+                    input.dataset.original = line.quantity;
+                    input.dataset.price = line.unit_price;
+                    holder.appendChild(node);
+                });
+                refreshAdjustBill();
+                $('#adjust-qty-save').prop('disabled', false);
+            },
+            error: function(xhr) {
+                $('#adjust-bill-box').hide();
+                $('#adjust-lines').html('<p class="text-danger mb-0">' + ((xhr.responseJSON && xhr.responseJSON.error) || 'Could not load this ticket.') + '</p>');
+            }
+        });
+    });
+
+    $('#adjust-qty-save').on('click', function() {
+        const orderId = $('#adjust-order-id').val();
+        const lines = [];
+        let changed = false;
+        $('#adjust-lines .adjust-qty-input').each(function() {
+            const input = $(this);
+            const quantity = parseInt(input.val(), 10);
+            const original = parseInt(input.data('original'), 10);
+            if (isNaN(quantity) || quantity < 0) {
+                changed = 'invalid';
+                return false;
+            }
+            if (quantity !== original) {
+                changed = true;
+            }
+            lines.push({ type: input.data('type'), id: input.data('id'), quantity: quantity });
+        });
+        if (changed === 'invalid') {
+            Swal.fire('Check the quantity', 'Enter a quantity of 0 or more.', 'warning');
+            return;
+        }
+        if (changed !== true) {
+            Swal.fire('No change', 'Change at least one quantity before saving.', 'info');
+            return;
+        }
+
+        const btn = $(this);
+        btn.prop('disabled', true);
+        $.ajax({
+            url: '{{ route("bar.counter.adjust-served-quantity", ":id") }}'.replace(':id', orderId),
+            method: 'POST',
+            data: { _token: '{{ csrf_token() }}', lines: lines },
+            success: function(res) {
+                $('#adjust-qty-modal').modal('hide');
+                if (typeof showToast === 'function') {
+                    showToast('success', res.message || 'Quantity updated.', 'Updated');
+                }
+                setTimeout(function() { location.reload(); }, 800);
+            },
+            error: function(xhr) {
+                btn.prop('disabled', false);
+                Swal.fire('Error', (xhr.responseJSON && xhr.responseJSON.error) || 'Failed to update the quantity', 'error');
             }
         });
     });

@@ -305,6 +305,8 @@ Route::middleware('allow.staff')->group(function () {
         Route::post('counter/cancel-order/{order}', [\App\Http\Controllers\Bar\CounterController::class, 'cancelOrder'])->name('counter.cancel-order');
         Route::post('counter/record-payment/{order}', [\App\Http\Controllers\Bar\CounterController::class, 'recordPayment'])->name('counter.record-payment');
         Route::post('counter/orders/{order}/update-status', [\App\Http\Controllers\Bar\CounterController::class, 'updateOrderStatus'])->name('counter.update-order-status');
+        Route::get('counter/orders/{order}/adjust-lines', [\App\Http\Controllers\Bar\CounterController::class, 'servedAdjustLines'])->name('counter.served-adjust-lines');
+        Route::post('counter/orders/{order}/adjust-quantity', [\App\Http\Controllers\Bar\CounterController::class, 'adjustServedQuantity'])->name('counter.adjust-served-quantity');
         Route::post('counter/orders/{order}/mark-paid', [\App\Http\Controllers\Bar\CounterController::class, 'markAsPaid'])->name('counter.mark-paid');
         Route::get('counter/orders-by-status', [\App\Http\Controllers\Bar\CounterController::class, 'getOrdersByStatus'])->name('counter.orders-by-status');
         Route::get('counter/latest-orders', [\App\Http\Controllers\Bar\CounterController::class, 'getLatestOrders'])->name('counter.latest-orders');

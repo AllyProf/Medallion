@@ -127,6 +127,10 @@
                 <li><small class="text-muted">—</small></li>
                 @endif
             </ul>
+            @php $reductionSummary = $order->quantityReductionSummary(); @endphp
+            @if($reductionSummary)
+                <small class="text-warning d-block mt-1">Updated at counter: {{ $reductionSummary }}</small>
+            @endif
         </td>
         <td><strong>TSh {{ number_format($displayCounterTotal, 2) }}</strong></td>
         <td>
@@ -205,6 +209,13 @@
                     @endif
 
                 @elseif($orderStatus === 'served' && $order->payment_status !== 'paid')
+                    @if($order->order_source === 'counter' && (float) ($order->paid_amount ?? 0) <= 0)
+                    <button class="btn btn-sm btn-warning adjust-qty-btn mr-1 mb-1"
+                            data-order-id="{{ $order->id }}"
+                            title="Correct served quantity">
+                        <i class="fa fa-pencil"></i>
+                    </button>
+                    @endif
                     <button class="btn btn-sm btn-success font-weight-bold pay-order-btn mr-1 mb-1"
                             data-order-id="{{ $order->id }}"
                             data-total="{{ $counterTotal - $counterPaid }}"

@@ -392,6 +392,28 @@ class BarOrder extends Model
     }
 
     /**
+     * Quantity cuts made at the counter after the ticket was served.
+     */
+    public function quantityReductionSummary(): ?string
+    {
+        if (empty($this->notes) || (! str_contains($this->notes, 'QTY REDUCED AT COUNTER') && ! str_contains($this->notes, 'QTY CHANGED AT COUNTER') && ! str_contains($this->notes, 'QTY CHANGED AT KIOSK'))) {
+            return null;
+        }
+
+        $changes = [];
+        foreach (explode('|', $this->notes) as $part) {
+            $part = trim($part);
+            if (preg_match('/^QTY (?:REDUCED AT COUNTER|CHANGED AT COUNTER|CHANGED AT KIOSK):\s*(.+)$/i', $part, $match)) {
+                $changes[] = trim($match[1]);
+            }
+        }
+
+        $changes = array_values(array_filter($changes, fn ($change) => $change !== ''));
+
+        return $changes === [] ? null : implode(' · ', $changes);
+    }
+
+    /**
      * When counter removed drink lines but food is still active (order stays pending).
      */
     public function barLinesVoidAtCounterSummary(): ?string
